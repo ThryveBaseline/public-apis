@@ -183,7 +183,7 @@ def test_backtest_result(bars):
 
 
 def test_prop_account_trailing_eod_pass_and_fail():
-    rules = FIRM_PRESETS["topstep_100k"].with_(min_trading_days=1, consistency_pct=None)
+    rules = FIRM_PRESETS["topstep_100k"].with_(min_trading_days=1, consistency_pct=None, daily_loss_limit=None)
     acct = PropAccount(rules, sims=3, risk_per_trade=1000.0)
     # sim0: +6R, sim1: -3R, sim2: +1R
     r = np.array([[1.5, 1.5, 1.5, 1.5], [-1, -1, -1, 0], [1, 0, 0, 0]], float)
@@ -241,7 +241,7 @@ def test_implied_edge():
 
 
 def test_two_trade_eval_posture():
-    rules = FIRM_PRESETS["topstep_100k"].with_(min_trading_days=1, consistency_pct=None)
+    rules = FIRM_PRESETS["topstep_100k"].with_(min_trading_days=1, consistency_pct=None, daily_loss_limit=None)
     acct = PropAccount(rules, sims=2, risk_per_trade=1000.0, eval_risk=rules.profit_target / 3.0)
     r = np.array([[1.5, 1.5], [-1.0, -1.0]])
     acct.apply_day(r, np.ones((2, 2), bool))
@@ -280,3 +280,11 @@ def test_time_filters_and_big_open_candle(bars):
     assert (big["contracts"] == 1).all()
     none = generate_trades(bars, StrategyConfig(big_open_candle_points=None))
     assert len(none) >= len(big) * 0 + 1
+
+
+def test_topstep_daily_loss_limit_is_a_soft_stop():
+    rules = FIRM_PRESETS["topstep_100k"].with_(min_trading_days=1, consistency_pct=None)
+    acct = PropAccount(rules, sims=1, risk_per_trade=1000.0)
+    acct.apply_day(np.array([[-1.0, -1.0, -1.0, -1.0]]), np.ones((1, 4), bool))
+    assert acct.balance[0] == pytest.approx(98_000)  # trading stopped at the -$2,000 daily loss limit
+    assert acct.phase[0] == EVAL
