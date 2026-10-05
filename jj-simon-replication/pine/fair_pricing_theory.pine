@@ -1,0 +1,101 @@
+//@version=5
+// Fair Pricing Theory (JJ Simon) - NQ 1-minute continuation / reversion signals
+// Reconstructed from public descriptions; see ../docs/DOSSIER.md for sources and
+// ../docs/ASSUMPTIONS.md for the choices made where the public record is silent.
+// Apply to NQ1! on the 1-minute chart with the chart timezone set to America/New_York.
+indicator("Fair Pricing Theory - NQ (replication)", overlay=true, max_lines_count=500, max_labels_count=500)
+
+// ---------------- inputs ----------------
+sessStart   = input.session("0930-1100", "Trading window (NY)")
+contEnd     = input.int(15,  "Continuation minutes after open", minval=1, maxval=60)
+pmSession   = input.bool(false, "Also trade the 14:00 session")
+pmStart     = input.session("1400-1530", "PM window (NY)")
+bandPts     = input.float(38.0, "Premium/discount band (points)")
+requireBand = input.bool(false, "Reversion only after band touch")
+atrLen      = input.int(14, "ATR length (1-min)")
+wickPct     = input.float(0.20, "Max counter-wick as fraction of open-to-extreme", step=0.05)
+minBodyATR  = input.float(1.0, "Min displacement body (x ATR)", step=0.25)
+swingLen    = input.int(3, "Swing left/right bars")
+lookback    = input.int(60, "Structure lookback (bars)")
+allowGradeA = input.bool(true, "Take grade-A (displacement only) signals")
+rr          = input.float(1.5, "Target R multiple")
+tier1ATR    = input.float(20.0, "Tier 1: ATR above -> 50pt stop / 1 ct")
+tier2ATR    = input.float(7.0,  "Tier 2: ATR above -> 25pt stop / 2 ct (else 16.5pt / 3 ct)")
+
+// ---------------- session / fair value ----------------
+inAM = not na(time(timeframe.period, sessStart, "America/New_York"))
+inPM = pmSession and not na(time(timeframe.period, pmStart, "America/New_York"))
+newAM = inAM and not inAM[1]
+newPM = inPM and not inPM[1]
+var float fv = na
+if newAM
+    fv := open
+if newPM
+    fv := open
+var int sessBars = 0
+sessBars := newAM or newPM ? 0 : (inAM or inPM ? sessBars + 1 : sessBars)
+inWindow = inAM or inPM
+isCont = inWindow and sessBars < contEnd
+var float dayHigh = na
+var float dayLow  = na
+if newAM
+    dayHigh := high
+    dayLow  := low
+else if inAM
+    dayHigh := math.max(dayHigh, high)
+    dayLow  := math.min(dayLow, low)
+
+// ---------------- ATR tier ----------------
+atrV = ta.atr(atrLen)
+stopPts = atrV > tier1ATR ? 50.0 : atrV >= tier2ATR ? 25.0 : 16.5
+cts     = atrV > tier1ATR ? 1 : atrV >= tier2ATR ? 2 : 3
+
+// ---------------- displacement ----------------
+bullDisp = close > open and (high - open) > 0 and (high - close) <= wickPct * (high - open) and (close - open) >= minBodyATR * atrV
+bearDisp = close < open and (open - low) > 0 and (close - low) <= wickPct * (open - low) and (open - close) >= minBodyATR * atrV
+
+// ---------------- structure (confirmed pivots only) ----------------
+ph = ta.pivothigh(high, swingLen, swingLen)
+pl = ta.pivotlow(low, swingLen, swingLen)
+var float lastPH = na
+var int   lastPHbar = na
+var float lastPL = na
+var int   lastPLbar = na
+if newAM
+    lastPH := na
+    lastPL := na
+if not na(ph)
+    lastPH := ph
+    lastPHbar := bar_index - swingLen
+if not na(pl)
+    lastPL := pl
+    lastPLbar := bar_index - swingLen
+bosUp   = not na(lastPH) and bar_index - lastPHbar <= lookback and close > lastPH
+bosDown = not na(lastPL) and bar_index - lastPLbar <= lookback and close < lastPL
+if bosUp
+    lastPH := na
+if bosDown
+    lastPL := na
+
+// ---------------- direction logic ----------------
+above = close > fv
+dirWanted = isCont ? (above ? 1 : -1) : (above ? -1 : 1)
+bandOK = not requireBand or isCont or (dirWanted == -1 ? dayHigh >= fv + bandPts : dayLow <= fv - bandPts)
+longSig  = inWindow and not na(fv) and dirWanted == 1  and bullDisp and bandOK and (bosUp   or allowGradeA)
+shortSig = inWindow and not na(fv) and dirWanted == -1 and bearDisp and bandOK and (bosDown or allowGradeA)
+gradeLong  = bosUp ? "A+" : "A"
+gradeShort = bosDown ? "A+" : "A"
+
+// ---------------- plots ----------------
+plot(inWindow ? fv : na, "Fair value", color=color.new(color.yellow, 0), linewidth=2, style=plot.style_linebr)
+plot(inWindow ? fv + bandPts : na, "Premium edge", color=color.new(color.red, 60), style=plot.style_linebr)
+plot(inWindow ? fv - bandPts : na, "Discount edge", color=color.new(color.green, 60), style=plot.style_linebr)
+bgcolor(isCont ? color.new(color.blue, 92) : inWindow ? color.new(color.gray, 94) : na)
+plotshape(longSig,  "Long",  style=shape.triangleup,   location=location.belowbar, color=color.green, size=size.small, text="")
+plotshape(shortSig, "Short", style=shape.triangledown, location=location.abovebar, color=color.red,   size=size.small, text="")
+if longSig
+    label.new(bar_index, low, (isCont ? "C " : "R ") + gradeLong + "\n" + str.tostring(cts) + "x SL " + str.tostring(stopPts) + " TP " + str.tostring(rr * stopPts), style=label.style_label_up, color=color.new(color.green, 70), textcolor=color.white, size=size.tiny)
+if shortSig
+    label.new(bar_index, high, (isCont ? "C " : "R ") + gradeShort + "\n" + str.tostring(cts) + "x SL " + str.tostring(stopPts) + " TP " + str.tostring(rr * stopPts), style=label.style_label_down, color=color.new(color.red, 70), textcolor=color.white, size=size.tiny)
+alertcondition(longSig,  "FPT long",  "FPT long signal")
+alertcondition(shortSig, "FPT short", "FPT short signal")
