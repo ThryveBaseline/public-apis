@@ -163,6 +163,32 @@ funded) with a 5th percentile near +$60k, and about 95 account breaches per
 simulated run, i.e. roughly two breaches per account per six months. The
 firm presets are templates (`verified=False`) until Section 9 is confirmed.
 
+**Operation details from the `accounts` angle (34 facts).** Payouts by
+firm from his $1.6M breakdown: Topstep ~$292,000; E8 $222,122 (the one
+firm-issued "Certificate of Performance" found); Funded Engineer ~$180,000
+(a dashboard showing 48 payouts, $179,938, largest single payout $46,433 in
+April 2026); Funded Next $129,500; Lucid ~$105,000; MyFundedFutures
+~$92,000; Alpha Futures ~$75,000; Apex ~$60,000; Bulwark Prime ~$55,000.
+Routine: "trade each account one at a time and get through all of his
+accounts every day, though he sometimes copy trades two together"; "you
+should not copy trade until you're making like 20k"; once funded "he
+cycles one trade across multiple funded accounts"; a conservative
+evaluation uses "a minimum of two trades, but most likely four". He buys
+evaluations in bulk ("160 evals for 250 bucks each"), says he has spent
+$550,000 on evaluations in total, and argues that "one trade a day ...
+22 trades a month ... approximately 3K a month" cannot reach $100k, which
+is why the account count matters more than the edge. He risks
+"different on separate firms and accounts" and says his real edge is
+"understanding the prop firms and having a different risk strategy per
+prop firm", adding that the method is "optimized for prop firms and less
+effective on live accounts". He has published a calculator, PropFirmEV,
+that replays a trader's statistics through each firm's rulebook thousands
+of times at one trade per day; `fpt/portfolio.py` is the same idea.
+Monthly examples from his posts: a $48K month with a $45K payout; four
+June payouts totalling $25,000; a record-month target of $90,000.
+Unknown still: the copier stack, account sizes per firm, and spend versus
+payouts per month.
+
 ## 6. Stop-trading rules and discipline
 
 What his own material says (research angle `stop-rules`, 22 sourced facts):

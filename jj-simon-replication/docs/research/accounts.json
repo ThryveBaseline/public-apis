@@ -1,0 +1,801 @@
+{
+ "angle": "Multi-account operation (20 to 45+ prop-firm accounts)",
+ "note": "Research method: WebSearch only (WebFetch/curl blocked). Quotes are taken from search-engine excerpts of the cited page (mostly sozai.app transcript summaries of JJ's own videos, his own sales pages, and third-party write-ups). Wording may be the summarizer's paraphrase of JJ's spoken words; jj_own_words=true means the underlying source is JJ's own video/site/post. Dates are relative to 2026-10-05.",
+ "facts": [
+  {
+   "claim": "JJ's stated goal is to trade every account individually, one at a time, cycling through all accounts each day; he sometimes copies two together.",
+   "quote": "goal when trading prop firms is to trade each account one at a time and get through all of his accounts every day, though he sometimes copy trades two together",
+   "source_url": "https://sozai.app/transcript/strategy-behind-1-6m-prop-firm-payouts/",
+   "source_title": "The Strategy Behind My $1.6M in Prop Firm Payouts — Transcript & Summary (sozai.app)",
+   "source_kind": "transcript-summary of JJ video",
+   "jj_own_words": true,
+   "date": "2026 (video ~mid 2026)",
+   "confidence": "high"
+  },
+  {
+   "claim": "He advises against copy trading until a trader is making about $20k.",
+   "quote": "you should not copy trade until you're making like 20k",
+   "source_url": "https://sozai.app/transcript/strategy-behind-1-6m-prop-firm-payouts/",
+   "source_title": "The Strategy Behind My $1.6M in Prop Firm Payouts (sozai.app)",
+   "source_kind": "transcript-summary of JJ video",
+   "jj_own_words": true,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "He recommends one account at a time and one trade per account per day as the optimal prop-firm routine (while also saying there is no maximum number of trades overall).",
+   "quote": "He recommends trading one account at a time and one trade per account per day as the optimal way to trade prop firms.",
+   "source_url": "https://sozai.app/transcript/strategy-behind-1-6m-prop-firm-payouts/",
+   "source_title": "The Strategy Behind My $1.6M in Prop Firm Payouts (sozai.app)",
+   "source_kind": "transcript-summary of JJ video",
+   "jj_own_words": true,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "Once funded he cycles a single trade across multiple funded accounts to collect payouts.",
+   "quote": "The moment he is funded, he flips gears with risk coming right down, and he cycles one trade across multiple funded accounts to collect payouts - described as 'aggressive to get funded, conservative to stay funded.'",
+   "source_url": "https://jjwebinar.com/",
+   "source_title": "JJ Simon — Free Live Training (jjwebinar.com)",
+   "source_kind": "JJ sales/webinar page",
+   "jj_own_words": true,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "A search summary attributes to JJ running 40 accounts and taking one trade across them (source among the listed results, most likely his $100k/month video).",
+   "quote": "JJ Simon runs 40 accounts and takes one trade across them",
+   "source_url": "https://sozai.app/transcript/make-100000-per-month-prop-firms/",
+   "source_title": "Here's How You Can Make $100,000 Per Month On Prop Firms (sozai.app) [search summary attribution]",
+   "source_kind": "transcript-summary of JJ video",
+   "jj_own_words": true,
+   "date": "2026-07/08",
+   "confidence": "medium"
+  },
+  {
+   "claim": "Chart Fanatics episode blurb says he manages 45+ accounts.",
+   "quote": "managing 45+ accounts and knowing exactly when to stop trading",
+   "source_url": "https://www.youtube.com/watch?v=-lxNWJGWtbg",
+   "source_title": "This Kid Printed $2M In Payouts Trading 30 Times/Day, Here's How. (Chart Fanatics, YouTube)",
+   "source_kind": "podcast video (third-party channel, JJ interviewed)",
+   "jj_own_words": false,
+   "date": "~2026-09-19",
+   "confidence": "high"
+  },
+  {
+   "claim": "Third-party mentorship summary: the method teaches copying across dozens of smaller funded accounts to diversify drawdown-rule risk.",
+   "quote": "The method teaches traders to use trade copiers across dozens of smaller funded accounts to diversify the risk of violating drawdown limits.",
+   "source_url": "https://fttuts.com/jj-simon-trading-mentorship-2026/",
+   "source_title": "JJ Simon Trading Mentorship 2026 (fttuts.com)",
+   "source_kind": "third-party course description/reseller",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "medium"
+  },
+  {
+   "claim": "TikTok content frames the edge as scaling the same strategy across many accounts with protective rules rather than trading harder.",
+   "quote": "he doesn't trade harder than anyone else, but scales smarter with the same boring strategy copied across multiple accounts with rules that protect on bad days",
+   "source_url": "https://www.tiktok.com/discover/jj-simon-trading-review",
+   "source_title": "Jj Simon Trading Review (TikTok discover page)",
+   "source_kind": "TikTok (JJ's own clips, aggregated)",
+   "jj_own_words": true,
+   "date": "2026",
+   "confidence": "medium"
+  },
+  {
+   "claim": "Payouts by firm (his $1.6M video): Topstep ~$292,000; E8 ~$222,000; Funded Engineer ~$180,000; Funded Next $129,500; Lucid ~$105,000; MyFundedFutures ~$92,000; Alpha Futures ~$75,000; Bulwark Prime ~$55,000.",
+   "quote": "Funded Next was at $129,500 ... Lucid: about $105,000 total ... Alpha Futures: 75K total ... Bulwark Prime: 55K total ... E8: $222,000 ... My Funded Futures: $92,000",
+   "source_url": "https://sozai.app/transcript/strategy-behind-1-6m-prop-firm-payouts/",
+   "source_title": "The Strategy Behind My $1.6M in Prop Firm Payouts (sozai.app)",
+   "source_kind": "transcript-summary of JJ video",
+   "jj_own_words": true,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "E8 Markets issued a 'Certificate of Performance' for $222,122; another firm shows 48 lifetime payouts totaling $179,938; a single payout of $46,433 in April 2026.",
+   "quote": "Certificate of Performance from E8 Markets for $222,122, lifetime payouts of $179,938 across 48 payouts, and a single payout of $46,433 [in April 2026]",
+   "source_url": "https://jjwebinar.com/",
+   "source_title": "JJ Simon — Free Live Training (jjwebinar.com)",
+   "source_kind": "JJ sales/webinar page",
+   "jj_own_words": true,
+   "date": "2026-04 (payout)",
+   "confidence": "high"
+  },
+  {
+   "claim": "He also trades Fundedseat (a live-bonus product) and says the same optimizations apply there with new constraints.",
+   "quote": "achieved the Fundedseat live bonus on 2 out of 3 accounts. He notes that the same optimizations used on prop firm live and prop firm funded accounts exist on Fundedseat, though with new constraints.",
+   "source_url": "https://x.com/itsjjsimon",
+   "source_title": "itsjjsimon (@itsjjsimon) on X",
+   "source_kind": "X post (JJ)",
+   "jj_own_words": true,
+   "date": "2026-09 (mid)",
+   "confidence": "medium"
+  },
+  {
+   "claim": "Cost-to-funded math: evaluation fee divided by pass rate.",
+   "quote": "if an eval costs $100 and the pass rate is 30%, the cost to get funded is $100 divided by 0.3, which equals approximately $333",
+   "source_url": "https://sozai.app/transcript/make-100000-per-month-prop-firms/",
+   "source_title": "Here's How You Can Make $100,000 Per Month On Prop Firms (sozai.app)",
+   "source_kind": "transcript-summary of JJ video",
+   "jj_own_words": true,
+   "date": "2026-07/08",
+   "confidence": "high"
+  },
+  {
+   "claim": "Eval pass-rate model: at a 50% win rate, two wins in a row happens 1 in 4, so roughly one in four evals gets funded; he 'plays the numbers'.",
+   "quote": "At a 50% win rate, two in a row is one in four, so he knows roughly one in every four evals gets funded.",
+   "source_url": "https://sozai.app/transcript/make-100000-per-month-prop-firms/",
+   "source_title": "Here's How You Can Make $100,000 Per Month On Prop Firms (sozai.app)",
+   "source_kind": "transcript-summary of JJ video",
+   "jj_own_words": true,
+   "date": "2026-07/08",
+   "confidence": "high"
+  },
+  {
+   "claim": "He describes evaluations as cheap and buys them in bulk; one transcript cites 160 evals at $250 each.",
+   "quote": "evals are so cheap ... 160 evals for 250 bucks each",
+   "source_url": "https://sozai.app/transcript/strategy-behind-1-6m-prop-firm-payouts/",
+   "source_title": "The Strategy Behind My $1.6M in Prop Firm Payouts (sozai.app) [attribution via search summary]",
+   "source_kind": "transcript-summary of JJ video",
+   "jj_own_words": true,
+   "date": "2026",
+   "confidence": "medium"
+  },
+  {
+   "claim": "He says he has spent $550,000 on prop firm evaluations (video title and mini-course lesson).",
+   "quote": "I spent $550,000 on prop firm evaluations and learned this / The Exact Math System I Learned From Investing $550,000 Into Prop Firm Evaluations",
+   "source_url": "https://www.youtube.com/watch?v=dJdBnSBJlgQ",
+   "source_title": "I spent $550,000 on prop firm evaluations and learned this (YouTube, JJ Simon)",
+   "source_kind": "JJ video",
+   "jj_own_words": true,
+   "date": "~2026-09-23",
+   "confidence": "high"
+  },
+  {
+   "claim": "Expected value framing for funded accounts: probability of payout × payout size; buy accounts only if expected payouts exceed expenses.",
+   "quote": "Expected value helps estimate profitability by multiplying the probability of payout by the payout size. It allows traders to assess if their payouts will exceed expenses before buying accounts. On funded accounts, the only goal is to maximize expected value.",
+   "source_url": "https://sozai.app/transcript/make-100000-per-month-prop-firms/",
+   "source_title": "Here's How You Can Make $100,000 Per Month On Prop Firms (sozai.app)",
+   "source_kind": "transcript-summary of JJ video",
+   "jj_own_words": true,
+   "date": "2026-07/08",
+   "confidence": "high"
+  },
+  {
+   "claim": "Different objective per account type: optimize pass rate on evals, maximize EV on funded.",
+   "quote": "different strategies for evaluation versus funded accounts—optimizing for pass rate on evals and maximizing expected value (probability of getting a payout multiplied by payout size) on funded accounts",
+   "source_url": "https://x.com/itsjjsimon",
+   "source_title": "itsjjsimon (@itsjjsimon) on X",
+   "source_kind": "X post (JJ)",
+   "jj_own_words": true,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "Eval phase: maximum risk, clear the whole target in exactly two trades of roughly half the target each (satisfies ~50% consistency rules), then move on; a lost eval is 'cheap'.",
+   "quote": "During the evaluation phase, JJ uses maximum risk and clears the whole target in exactly two trades, with each being about half of the total profit, to satisfy prop firm consistency rules that no single trade can be more than about half of your total profit.",
+   "source_url": "https://jjwebinar.com/",
+   "source_title": "JJ Simon — Free Live Training (jjwebinar.com)",
+   "source_kind": "JJ sales/webinar page",
+   "jj_own_words": true,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "For a more conservative eval he uses a minimum of two trades, most likely four.",
+   "quote": "For conservative evaluation trading, he uses a minimum of two trades, but most likely four trades per eval.",
+   "source_url": "https://sozai.app/transcript/strategy-behind-1-6m-prop-firm-payouts/",
+   "source_title": "The Strategy Behind My $1.6M in Prop Firm Payouts (sozai.app)",
+   "source_kind": "transcript-summary of JJ video",
+   "jj_own_words": true,
+   "date": "2026",
+   "confidence": "medium"
+  },
+  {
+   "claim": "Risk is set differently per firm and per account; different accounts are used depending on market conditions.",
+   "quote": "you should risk different on separate firms and accounts to make the most out of prop firms ... different prop firm accounts used depending on market conditions",
+   "source_url": "https://jjwebinar.com/",
+   "source_title": "jjwebinar.com / sozai $1.6M transcript",
+   "source_kind": "JJ sales page + transcript-summary",
+   "jj_own_words": true,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "His stated real edge is understanding each prop firm's rules and having a different risk strategy per firm ('beat the prop firm, not the market').",
+   "quote": "JJ Simon trades the prop firms, not the markets, and his strategy has a statistical edge but his real edge is understanding the prop firms and having a different risk strategy per prop firm.",
+   "source_url": "https://sozai.app/transcript/jj-simons-strategy-backtest-365-days/",
+   "source_title": "Is JJ Simons Strategy Profitable? I Backtested 365 Days (sozai.app)",
+   "source_kind": "transcript-summary of third-party video quoting JJ",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "medium"
+  },
+  {
+   "claim": "Scaling/account optimization: he quotes an optimal daily profit target of $1,800 on one account and $15,000 on another when scaling to six figures/month.",
+   "quote": "The optimal profit target on [this] prop firm account was $1,800 per day ... if you're trying to make six figures a month on prop firms, accounts need to be optimized, with $15,000 being the optimal profit target on another account.",
+   "source_url": "https://sozai.app/transcript/make-100000-per-month-prop-firms/",
+   "source_title": "Here's How You Can Make $100,000 Per Month On Prop Firms (sozai.app)",
+   "source_kind": "transcript-summary of JJ video",
+   "jj_own_words": true,
+   "date": "2026-07/08",
+   "confidence": "medium"
+  },
+  {
+   "claim": "He argues one trade a day cannot reach $100k/month: 22 trades a month ≈ $3k/month.",
+   "quote": "there's zero chance you can make 100K doing one trade a day ... if someone is taking one trade a day, that's 22 trades a month, and they would make approximately 3K a month",
+   "source_url": "https://sozai.app/transcript/make-100000-per-month-prop-firms/",
+   "source_title": "Here's How You Can Make $100,000 Per Month On Prop Firms (sozai.app)",
+   "source_kind": "transcript-summary of JJ video",
+   "jj_own_words": true,
+   "date": "2026-07/08",
+   "confidence": "high"
+  },
+  {
+   "claim": "Monthly payout examples from his X feed: $48K month with a $45K payout; June: 4 more payouts totaling $25,000; record-month target shown as $90,000/$175,000.",
+   "quote": "made $48K on a month and receiving a $45K payout ... 4 more payouts totaling $25,000 ... record month target of $90,000/$175,000",
+   "source_url": "https://x.com/itsjjsimon",
+   "source_title": "itsjjsimon (@itsjjsimon) on X",
+   "source_kind": "X posts (JJ)",
+   "jj_own_words": true,
+   "date": "2026-06",
+   "confidence": "medium"
+  },
+  {
+   "claim": "Weekly payout documentation: Road to $1M Ep.1 $87,000 in 2 weeks; Ep.2 $105,700 in 3 weeks; a 'not my best week' still yielded $18,000 in payouts.",
+   "quote": "$87,000 From Prop Firms in 2 Weeks ... I Made $105,700 in 3 Weeks ... this week was not my best week, but I was still able to take $18,000 worth of payouts",
+   "source_url": "https://sozai.app/transcript/made-105700-3-weeks-day-trading-nq-futures/",
+   "source_title": "Road to $1M Ep.1/Ep.2 (YouTube / sozai.app)",
+   "source_kind": "JJ video series",
+   "jj_own_words": true,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "He films all trades and payouts weekly ('no screenshots, only videos').",
+   "quote": "shares every trade and payout weekly with no screenshots, only videos for full transparency ... filmed trades live while trading multiple accounts and showed every payout displayed on recording",
+   "source_url": "https://www.youtube.com/watch?v=HlWSP7ajgpQ",
+   "source_title": "I Hit $1.9M In Prop Firm Payouts (My Trades This Week LIVE | Ep.12)",
+   "source_kind": "JJ video",
+   "jj_own_words": true,
+   "date": "~2026-09-14",
+   "confidence": "high"
+  },
+  {
+   "claim": "He promotes a referral code 'JJ' across prop firms (affiliate relationship implied).",
+   "quote": "He has a referral code 'JJ' that he promotes across various prop trading firms.",
+   "source_url": "https://x.com/itsjjsimon",
+   "source_title": "itsjjsimon on X / jjwebinar.com",
+   "source_kind": "X / sales page",
+   "jj_own_words": true,
+   "date": "2026",
+   "confidence": "medium"
+  },
+  {
+   "claim": "He built PropFirmEV, a calculator that Monte-Carlo-replays a trader's stats through each firm's rulebook; it claims rankings are not affiliate-driven.",
+   "quote": "PropFirmEV is built by JJ and has $1.3M in verified prop firm payouts ... re-runs your trade stats through every prop firm's rulebook thousands of times — one trade per day ... Rankings are based on your expected value, not on what each firm pays the calculator creator.",
+   "source_url": "https://websitesaasfinal.vercel.app/",
+   "source_title": "PropFirmEV — Find the prop firm that actually pays you the most",
+   "source_kind": "JJ tool/site",
+   "jj_own_words": true,
+   "date": "2026 (built when payouts were $1.3M)",
+   "confidence": "high"
+  },
+  {
+   "claim": "Third-party observer (ZenomTrader) says the technique is automatable and with enough accounts hard to lose, but ROI is tiny: 5–10 accounts pay almost monthly while buying challenges constantly.",
+   "quote": "You can fully automate it. And with enough accounts, it's really hard to lose money with this technique. The ROI is tiny. With 5–10 accounts, you can get paid almost every month, but you'll basically be buying challenges 24/7.",
+   "source_url": "https://x.com/ZenomTrader/status/2094359116873453938",
+   "source_title": "ZenomTrader on X",
+   "source_kind": "X post (third party)",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "Student results advertised: $0→$56,900 in 4 months; Connor $0→$40,000 in 2.5 months; Kyle $0→$25,000; 3 evals passed in one day then $4K on funded; $22,000+/30 days from Tradeify; one student $40,000+ after moving to Lucid Live.",
+   "quote": "Connor went from $0 to $40,000 in 2.5 months, and Kyle went from $0 to $25,000 having never traded before ... passing 3 evaluations in one day ... securing $4K on the funded account ... $22,000+ per 30 days from Tradeify",
+   "source_url": "https://jjwebinar.com/",
+   "source_title": "jjwebinar.com / allpros.io reviews",
+   "source_kind": "JJ sales page (testimonials) + review site",
+   "jj_own_words": true,
+   "date": "2026",
+   "confidence": "medium"
+  },
+  {
+   "claim": "Verified-review site: 4.6/5 from 5 reviews; strength is risk management and funded-account discipline.",
+   "quote": "Its strength is risk management and funded-account discipline rather than signal dependency ... 100% of verified reviewers said the course was worth the money.",
+   "source_url": "https://allpros.io/course/jjs-mentorship",
+   "source_title": "JJ's Mentorship Reviews 2026 (allpros.io)",
+   "source_kind": "third-party review site",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "medium"
+  },
+  {
+   "claim": "Mentorship (Whop, operated by SIMON FUND LLC) includes entry model, trade recaps and a risk-management dashboard; one reseller lists original price $2,500.",
+   "quote": "access to JJ's entire trading system including an entry model, trade recaps, and a risk management dashboard ... original price as $2,500",
+   "source_url": "https://whop.com/jj-s-mentorship-ba4a/",
+   "source_title": "JJ's Mentorship (whop.com)",
+   "source_kind": "JJ product page",
+   "jj_own_words": true,
+   "date": "2026",
+   "confidence": "medium"
+  },
+  {
+   "claim": "Strategy is said to be optimized for prop-firm rule sets and less effective on live accounts.",
+   "quote": "prop firms offer more profitability due to their evaluation rules, drawdown limits, and profit targets, making his aggressive strategy more effective. The strategy is optimized for prop firms and less effective on live accounts.",
+   "source_url": "https://sozai.app/transcript/strategy-behind-1-6m-prop-firm-payouts/",
+   "source_title": "The Strategy Behind My $1.6M in Prop Firm Payouts (sozai.app)",
+   "source_kind": "transcript-summary of JJ video",
+   "jj_own_words": true,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "Payout-total claims by date: $1.2M (~12–13 months, per third party), $1.3M (PropFirmEV), $1.5M (16 months experience, Road to $1M), $1.6M, $1.8M (Linktree/TikTok), $1.9M (Ep.12, ~Sept 14 2026), $2M+ (Week In My Life, Chart Fanatics, mini-course).",
+   "quote": "full-time futures trader with 16 months of experience and $1.5 million in prop firm payouts ... goal to increase payouts from $1.5M to $2.5M",
+   "source_url": "https://sozai.app/transcript/made-105700-3-weeks-day-trading-nq-futures/",
+   "source_title": "Road to $1M Ep.2 (sozai.app) and others",
+   "source_kind": "multiple",
+   "jj_own_words": true,
+   "date": "2026",
+   "confidence": "high"
+  }
+ ],
+ "numbers": [
+  {
+   "name": "Accounts (his X posts)",
+   "value": "20–30",
+   "context": "already known from task brief; not re-verified",
+   "source_url": "https://x.com/itsjjsimon"
+  },
+  {
+   "name": "Accounts (video attribution)",
+   "value": "40",
+   "context": "'runs 40 accounts and takes one trade across them'",
+   "source_url": "https://sozai.app/transcript/make-100000-per-month-prop-firms/"
+  },
+  {
+   "name": "Accounts (Chart Fanatics blurb)",
+   "value": "45+",
+   "context": "'managing 45+ accounts'",
+   "source_url": "https://www.youtube.com/watch?v=-lxNWJGWtbg"
+  },
+  {
+   "name": "Topstep payouts",
+   "value": "~$292,000",
+   "context": "his $1.6M video breakdown",
+   "source_url": "https://sozai.app/transcript/strategy-behind-1-6m-prop-firm-payouts/"
+  },
+  {
+   "name": "E8 payouts",
+   "value": "$222,000 / $222,122 certificate",
+   "context": "$1.6M video; E8 Certificate of Performance",
+   "source_url": "https://jjwebinar.com/"
+  },
+  {
+   "name": "Funded Engineer payouts",
+   "value": "~$180,000 (48 payouts, $179,938)",
+   "context": "$1.6M video; jjwebinar lifetime payouts widget",
+   "source_url": "https://jjwebinar.com/"
+  },
+  {
+   "name": "Funded Next payouts",
+   "value": "$129,500",
+   "context": "$1.6M video",
+   "source_url": "https://sozai.app/transcript/strategy-behind-1-6m-prop-firm-payouts/"
+  },
+  {
+   "name": "Lucid payouts",
+   "value": "~$105,000",
+   "context": "$1.6M video",
+   "source_url": "https://sozai.app/transcript/strategy-behind-1-6m-prop-firm-payouts/"
+  },
+  {
+   "name": "MyFundedFutures payouts",
+   "value": "~$92,000",
+   "context": "$1.6M video",
+   "source_url": "https://sozai.app/transcript/strategy-behind-1-6m-prop-firm-payouts/"
+  },
+  {
+   "name": "Alpha Futures payouts",
+   "value": "~$75,000",
+   "context": "$1.6M video",
+   "source_url": "https://sozai.app/transcript/strategy-behind-1-6m-prop-firm-payouts/"
+  },
+  {
+   "name": "Bulwark Prime payouts",
+   "value": "~$55,000",
+   "context": "$1.6M video",
+   "source_url": "https://sozai.app/transcript/strategy-behind-1-6m-prop-firm-payouts/"
+  },
+  {
+   "name": "Largest single payout cited",
+   "value": "$46,433",
+   "context": "April 2026",
+   "source_url": "https://jjwebinar.com/"
+  },
+  {
+   "name": "Total spent on evaluations",
+   "value": "$550,000",
+   "context": "video title / mini-course lesson 02",
+   "source_url": "https://www.youtube.com/watch?v=dJdBnSBJlgQ"
+  },
+  {
+   "name": "Bulk eval example",
+   "value": "160 evals × $250 = $40,000",
+   "context": "transcript excerpt",
+   "source_url": "https://sozai.app/transcript/strategy-behind-1-6m-prop-firm-payouts/"
+  },
+  {
+   "name": "Cost-to-funded example",
+   "value": "$100 / 0.30 ≈ $333",
+   "context": "fee ÷ pass rate",
+   "source_url": "https://sozai.app/transcript/make-100000-per-month-prop-firms/"
+  },
+  {
+   "name": "Eval pass probability model",
+   "value": "1 in 4",
+   "context": "two wins in a row at 50% win rate",
+   "source_url": "https://sozai.app/transcript/make-100000-per-month-prop-firms/"
+  },
+  {
+   "name": "Copy-trading threshold",
+   "value": "$20k/month",
+   "context": "'don't copy trade until making like 20k'",
+   "source_url": "https://sozai.app/transcript/strategy-behind-1-6m-prop-firm-payouts/"
+  },
+  {
+   "name": "Optimal daily profit target (one account)",
+   "value": "$1,800/day",
+   "context": "$100k/month video",
+   "source_url": "https://sozai.app/transcript/make-100000-per-month-prop-firms/"
+  },
+  {
+   "name": "Optimal profit target (another account)",
+   "value": "$15,000",
+   "context": "$100k/month video",
+   "source_url": "https://sozai.app/transcript/make-100000-per-month-prop-firms/"
+  },
+  {
+   "name": "One-trade-a-day income estimate",
+   "value": "22 trades/month ≈ $3k/month",
+   "context": "argument against low frequency",
+   "source_url": "https://sozai.app/transcript/make-100000-per-month-prop-firms/"
+  },
+  {
+   "name": "Monthly payout examples",
+   "value": "$48K month → $45K payout; June: 4 payouts = $25,000; target $90,000/$175,000",
+   "context": "X posts",
+   "source_url": "https://x.com/itsjjsimon"
+  },
+  {
+   "name": "Weekly payout examples",
+   "value": "$87,000 / 2 wks; $105,700 / 3 wks; $18,000 in a bad week",
+   "context": "Road to $1M Ep.1–2",
+   "source_url": "https://sozai.app/transcript/made-105700-3-weeks-day-trading-nq-futures/"
+  },
+  {
+   "name": "Risk per trade",
+   "value": "~$1,000 (1/2/3 NQ contracts at 50/25/16.5-pt stops)",
+   "context": "fxreplay write-up",
+   "source_url": "https://fxreplay.com/strategies/jj-simons-fair-value-theory-nq-strategy"
+  },
+  {
+   "name": "Mentorship price (reseller-listed)",
+   "value": "$2,500",
+   "context": "original price per reseller listing",
+   "source_url": "https://whop.com/jj-s-mentorship-ba4a/"
+  },
+  {
+   "name": "Fundedseat live bonus",
+   "value": "2 of 3 accounts",
+   "context": "X post mid-Sept 2026",
+   "source_url": "https://x.com/itsjjsimon"
+  },
+  {
+   "name": "ZenomTrader account estimate",
+   "value": "5–10 accounts → paid almost monthly",
+   "context": "third-party opinion",
+   "source_url": "https://x.com/ZenomTrader/status/2094359116873453938"
+  }
+ ],
+ "sources": [
+  {
+   "url": "https://sozai.app/transcript/make-100000-per-month-prop-firms/",
+   "title": "Here's How You Can Make $100,000 Per Month On Prop Firms — Transcript & Summary",
+   "kind": "transcript-summary (JJ video)",
+   "date": "video ~2026-07/08"
+  },
+  {
+   "url": "https://sozai.app/transcript/strategy-behind-1-6m-prop-firm-payouts/",
+   "title": "The Strategy Behind My $1.6M in Prop Firm Payouts — Transcript & Summary",
+   "kind": "transcript-summary (JJ video)",
+   "date": "2026"
+  },
+  {
+   "url": "https://sozai.app/transcript/made-105700-3-weeks-day-trading-nq-futures/",
+   "title": "I Made $105,700 in 3 Weeks Day Trading NQ Futures (Road to $1M Ep. 2) — Transcript & Summary",
+   "kind": "transcript-summary (JJ video)",
+   "date": "2026"
+  },
+  {
+   "url": "https://sozai.app/transcript/jj-simons-strategy-backtest-365-days/",
+   "title": "Is JJ Simons Strategy Profitable? I Backtested 365 Days With a Custom Indicator — Transcript & Summary",
+   "kind": "transcript-summary (third-party video)",
+   "date": "2026"
+  },
+  {
+   "url": "https://www.youtube.com/watch?v=AxP-cg50TdM",
+   "title": "Here's How You Can Make $100,000 Per Month On Prop Firms (YouTube)",
+   "kind": "JJ video",
+   "date": "~2026-07/08"
+  },
+  {
+   "url": "https://www.youtube.com/watch?v=dJdBnSBJlgQ",
+   "title": "I spent $550,000 on prop firm evaluations and learned this (YouTube)",
+   "kind": "JJ video",
+   "date": "~2026-09-23"
+  },
+  {
+   "url": "https://www.youtube.com/watch?v=HlWSP7ajgpQ",
+   "title": "I Hit $1.9M In Prop Firm Payouts (My Trades This Week LIVE | Ep.12)",
+   "kind": "JJ video",
+   "date": "~2026-09-14"
+  },
+  {
+   "url": "https://www.youtube.com/watch?v=PN1UKQMPb5M",
+   "title": "I Hit $2,000,000 In Prop Firm Payouts (Week In My Life)",
+   "kind": "JJ video",
+   "date": "2026-09/10"
+  },
+  {
+   "url": "https://www.youtube.com/watch?v=gjWiGBiVis0",
+   "title": "$87,000 From Prop Firms in 2 Weeks - Road to $1,000,000 Starts Now (Ep. 1)",
+   "kind": "JJ video",
+   "date": "2026"
+  },
+  {
+   "url": "https://www.youtube.com/watch?v=C-_0QhKZmA4",
+   "title": "How I turned $0 into $1,500,000 Trading Prop Firms (Full Roadmap)",
+   "kind": "JJ video",
+   "date": "2026"
+  },
+  {
+   "url": "https://www.youtube.com/watch?v=xNeBEqv06k0",
+   "title": "0 to $780,000 in 12 months on prop firms - full roadmap",
+   "kind": "JJ video",
+   "date": ""
+  },
+  {
+   "url": "https://www.youtube.com/watch?v=4BXpI-hYqe0",
+   "title": "How I Scaled To $1.8M In Prop Firm Payouts",
+   "kind": "JJ video",
+   "date": "2026"
+  },
+  {
+   "url": "https://www.youtube.com/watch?v=PMGhHCjYG5c",
+   "title": "How Quant Finance Made Me $1.6M Trading Prop Firms",
+   "kind": "JJ video",
+   "date": "2026"
+  },
+  {
+   "url": "https://www.youtube.com/watch?v=nvOaN6mRu-o",
+   "title": "How Poker Math Made Me $100K/Month Trading Prop Firms",
+   "kind": "JJ video",
+   "date": "~2026-09-30"
+  },
+  {
+   "url": "https://www.youtube.com/watch?v=BLvsYJ4sqn8",
+   "title": "The ONE Setup That Made Me $400,000 in 90 Days (6 & 8PM Session, Step by Step)",
+   "kind": "JJ video",
+   "date": ""
+  },
+  {
+   "url": "https://www.youtube.com/watch?v=GMDUiamqgig",
+   "title": "How I Trade the 6PM & 8PM Session (Fair Price Theory on Funded Accounts)",
+   "kind": "JJ video",
+   "date": ""
+  },
+  {
+   "url": "https://www.youtube.com/watch?v=J8qXxtFFpGg",
+   "title": "I made $1.5M prop firm trading and learned this",
+   "kind": "JJ video",
+   "date": ""
+  },
+  {
+   "url": "https://www.youtube.com/watch?v=MVP7X-3v8xk",
+   "title": "Watch Me Backtest My $1,500,000 Trading Strategy",
+   "kind": "JJ video",
+   "date": ""
+  },
+  {
+   "url": "https://www.youtube.com/watch?v=-lxNWJGWtbg",
+   "title": "This Kid Printed $2M In Payouts Trading 30 Times/Day, Here's How. (Chart Fanatics)",
+   "kind": "podcast video (third-party channel)",
+   "date": "~2026-09-19"
+  },
+  {
+   "url": "https://www.youtube.com/@chart-fanatics/videos",
+   "title": "Chart Fanatics YouTube channel",
+   "kind": "podcast channel",
+   "date": ""
+  },
+  {
+   "url": "https://jjwebinar.com/",
+   "title": "JJ Simon — Free Live Training / How To Get Consistent Prop Firm Payouts Using The Fair Pricing Theory",
+   "kind": "JJ sales page",
+   "date": "2026"
+  },
+  {
+   "url": "https://jj.jjsimontrades.com/mini-course",
+   "title": "JJ Simon — The Prop Firm Strategy Behind $2,000,000+ In Verified Payouts (Free Quant Strategy Mini Course)",
+   "kind": "JJ sales page",
+   "date": "2026"
+  },
+  {
+   "url": "https://jj.jjsimontrades.com/schedule-call",
+   "title": "The Quant Trading Strategy Behind My $2,000,000 In Prop Firm Payouts (schedule-call)",
+   "kind": "JJ sales page",
+   "date": "2026"
+  },
+  {
+   "url": "https://jjsimontrades.com/mentorship",
+   "title": "JJs Mentorship (jjsimontrades.com)",
+   "kind": "JJ sales page",
+   "date": ""
+  },
+  {
+   "url": "https://jjsmentorship.com/",
+   "title": "jjsmentorship.com (SIMON FUND LLC)",
+   "kind": "JJ sales page",
+   "date": ""
+  },
+  {
+   "url": "https://whop.com/jj-s-mentorship-ba4a/",
+   "title": "JJ's Mentorship (Whop)",
+   "kind": "JJ product page",
+   "date": "2026"
+  },
+  {
+   "url": "https://whop.com/@itsjjsimon/",
+   "title": "JJ Simon on Whop",
+   "kind": "JJ product page",
+   "date": ""
+  },
+  {
+   "url": "https://websitesaasfinal.vercel.app/",
+   "title": "PropFirmEV — Find the prop firm that actually pays you the most",
+   "kind": "JJ tool",
+   "date": "2026"
+  },
+  {
+   "url": "https://x.com/itsjjsimon",
+   "title": "itsjjsimon (@itsjjsimon) on X",
+   "kind": "X profile/posts (JJ)",
+   "date": "2026"
+  },
+  {
+   "url": "https://x.com/ZenomTrader/status/2094359116873453938",
+   "title": "ZenomTrader on X (post 2094359116873453938)",
+   "kind": "X post (third party)",
+   "date": "2026"
+  },
+  {
+   "url": "https://linktr.ee/itsjjsimon",
+   "title": "itsjjsimon Linktree",
+   "kind": "JJ link page",
+   "date": "joined 2026-04"
+  },
+  {
+   "url": "https://www.tiktok.com/@itsjjsimon",
+   "title": "JJ Simon (@itsjjsimon) TikTok",
+   "kind": "TikTok (JJ)",
+   "date": "2026"
+  },
+  {
+   "url": "https://www.tiktok.com/discover/jj-simon-trading-review",
+   "title": "Jj Simon Trading Review (TikTok discover)",
+   "kind": "TikTok aggregate",
+   "date": "2026"
+  },
+  {
+   "url": "https://www.instagram.com/itsjjsimon/",
+   "title": "JJ Simon (@itsjjsimon) Instagram",
+   "kind": "Instagram (JJ)",
+   "date": "2026"
+  },
+  {
+   "url": "https://www.youtube.com/@itsjjsimon",
+   "title": "JJ Simon YouTube channel (@itsjjsimon)",
+   "kind": "YouTube channel (JJ)",
+   "date": "2026"
+  },
+  {
+   "url": "https://allpros.io/course/jjs-mentorship",
+   "title": "JJ's Mentorship Reviews 2026 (allpros.io)",
+   "kind": "third-party review site",
+   "date": "2026"
+  },
+  {
+   "url": "https://fttuts.com/jj-simon-trading-mentorship-2026/",
+   "title": "JJ Simon Trading Mentorship 2026 (fttuts.com)",
+   "kind": "third-party course description",
+   "date": "2026"
+  },
+  {
+   "url": "https://viptradingcourses.com/product/jj-simon-trades-trading-mentorship-2026-course/",
+   "title": "JJ Simon Trades: Trading Mentorship (2026) (viptradingcourses.com)",
+   "kind": "third-party reseller listing",
+   "date": "2026"
+  },
+  {
+   "url": "https://fxreplay.com/strategies/jj-simons-fair-value-theory-nq-strategy",
+   "title": "JJ Simon's Fair Value Theory Strategy (fxreplay.com)",
+   "kind": "third-party strategy write-up",
+   "date": "2026"
+  },
+  {
+   "url": "https://cdn.prod.website-files.com/668852f921e36c3365b91d03/69f277ffef6be0e125ad6a90_JJ%20Simon%20Fair%20value%20theory.pdf",
+   "title": "JJ Simon's Fair Value Theory NQ Strategy Backtesting Reimagined (PDF)",
+   "kind": "third-party backtest PDF",
+   "date": "2026"
+  },
+  {
+   "url": "https://youtubesummary.com/summary/SNO1wqJTq5A",
+   "title": "Video Summary - Backtesting JJ Simon's NQ Strategy (youtubesummary.com)",
+   "kind": "third-party video summary",
+   "date": "2026"
+  },
+  {
+   "url": "https://www.youtube.com/watch?v=c61c4CxTpYI",
+   "title": "JJ Simon Strategy Backtest: 40 Trades Proves This Works (Or...)",
+   "kind": "third-party video",
+   "date": ""
+  },
+  {
+   "url": "https://www.youtube.com/watch?v=JcW8Wjnw8ck",
+   "title": "Can JJ Simon's $1.5M Trading Strategy Really Pass a Prop Firm Challenge?",
+   "kind": "third-party video",
+   "date": ""
+  },
+  {
+   "url": "https://www.youtube.com/watch?v=Esv74mEfTFY",
+   "title": "Is JJ Simons Method Profitable? We Backtested 365 Days With a Custom Indicator",
+   "kind": "third-party video",
+   "date": ""
+  },
+  {
+   "url": "https://www.youtube.com/watch?v=FVS85GQGaT0",
+   "title": "JJ Simons Strategy Exposed: Profitable or Impossible?",
+   "kind": "third-party video",
+   "date": ""
+  },
+  {
+   "url": "https://app.faketrades.in/guru/jj-simon",
+   "title": "JJ Simon — strategies backtested (faketrades.in)",
+   "kind": "third-party backtest site",
+   "date": ""
+  }
+ ],
+ "contradictions": [
+  "Account count: 20–30 (his X posts) vs 40 (video attribution) vs 45+ (Chart Fanatics blurb). Likely grew over time; no per-firm breakdown found anywhere.",
+  "Execution: he says the optimal way is one account at a time, one trade per account per day, and not to copy trade until ~$20k/month; yet third-party summaries (fttuts, TikTok) describe copying one trade across dozens of accounts, and jjwebinar says he 'cycles one trade across multiple funded accounts'. Probably: evals traded individually, funded accounts copied.",
+  "Trades per day: 'about 10 trades per day' (sozai $1.6M; his own 80 trades/8 days) vs '30 times/day' (Chart Fanatics title) vs 10–30 (task brief). 'One trade per account per day' × many accounts reconciles these.",
+  "Payout totals rise across sources ($1.2M→$2M+) and 'verified' is self-asserted; E8 certificate is the only firm-issued proof surfaced.",
+  "Stop sizes are quoted as 'ticks' in youtubesummary/one search summary but as 'points' (50/25/16.5) on fxreplay; points ($20/pt NQ) matches the ~$1,000 risk figure.",
+  "Tradeify is named on jjwebinar as a payout source but did not appear in the $1.6M per-firm breakdown excerpt."
+ ],
+ "open_questions": [
+  "Exact copier/execution stack (Tradovate, ProjectX/TopstepX, Rithmic, NinjaTrader, Replikanto, Tradecopia, etc.) — no source names it.",
+  "Account sizes per firm (50k/100k/150k) and number of accounts per firm — not found.",
+  "Monthly spend on evals/resets/activation fees vs payouts — only the $550k lifetime figure and the 160×$250 example surfaced.",
+  "Explicit '$100,000/month = accounts × payout × cadence' arithmetic — only partial figures ($1,800/day, $15,000 target, 1-in-4 eval pass).",
+  "What he does when a funded account breaches (replacement pipeline specifics).",
+  "Payout cadence per firm and whether he hits per-firm payout caps.",
+  "Whether the 'JJ' referral code is a paid affiliate relationship with MFFU/Tradeify/Topstep/Lucid.",
+  "Chart Fanatics episode content on 45+ accounts (no transcript indexed)."
+ ],
+ "queries_run": 64
+}
