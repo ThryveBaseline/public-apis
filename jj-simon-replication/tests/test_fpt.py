@@ -231,3 +231,10 @@ def test_no_lookahead_in_structure(bars):
     full_first = full[full["signal_time"] < cut.index[-1]]
     assert len(part) == len(full_first)
     pd.testing.assert_frame_equal(part.reset_index(drop=True), full_first.reset_index(drop=True))
+
+
+def test_implied_edge():
+    out = R.implied_daily_r(105_700, 40, 15, 1000)
+    assert out["r_per_account_day"] == pytest.approx(0.1762, abs=1e-3)
+    assert R.trades_per_day_for_daily_r(0.35, 0.54, 1.5) == pytest.approx(1.0)
+    assert R.trades_per_day_for_daily_r(1.0, 0.3, 1.5) == float("inf")
