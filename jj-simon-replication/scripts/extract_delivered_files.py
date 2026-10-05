@@ -15,7 +15,7 @@ from collections import defaultdict
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
-BLOCK = re.compile(r"^[ \t]*=== FILE (\S+) PART (\d+)/(\d+) ===[ \t]*\n(.*?)(?=^[ \t]*=== (?:FILE|DONE) |\Z)", re.S | re.M)
+BLOCK = re.compile(r"^[ \t]*=== FILE (\S+) PART (\d+)/(\d+)[^\n]*?===[ \t]*\n(.*?)(?=^[ \t]*=== (?:FILE|DONE) |\Z)", re.S | re.M)
 
 
 def iter_strings(obj):

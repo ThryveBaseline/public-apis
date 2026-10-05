@@ -1,0 +1,463 @@
+{
+ "angle": "prop-firm-rules",
+ "facts": [
+  {
+   "claim": "Topstep Trading Combine profit targets $3,000 / $6,000 / $9,000 and Maximum Loss Limits $2,000 / $3,000 / $4,500 for 50K / 100K / 150K.",
+   "quote": "For the $50K account, the Profit Target is $3,000; for the $100K account, it's $6,000; and for the $150K account, it's $9,000 ... Maximum Loss Limit is $2,000 ... $3,000 ... $4,500",
+   "source_url": "https://help.topstep.com/en/articles/8284197-trading-combine-parameters",
+   "source_title": "Trading Combine Parameters (Topstep help)",
+   "source_kind": "official_help",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "Topstep Daily Loss Limits under the Responsible Trading Program: -$1,000 / -$2,000 / -$3,000.",
+   "quote": "Daily Loss Limits are: 50K accounts = -$1,000, 100K accounts = -$2,000, and 150K accounts = -$3,000",
+   "source_url": "https://help.topstep.com/en/articles/10490293-daily-loss-limit-in-the-trading-combine-and-express-funded-account",
+   "source_title": "Daily Loss Limit in the Trading Combine and Express Funded Account",
+   "source_kind": "official_help",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "Topstep Combine consistency: best day must be <= 55% of profit target or the target increases.",
+   "quote": "Your single best day of profit must stay at or below 55% of your Profit Target",
+   "source_url": "https://help.topstep.com/en/articles/8284208-consistency-at-topstep",
+   "source_title": "Consistency at Topstep",
+   "source_kind": "official_help",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "Topstep XFA payout paths: Standard = 5 winning days of $150+; Consistency = 3 trading days + largest day <= 40% of net profit; 90/10 split.",
+   "quote": "3 trading days with at least 1 trade per day, and staying at or below the 40% consistency target ... 90/10 profit split",
+   "source_url": "https://help.topstep.com/en/articles/8284233-topstep-payout-policy",
+   "source_title": "Topstep Payout Policy",
+   "source_kind": "official_help",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "Topstep XFA per-request payout caps: 50K $2,000/$3,000; 100K $3,000/$4,000; 150K $5,000/$6,000 (Standard/Consistency); DLL option raises caps to $6,000-$12,000.",
+   "quote": "$100K Standard: $3,000 max payout; $100K Consistency: $4,000; $150K Standard: $5,000; $150K Consistency: $6,000",
+   "source_url": "https://help.topstep.com/en/articles/8284215-express-funded-account-parameters",
+   "source_title": "Express Funded Account Parameters",
+   "source_kind": "official_help",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "Topstep pricing: $49/$99/$199 per month (Standard Path) + $149 activation; No-Activation-Fee Path $95/$149/$229; reset = monthly fee.",
+   "quote": "$50K ($49/mo), $100K ($99/mo), and $150K ($199/mo) on the Standard Path with a $149 activation fee, or $95/$149/$229 with $0 activation",
+   "source_url": "https://propdatalab.com/firms/topstep/",
+   "source_title": "Topstep Rules & Pricing 2026 (propdatalab) + official pricing FAQ https://help.topstep.com/en/articles/14289835-topstep-pricing-and-payment-questions",
+   "source_kind": "third_party_review",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "medium"
+  },
+  {
+   "claim": "Topstep: 5 active Express Funded Accounts max; no limit on simultaneous Combines; 20 Combine purchases per month.",
+   "quote": "You can have up to five active Express Funded Accounts at one time ... traders can purchase up to 20 new Trading Combine accounts each month",
+   "source_url": "https://help.topstep.com/en/articles/10370307-account-purchase-limits",
+   "source_title": "Account Purchase Limits (Topstep help)",
+   "source_kind": "official_help",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "Topstep MLL is end-of-day trailing, monitored in real time, locks permanently at the starting balance; after first payout the MLL is set to $0.",
+   "quote": "updates at the end of each trading day but is monitored in real time ... locks permanently",
+   "source_url": "https://help.topstep.com/en/articles/8284204-what-is-the-maximum-loss-limit",
+   "source_title": "What is the Maximum Loss Limit? + phidiaspropfirm/tradetanto explainers",
+   "source_kind": "official_help",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "Topstep copy trading is allowed via TopstepX; the copier is turned off while a payout is processed; accounts are judged independently; no cross-account hedging; no VPS/VPN.",
+   "quote": "Copy trading is allowed via TopstepX under Settings -> Copy Trading, and while a payout request is being processed, the copy-trading connection is automatically turned off",
+   "source_url": "https://proptradingvibes.com/blog/topstep-copy-trading-rules",
+   "source_title": "Topstep Copy Trading Rules 2026 (proptradingvibes)",
+   "source_kind": "third_party_review",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "medium"
+  },
+  {
+   "claim": "Topstep 90/10 from dollar one for accounts created after Jan 12, 2026; min payout $125; no first-payout profit floor since Apr 28, 2026.",
+   "quote": "90/10 profit split from dollar one for accounts created after January 12, 2026 ... minimum payout is $125 ... since April 28, 2026 there is no cumulative profit floor",
+   "source_url": "https://proptradingvibes.com/blog/topstep-payout-rules",
+   "source_title": "Topstep Payouts 2026 (proptradingvibes)",
+   "source_kind": "third_party_review",
+   "jj_own_words": false,
+   "date": "2026-04-28",
+   "confidence": "medium"
+  },
+  {
+   "claim": "Topstep news: allowed; CPI window - no new opening transactions on ES/RTY/YM/NQ/NKD minis 5 min before/after.",
+   "quote": "no new opening transactions permitted during the 10-minute window surrounding the release (5 minutes before, 5 minutes after)",
+   "source_url": "https://help.topstep.com/en/articles/8284211-economic-releases",
+   "source_title": "Economic Releases (Topstep help)",
+   "source_kind": "official_help",
+   "jj_own_words": false,
+   "date": "2026-09",
+   "confidence": "high"
+  },
+  {
+   "claim": "Topstep Combine max position size 5/10/15 minis (50/100/150 micros).",
+   "quote": "$50K allows 5 mini contracts (or 50 micro), $100K allows 10 mini contracts (or 100 micro), and $150K allows 15 mini contracts",
+   "source_url": "https://tradetanto.com/learn/topstep-rules",
+   "source_title": "Topstep Rules (tradetanto)",
+   "source_kind": "third_party_review",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "medium"
+  },
+  {
+   "claim": "E8 Signature pricing: $25K $110, $50K $150, $100K $260, $150K $390, one-time, no activation or subscription.",
+   "quote": "$25,000 account - $110, $50,000 account - $150, $100,000 account - $260, and $150,000 account - $390. All fees are one-time fees with no activation fee or subscription fee",
+   "source_url": "https://help.e8markets.com/en/articles/13106558-all-product-overviews-e8-one-vs-e8-zero-vs-e8-pro-vs-e8-signature",
+   "source_title": "All product overviews (E8 help)",
+   "source_kind": "official_help",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "E8 Signature Futures: EOD dynamic drawdown 3% ($1,000/$2,000/$3,000/$4,500), targets $3,000/$6,000/$9,000 (50K-150K), no activation fee, 80% split, 5 profitable days between payouts, no consistency in eval, 35% best-day rule funded.",
+   "quote": "max drawdown is 3% EOD Dynamic, with amounts of $1,000 for $25K, $2,000 for $50K, $3,000 for $100K, and $4,500 for $150K",
+   "source_url": "https://damnpropfirms.com/futures-prop-firms/e8-futures/",
+   "source_title": "E8 Futures Review 2026 (damnpropfirms) + tradetanto",
+   "source_kind": "third_party_review",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "medium"
+  },
+  {
+   "claim": "E8 Signature payout caps: 2.5% / 2.5% / 4.5% / 5.5% then up to $25,000 from the 5th payout; buffer equal to EOD drawdown must be retained.",
+   "quote": "2.5 percent for the first payout, 2.5 percent for the second, 4.5 percent for the third, 5.5 percent for the fourth, and up to $25,000 per request from the fifth payout onward",
+   "source_url": "https://proptrusted.com/e8-markets-payout-caps/",
+   "source_title": "E8 Markets Payout Caps Explained (proptrusted) + official https://help.e8markets.com/en/articles/11940573-payout-caps-and-buffers-for-e8-signature-explained",
+   "source_kind": "third_party_review",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "medium"
+  },
+  {
+   "claim": "E8 futures: first payout 14 calendar days after first trade; then on-demand after 5 profitable days of >= 0.3%.",
+   "quote": "first payout after 14 calendar days from first trade, subsequent payouts on-demand after completing 5 profitable days with at least 0.3% closed PnL each",
+   "source_url": "https://proptradingvibes.com/blog/e8-markets-payout-rules",
+   "source_title": "E8 Markets Payout Rules 2026 (proptradingvibes)",
+   "source_kind": "third_party_review",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "medium"
+  },
+  {
+   "claim": "E8 copy trading: allowed across your own accounts (challenge, performance, personal); one third party says not between multiple E8 evaluation accounts.",
+   "quote": "Copy trading across your own accounts is allowed, including across SimFi Challenge Accounts, SimFi Performance Accounts, or any personal accounts, as long as all accounts belong to you",
+   "source_url": "https://helpfutures.e8markets.com/en/articles/10209270-trading-policies-and-prohibited-trading-strategies",
+   "source_title": "Trading Policies and Prohibited Trading Strategies (E8 futures help)",
+   "source_kind": "official_help",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "medium"
+  },
+  {
+   "claim": "E8 Zero: 6% target, 3% EOD-dynamic drawdown locking at initial balance, 40% best-day rule in challenge only, min payout $100, max 5 payouts.",
+   "quote": "3% EOD-Dynamic Drawdown ... locks permanently at the initial balance level ... minimum payout of $100 ... maximum of 5 payouts per account",
+   "source_url": "https://helpfutures.e8markets.com/en/articles/15935817-e8-zero-starter-and-max",
+   "source_title": "E8 Zero (Starter and Max)",
+   "source_kind": "official_help",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "Funded Engineer filed for bankruptcy on 15 July 2024 after FPFX revoked its licence alleging fraud; it is not operating.",
+   "quote": "Funded Engineer prop firm filed for bankruptcy on 15 July 2024 after 15 months of operation",
+   "source_url": "https://fxnewsgroup.com/forex-news/retail-forex/exclusive-prop-firm-funded-engineer-closes-files-for-bankruptcy/",
+   "source_title": "Exclusive: Prop firm Funded Engineer closes, files for bankruptcy (FX News Group)",
+   "source_kind": "news",
+   "jj_own_words": false,
+   "date": "2024-07-15",
+   "confidence": "high"
+  },
+  {
+   "claim": "MyFundedFutures replaced Starter/Starter Plus/Expert with Core, Rapid, Pro on July 22, 2025; Core $77/mo (50K only), Rapid $129/mo, Pro $229/mo; activation fees removed.",
+   "quote": "completely overhauled its plan structure on July 22, 2025, with the old Starter, Starter Plus, and Expert plans replaced by Core, Rapid, and Pro",
+   "source_url": "https://tradecovex.com/guides/myfundedfutures-rules-2026",
+   "source_title": "MyFundedFutures Rules 2026 (tradecovex)",
+   "source_kind": "third_party_review",
+   "jj_own_words": false,
+   "date": "2025-07-22",
+   "confidence": "medium"
+  },
+  {
+   "claim": "MFF Rapid 50K: target $3,000; MLL $2,000 intraday trailing; 5 minis; buffer $2,100; daily payouts; min $500; 90/10.",
+   "quote": "Profit Target: $3,000; Maximum Loss Limit (EOD): $2,000; Drawdown Type: Intra-day trailing; Max Contracts: 5 minis / 50 micros; Required Buffer: $2,100; Payout Frequency: Daily; Minimum Payout Request: $500; Profit Split: 90%",
+   "source_url": "https://help.myfundedfutures.com/en/articles/13134709-rapid-plan-50k-a-comprehensive-look",
+   "source_title": "Rapid Plan 50k - A Comprehensive Look (MFF help)",
+   "source_kind": "official_help",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "MFF Pro: $157/$267/$347 per month; targets $3,000/$6,000/$9,000; EOD trailing DD $2,000/$3,000/$4,500; 80/20; payouts every 14 days; min $1,000; max $100,000 per cycle; buffers $2,100/$3,100/$4,600.",
+   "quote": "Pro 50K: $157/month, $3,000 profit target, $2,000 max drawdown (EOD trailing), 80% profit split, Every 14 days payout",
+   "source_url": "https://www.thetraderstack.com/reviews/myfundedfutures-pro-50k",
+   "source_title": "My Funded Futures 50K/150K Pro reviews (thetraderstack) + official https://myfundedfutures.com/plans/pro",
+   "source_kind": "third_party_review",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "medium"
+  },
+  {
+   "claim": "MFF consistency (official): 30% Rapid EOD, 50% Rapid Intraday and Pro; Builder none in eval, 50% in sim-funded.",
+   "quote": "30% on Rapid EOD plans and 50% for Rapid Intraday and Pro plans, while Builder plans have no consistency rules in the evaluation stage",
+   "source_url": "https://help.myfundedfutures.com/en/articles/11994562-consistency-rule-at-myfunded-futures-core-scale-and-pro-plans",
+   "source_title": "Consistency Rule at MyFundedFutures (help)",
+   "source_kind": "official_help",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "medium"
+  },
+  {
+   "claim": "MFF copy trading allowed on all account types (Tradesyncer preferred); max 5 active sim-funded for 25K/50K, 3 if any 100K/150K.",
+   "quote": "allows copy trading across all account types ... up to 5 active Sim-Funded Accounts ... If a trader holds any $100K or $150K Sim-Funded Account, the maximum number of active Sim-Funded Accounts is 3",
+   "source_url": "https://help.myfundedfutures.com/en/articles/10771500-copy-trading-at-myfundedfutures",
+   "source_title": "Copy Trading at MyFundedFutures (help)",
+   "source_kind": "official_help",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "MFF news: Tier-1 releases (FOMC, FOMC minutes, Employment Report, CPI) require no positions/orders 2 min before and after on Rapid and Pro sim-funded; evaluations and Builder unrestricted.",
+   "quote": "no positions or orders (including limit orders) can be open 2 minutes before and after the release",
+   "source_url": "https://help.myfundedfutures.com/en/articles/8230009-news-trading-policy",
+   "source_title": "News Trading Policy (MFF help)",
+   "source_kind": "official_help",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "Tradeify Growth eval: 50K PT $3,000 / DLL $1,250 / trailing DD $2,000 / 4 minis; 100K $6,000 / $2,500 / $3,500 / 8; 150K $9,000 / $3,750 / $5,000 / 12; pass in 1 day.",
+   "quote": "$50k Account: Profit Target $3,000, Daily Loss Limit $1,250, Trailing Max Drawdown $2,000, Max Position Size 4 Contracts",
+   "source_url": "https://help.tradeify.co/en/articles/10495915-growth-evaluation-accounts",
+   "source_title": "GROWTH Evaluation Accounts (Tradeify help)",
+   "source_kind": "official_help",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "Tradeify Growth funded payouts: 5 qualifying winning days; 35% consistency; min balances $53,000/$104,500/$156,500; caps 50K $1,500-$3,000, 100K $2,000-$4,000, 150K $2,500-$5,000; 90%.",
+   "quote": "Each request requires five qualifying winning days ... Growth Sim Funded uses 35% ... 50K is $53,000; 100K is $104,500; and 150K is $156,500",
+   "source_url": "https://help.tradeify.co/en/articles/11083796-growth-funded-account-payout-policy",
+   "source_title": "Growth Funded: Account Payout Policy (Tradeify help)",
+   "source_kind": "official_help",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "Tradeify Select eval: 40% consistency (50% add-on), min 3 trading days, no DLL, EOD DD $3,000 (100K) / $4,500 (150K), 8/12 minis; funded: no consistency; Select Daily DLL $1,000/$1,250/$1,750 (50K/100K/150K); Select Flex 5-day payouts no DLL.",
+   "quote": "100K ... Profit Target $6,000, Maximum Drawdown $3,000 (End of Day), Daily Loss Limit None, Consistency 40% (50% add-on available), 8 mini",
+   "source_url": "https://help.tradeify.co/en/articles/12853921-select-evaluation-accounts",
+   "source_title": "Select Evaluation Accounts + Select Flex and Select Daily Payout Policies (Tradeify help)",
+   "source_kind": "official_help",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "Tradeify prices (one-time, no activation): Growth $145/$255/$369 (promo $87/$153/$221), resets $95/$169/$229; Select $165/$265/$369 (promo $99/$159/$221.40); max 5 sim-funded accounts; copy trading allowed across up to 5 own accounts; Select Daily 50K cap $1,000 pre-Sept 1 2026 / $1,250 after.",
+   "quote": "50K: $145 list price (typical promo $87), reset fee $95 ... You can hold a maximum of 5 simulated funded accounts at any time",
+   "source_url": "https://propdatalab.com/firms/tradeify/",
+   "source_title": "Tradeify Rules 2026 (propdatalab) + tradetanto",
+   "source_kind": "third_party_review",
+   "jj_own_words": false,
+   "date": "2026-09",
+   "confidence": "medium"
+  },
+  {
+   "claim": "Lucid: 10 active evals and 5 active funded per household, 10 total.",
+   "quote": "Up to 5 active funded accounts per household or family ... Up to 10 active evaluation accounts per household or family, with a maximum of 10 accounts in total",
+   "source_url": "https://support.lucidtrading.com/en/articles/11404617-maximum-number-of-accounts",
+   "source_title": "Maximum Number of Accounts (Lucid support)",
+   "source_kind": "official_help",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "LucidFlex payouts: 90/10; 5 profitable days per cycle; min $500; max 50% of balance up to $1,000/$2,000/$2,500/$3,000 (25K-150K); 5 payouts then live.",
+   "quote": "minimum payout request is $500, with the maximum payout request being 50% of the account balance ... $25,000 accounts up to $1,000, $50,000 accounts up to $2,000, $100,000 accounts up to $2,500, and $150,000 accounts up to $3,000",
+   "source_url": "https://support.lucidtrading.com/en/articles/12945796-lucidflex-payouts",
+   "source_title": "LucidFlex Payouts (Lucid support)",
+   "source_kind": "official_help",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "LucidPro payouts: 90/10; minimum profit goal $250/$500/$750/$1,000 per cycle, resets after each payout; LucidPro has a DLL on 50K+ and 40% funded consistency; LucidFlex has optional DLL and no funded consistency.",
+   "quote": "minimum profit goal that varies by account size ($250 for $25,000 accounts, $500 for $50,000 accounts, $750 for $100,000 accounts, and $1,000 for $150,000 accounts)",
+   "source_url": "https://support.lucidtrading.com/en/articles/12890092-lucidpro-payouts",
+   "source_title": "LucidPro Payouts (Lucid support) + LucidFlex Funded Account",
+   "source_kind": "official_help",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "Lucid pricing (one-time): LucidPro $123/$192/$307/$410; LucidFlex $89-$407; targets $1,250/$3,000/$6,000/$9,000; EOD MLL $1,000/$2,000/$3,000/$4,500.",
+   "quote": "LucidPro pricing per Lucid's pricing page (as of September 16, 2026): $123 (25K), $192 (50K), $307 (100K), $410 (150K)",
+   "source_url": "https://proptradingvibes.com/blog/lucid-trading-faq",
+   "source_title": "Lucid Trading FAQ (proptradingvibes) + tradingtoolshub pricing guide",
+   "source_kind": "third_party_review",
+   "jj_own_words": false,
+   "date": "2026-09-16",
+   "confidence": "medium"
+  },
+  {
+   "claim": "Lucid copy trading: trade copiers permitted between your own evaluation and funded accounts; copying other traders or signal services prohibited.",
+   "quote": "Automated trading systems and trade copiers are permitted ... copying another trader's fills into your accounts or running a signal service is not permitted",
+   "source_url": "https://support.lucidtrading.com/en/articles/11404728-other-activities",
+   "source_title": "Other Activities (Lucid support) via tradedupe/affordableindicators summaries",
+   "source_kind": "official_help",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "medium"
+  },
+  {
+   "claim": "Alpha Futures Standard: $79/$159/$239 per month; 6% target ($3,000/$6,000/$9,000); 4% MLL ($2,000/$4,000/$6,000); $149 activation; tiered split 70/70/80/80/90; scaling plan.",
+   "quote": "The Standard Plan is available in $50K, $100K, and $150K sizes at $79, $159, and $239 per month ... scales from 70% on the first two payouts to 80% on payouts 3 and 4, then 90% from payout 5",
+   "source_url": "https://alpha-futures.com/posts/alpha-futures-standard-plan-is-back-rules-fees-what-s-new",
+   "source_title": "Alpha Futures Standard Plan Is Back (official post) + saveonpropfirms",
+   "source_kind": "official_blog",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "Alpha Futures Advanced: 50K $4,000 target / $1,750 MLL / $209 mo / $189 reset; 100K $8,000 / $3,500 / $349 / $319; 150K $12,000 / $5,250 / $489 / $449; no DLL; no scaling; 90% from start; $15,000 max per request.",
+   "quote": "Advanced 50K: $4,000 profit target, $1,750 Maximum Loss Limit, no daily loss guard, $209/month, $189 reset fee",
+   "source_url": "https://help.alpha-futures.com/en/articles/11634907-advanced-account-overview",
+   "source_title": "Advanced Account Overview (Alpha Futures help)",
+   "source_kind": "official_help",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "Alpha Futures payouts: up to 4 per month, each after 5 winning days of >= $200 (non-consecutive); Standard max withdrawal $3,000/$4,000/$5,000; Zero $1,000/$1,500/$2,500; Advanced $15,000.",
+   "quote": "pay themselves up to 4 times a month, and can request every 5 winning trading days of $200 profit or more",
+   "source_url": "https://help.alpha-futures.com/en/articles/9492051-payout-policy",
+   "source_title": "Payout Policy + Maximum Withdrawal Request (Alpha Futures help)",
+   "source_kind": "official_help",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "Alpha Futures max allocation: Zero 5, Direct 5, Standard 5, Advanced 3 qualified accounts; copy trading only from your own external account into Alpha; copying other analysts leads to termination.",
+   "quote": "Zero Account: 5 Qualified Accounts; Direct Account: 5 Qualified Accounts; Standard Account: 5 Qualified Accounts; Advanced Account: 3 Qualified Accounts ... The only copy trading allowed is that from your own external account to your Alpha Futures Account",
+   "source_url": "https://help.alpha-futures.com/en/articles/9492088-maximum-allocation",
+   "source_title": "Maximum Allocation + Terms and Conditions (Alpha Futures)",
+   "source_kind": "official_help",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "Apex: maximum 20 PA accounts per household across all funded types; copy trading allowed across own PAs (personal and business name) with the same-direction/no-hedge rule.",
+   "quote": "You may hold a maximum of 20 PA accounts total per household ... copy trading across PA accounts under your personal name and business name is allowed",
+   "source_url": "https://support.apextraderfunding.com/hc/en-us/articles/4406804554779-How-Many-Paid-Funded-Accounts-Am-I-Allowed-to-Have",
+   "source_title": "How Many Paid/Funded Accounts Am I Allowed to Have? (Apex support) + proptradingvibes",
+   "source_kind": "official_help",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "Apex 4.0 (March 2026): one-time eval fees Intraday $167/$249/$790/$1,190 and EOD $490/$590/$1,190/$2,190 (25K-150K); activation $69 Intraday / $119 EOD; 50% consistency in PA; 5 qualifying days; $500 min; 100% of first $25,000 then 90/10.",
+   "quote": "Intraday plan prices are 25K = $167, 50K = $249, 100K = $790, 150K = $1190, while EOD plan prices are 25K = $490, 50K = $590, 100K = $1190, 150K = $2190",
+   "source_url": "https://damnpropfirms.com/futures-prop-firms/apex-trader-funding/",
+   "source_title": "Apex Trader Funding Review (damnpropfirms) + proptradingvibes + phidias",
+   "source_kind": "third_party_review",
+   "jj_own_words": false,
+   "date": "2026-03",
+   "confidence": "medium"
+  },
+  {
+   "claim": "Apex safety net = drawdown + $100 (50K $2,500 -> $2,600; 100K $3,000; 150K $4,000), required for first 3 payouts.",
+   "quote": "The safety net is defined as the amount equivalent to the drawdown based on the account size plus an additional $100",
+   "source_url": "https://phidiaspropfirm.com/education/apex-trader-funding-4-0-explained",
+   "source_title": "Apex Trader Funding 4.0 explained (phidiaspropfirm)",
+   "source_kind": "third_party_review",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "medium"
+  },
+  {
+   "claim": "News trading comparison (Sept 22, 2026): Tradeify no restriction; Apex allows with brackets; Topstep allows with CPI window since Sept 11, 2026; MFF blackout 2 min on funded.",
+   "quote": "Topstep: News Trading is allowed, subject to CPI restrictions starting September 11, 2026",
+   "source_url": "https://traderssecondbrain.com/guides/futures-prop-firms-news-trading",
+   "source_title": "Futures Prop Firms for News Trading 2026 (traderssecondbrain)",
+   "source_kind": "third_party_review",
+   "jj_own_words": false,
+   "date": "2026-09-22",
+   "confidence": "medium"
+  },
+  {
+   "claim": "FundedNext Futures Flex: 50K $70; EOD trailing DD $1,500-$4,000; 40% consistency in challenge only; 95% split; 5 performance rewards then account concludes; 24h payout guarantee.",
+   "quote": "The Flex plan offers the cheapest pricing, with $50k accounts costing just $70 ... Flex offers 95% reward share",
+   "source_url": "https://damnpropfirms.com/futures-prop-firms/fundednext/",
+   "source_title": "FundedNext Futures Review 2026 (damnpropfirms)",
+   "source_kind": "third_party_review",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "low"
+  }
+ ],
+ "numbers": "see firm_rules.json rows (profit_target / max_drawdown / eval_cost per plan) and the per-firm account caps: Topstep 5 XFAs; MFF 5 (3 if 100K+); Tradeify 5; Lucid 10 eval / 5 funded; Alpha Standard 5 / Advanced 3 / Zero 5; Apex 20 PAs; E8 Signature caps 2.5/2.5/4.5/5.5% then $25,000",
+ "sources": "see the 'Full source list' section of prop-firm-rules.md (44 official URLs, 4 news URLs, ~30 third-party URLs)",
+ "contradictions": [
+  "Funded Engineer: all news sources say it filed for bankruptcy on 15 July 2024, yet JJ's July 2026 video credits ~$180,000 to it. The firm in the video is probably a different entity (name misheard in transcript) - unresolved.",
+  "E8 copy trading: official futures policy allows copying across your own accounts, while a third-party review states copying between multiple E8 evaluation accounts is prohibited.",
+  "E8 payout buffer: described both as 'equity buffer equal to the EOD dynamic drawdown' and as 'a mandatory 4% profit buffer'.",
+  "E8 reset fee: one third party says $0 / $88 setup fee but admits it is unconfirmed; official overview says no activation or subscription fees.",
+  "MFF Pro consistency: official consistency article says 50% for Pro; thetraderstack says no consistency rule in the Pro sim-funded phase. MFF Core consistency: 40% (tradecovex) vs unclear officially.",
+  "MFF Rapid payouts: official 50K article says daily (every 24h); tradecovex says 'every 5 winning days' with $1,250 cap.",
+  "MFF Pro pricing: $157/$267/$347 (thetraderstack) vs $229/month (tradecovex) vs $227-$477 (thepropjournalist).",
+  "Alpha Advanced pricing: official help says $209/$349/$489 monthly; third parties list $139/$279/$419.",
+  "Tradeify Select 50K profit target: $2,500 in one third-party summary vs $3,000 implied by Growth parity - official 50K Select row not captured.",
+  "Apex drawdown: 50K $2,500 / 100K $3,000 / 150K $4,000 (phidias) vs '5% EOD trailing' (another review) - the dollar figures are more specific and used here.",
+  "Topstep minimum trading days: official parameters list none; third parties cite 2 or 5.",
+  "Topstep daily loss limit: official RTP article lists -$1,000/-$2,000/-$3,000; whether breaching it fails the account or only locks the day is not stated in the captured text (third parties call it a soft lockout)."
+ ],
+ "open_questions": [
+  "Exact 2026 pricing for E8 Zero futures and whether E8 Signature resets are available.",
+  "MFF Rapid 100K/150K parameters and the Core plan's exact drawdown dollar amount and consistency %.",
+  "Tradeify Select 50K official profit target; Select Flex payout caps for 100K/150K.",
+  "Lucid LucidPro payout caps per request and LucidPro daily loss limit amounts.",
+  "Alpha Futures Qualified-account daily loss limit amounts by size.",
+  "Apex per-size payout caps and current contract limits; whether the 20-PA cap is per person or per household (both phrasings appear).",
+  "Which firm JJ's '$180k Funded Engineer' really is, so its rules can be added.",
+  "Whether any firm explicitly permits identical trades on 20-45 accounts simultaneously when accounts are at different firms (each firm only regulates its own accounts; cross-firm copying is governed by the copier tool and each firm's own-account rule).",
+  "Tradeify, Lucid, Alpha and Apex official news-trading pages were not captured directly; only a third-party comparison was."
+ ],
+ "queries_run": 58
+}

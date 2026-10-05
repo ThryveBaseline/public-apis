@@ -32,6 +32,9 @@ def main() -> int:
         except Exception as e:  # noqa: BLE001
             print(f"skip {f}: {e}")
             continue
+        if not isinstance(d, dict):
+            print(f"skip {f}: not an angle file")
+            continue
         angle = d.get("angle") or os.path.basename(f)[:-5]
         per_angle.append((angle, len(d.get("facts", [])), d.get("queries_run")))
         for x in d.get("facts", []):
@@ -42,11 +45,17 @@ def main() -> int:
             x = dict(x)
             x["angle"] = angle
             facts.append(x)
-        for n in d.get("numbers", []):
+        nums = d.get("numbers", [])
+        if isinstance(nums, str):  # compact relay: a pointer sentence instead of rows
+            nums = [{"name": "see", "value": nums, "context": "", "source_url": ""}]
+        for n in nums:
             n = dict(n)
             n["angle"] = angle
             numbers.append(n)
-        for s in d.get("sources", []):
+        srcs = d.get("sources", [])
+        if isinstance(srcs, str):
+            srcs = []
+        for s in srcs:
             u = (s.get("url") or "").strip()
             if u and u not in sources:
                 sources[u] = s
