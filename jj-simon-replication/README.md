@@ -52,7 +52,7 @@ python -m fpt.cli backtest --csv data/NQ_1m.csv --source-tz UTC --report out/rep
 
 # the risk model
 python -m fpt.cli sizing --atr 12.4            # tier, stop, contracts, risk, target
-python -m fpt.cli edge --p 0.54 --rr 1.5 --trades-per-day 10 --risk 1000
+python -m fpt.cli edge --p 0.54 --rr 1.5 --trades-per-day 1.5 --risk 1000
 python -m fpt.cli evaluation --firm topstep_100k --p 0.54 --rr 1.5
 
 # the account operation
@@ -77,6 +77,24 @@ python -m fpt.cli portfolio --account topstep_100k:10 --months 3 --scan-risk
 | Costs | 0.25-point slippage per side, $2.50 per contract per side | assumption |
 
 Change any of it through `StrategyConfig` (see `fpt/strategy.py`) or the CLI flags.
+
+## Calibration: how many trades a day really carry the edge
+
+JJ says "about 10 trades a day" (up to 20-30 in later videos). The
+independent backtests of his written rules find far fewer qualifying
+signals: fxreplay's study logged 150-158 trades, the 365-day
+custom-indicator test 289 trades in a year (about 1.2 a day), both at
+roughly 52-54% win rate and 1.5R. His own reported results agree with the
+backtests, not with the headline cadence: "$105,700 in 3 weeks" across
+about 40 accounts is 105,700 / (40 x 15) = $176 per account per day, about
+0.18R at $1,000 risk, which is what one to three 54% / 1.5R trades a day
+produce. Ten trades a day at 54% would be +3.5R (+$3,500) per account per
+day and would blow through every prop firm's payout cap within a week.
+
+So the simulators default to **1.5 qualifying trades per day**; the extra
+trades in his "10 a day" are lower-grade entries whose expectancy is close
+to zero. `python -m fpt.cli implied --payout 105700 --accounts 40 --days 15`
+does this arithmetic for any claim.
 
 ## What the risk tools answer
 

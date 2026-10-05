@@ -65,6 +65,29 @@ def dollar_risk(stop_points: float, contracts: int, point_value: float = NQ_POIN
 # Edge mathematics
 # ---------------------------------------------------------------------------
 
+def implied_daily_r(payout_dollars: float, accounts: int, trading_days: int, risk_per_trade: float) -> dict:
+    """Back out the per-account daily edge implied by a reported result.
+
+    Example: "$105,700 in 3 weeks" across ~40 accounts at ~$1,000 risk per
+    trade -> 105,700 / (40 * 15) / 1,000 = 0.176 R per account per day,
+    which is what the public third-party backtests also imply (about
+    one to three qualifying trades a day at ~54% / 1.5R), not the 3.5 R/day
+    that "10 trades a day at 54%" would produce.
+    """
+    per_account_day = payout_dollars / (accounts * trading_days)
+    return {
+        "dollars_per_account_day": per_account_day,
+        "r_per_account_day": per_account_day / risk_per_trade,
+        "dollars_per_day_all_accounts": payout_dollars / trading_days,
+    }
+
+
+def trades_per_day_for_daily_r(daily_r: float, p_win: float, rr: float) -> float:
+    """Number of trades per day needed for a p / rr edge to produce daily_r."""
+    e = expectancy_r(p_win, rr)
+    return float("inf") if e <= 0 else daily_r / e
+
+
 def expectancy_r(p_win: float, rr: float) -> float:
     """Expected R per trade for win probability p and reward:risk rr."""
     return p_win * rr - (1.0 - p_win)

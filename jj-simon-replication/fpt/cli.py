@@ -3,7 +3,7 @@
     python -m fpt.cli synthetic --days 60 --out data/synthetic.csv
     python -m fpt.cli backtest --csv data/NQ_1m.csv --source-tz UTC --report out/report.md
     python -m fpt.cli sizing --atr 12.4
-    python -m fpt.cli edge --p 0.54 --rr 1.5 --trades-per-day 10 --risk 1000
+    python -m fpt.cli edge --p 0.54 --rr 1.5 --trades-per-day 1.5 --risk 1000
     python -m fpt.cli evaluation --firm topstep_100k --p 0.54 --rr 1.5
     python -m fpt.cli portfolio --account topstep_100k:20 --account tradeify_100k_select:25 --months 6
 """
@@ -76,7 +76,7 @@ def main(argv=None):
     e = sub.add_parser("edge", help="expectancy, Kelly, streaks and the statistical daily stop")
     e.add_argument("--p", type=float, default=0.54)
     e.add_argument("--rr", type=float, default=1.5)
-    e.add_argument("--trades-per-day", type=float, default=10.0)
+    e.add_argument("--trades-per-day", type=float, default=1.5, help="qualifying trades per day; the public backtests imply 1-3 (see README calibration)")
     e.add_argument("--risk", type=float, default=1000.0)
     e.add_argument("--quantile", type=float, default=0.05)
 
@@ -84,7 +84,7 @@ def main(argv=None):
     v.add_argument("--firm", default="topstep_100k", choices=sorted(FIRM_PRESETS))
     v.add_argument("--p", type=float, default=0.54)
     v.add_argument("--rr", type=float, default=1.5)
-    v.add_argument("--trades-per-day", type=float, default=10.0)
+    v.add_argument("--trades-per-day", type=float, default=1.5)
     v.add_argument("--max-days", type=int, default=30)
     v.add_argument("--sims", type=int, default=4000)
 
@@ -93,7 +93,7 @@ def main(argv=None):
     f.add_argument("--risk", type=float, default=1000.0)
     f.add_argument("--p", type=float, default=0.54)
     f.add_argument("--rr", type=float, default=1.5)
-    f.add_argument("--trades-per-day", type=float, default=10.0)
+    f.add_argument("--trades-per-day", type=float, default=1.5)
     f.add_argument("--months", type=int, default=6)
     f.add_argument("--sims", type=int, default=1000)
     f.add_argument("--daily-loss-stop-r", type=float)
@@ -103,6 +103,14 @@ def main(argv=None):
     f.add_argument("--json", action="store_true")
 
     sub.add_parser("firms", help="list firm presets and their verification status")
+
+    c = sub.add_parser("implied", help="back out the per-account daily edge implied by a reported result")
+    c.add_argument("--payout", type=float, required=True, help="dollars reported")
+    c.add_argument("--accounts", type=int, required=True)
+    c.add_argument("--days", type=int, required=True, help="trading days")
+    c.add_argument("--risk", type=float, default=1000.0)
+    c.add_argument("--p", type=float, default=0.54)
+    c.add_argument("--rr", type=float, default=1.5)
 
     a = p.parse_args(argv)
 
@@ -183,6 +191,12 @@ def main(argv=None):
             print(f"payouts median {res['payouts_total']['median']:,.0f}, costs median {res['costs_total']['median']:,.0f}, P(net>0) {res['p_net_positive']:.1%}, breaches/sim {res['breaches_per_sim']['mean']:.1f}")
             print("monthly net median: " + ", ".join(f"{x:,.0f}" for x in res["monthly_net_median"]))
             print("funded accounts (median) by month: " + ", ".join(f"{x:.0f}" for x in res["funded_accounts_median_by_month"]))
+        return 0
+
+    if a.cmd == "implied":
+        out = R.implied_daily_r(a.payout, a.accounts, a.days, a.risk)
+        out["trades_per_day_needed_at_p_rr"] = R.trades_per_day_for_daily_r(out["r_per_account_day"], a.p, a.rr)
+        print(json.dumps(out, indent=2))
         return 0
 
     if a.cmd == "firms":

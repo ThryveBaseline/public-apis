@@ -20,7 +20,7 @@ class PortfolioConfig:
     risk_per_trade: float | dict[str, float] = 1000.0
     p_win: float = 0.54
     rr: float = 1.5
-    trades_per_day: float = 10.0
+    trades_per_day: float = 1.5  # qualifying trades/day implied by the public backtests and his reported results; his '10 a day' includes lower-grade trades
     bootstrap_r: np.ndarray | None = None  # resample real trade R outcomes instead of parametric p/rr
     months: int = 6
     trading_days_per_month: int = 21
