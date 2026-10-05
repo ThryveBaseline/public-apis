@@ -288,3 +288,13 @@ def test_topstep_daily_loss_limit_is_a_soft_stop():
     acct.apply_day(np.array([[-1.0, -1.0, -1.0, -1.0]]), np.ones((1, 4), bool))
     assert acct.balance[0] == pytest.approx(98_000)  # trading stopped at the -$2,000 daily loss limit
     assert acct.phase[0] == EVAL
+
+
+def test_extra_sessions_and_rolling_fair_value(bars):
+    cfg = StrategyConfig(pm_session=True, extra_sessions=(("10:00", "10:05", "10:30"),), rolling_fair_value=True)
+    t = generate_trades(bars, cfg)
+    assert set(t["session"]) <= {"am", "pm", "s1000"}
+    fv = fair_value_series(bars, FairValueConfig(pm_anchor=True, extra_anchor_times=("10:00",)))
+    assert fv.iloc[30] == bars["open"].iloc[30]  # 10:00 anchor re-sets fair value
+    assert fv.iloc[29] == bars["open"].iloc[0]
+    assert fv.iloc[270] == bars["open"].iloc[270]  # 14:00 anchor

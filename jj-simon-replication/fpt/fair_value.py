@@ -19,10 +19,11 @@ from .data import NY
 
 @dataclass(frozen=True)
 class FairValueConfig:
-    anchor: str = "open_0930"  # "open_0930" | "close_0929" | "vwap_0929_0930"
+    anchor: str = "open_0930"  # "open_0930" | "close_0929" | "vwap_0929_0930" (how the 09:30 anchor is read)
     band_points: float = 38.0
     pm_anchor: bool = False  # anchor a second fair value at pm_time
     pm_time: str = "14:00"
+    extra_anchor_times: tuple = ()  # further session anchors (HH:MM), each the open of that bar: e.g. ("08:30", "18:00", "20:00")
 
 
 def minute_of_day(index: pd.DatetimeIndex) -> np.ndarray:
@@ -66,12 +67,14 @@ def session_anchor_prices(df: pd.DataFrame, cfg: FairValueConfig = FairValueConf
     o, h, l, c = (df[k].to_numpy(float) for k in ("open", "high", "low", "close"))
     v = df["volume"].to_numpy(float) if "volume" in df.columns else np.zeros(len(df))
     rows = []
+    extra_cols = [f"fv_{t.replace(':', '')}" for t in cfg.extra_anchor_times]
     for k in np.unique(keys):
         m = keys == k
         am = _anchor_price(o[m], h[m], l[m], c[m], v[m], mod[m], 9 * 60 + 30, cfg.anchor)
         pm = _anchor_price(o[m], h[m], l[m], c[m], v[m], mod[m], hhmm(cfg.pm_time), "open_0930") if cfg.pm_anchor else np.nan
-        rows.append((k, am, pm))
-    res = pd.DataFrame(rows, columns=["day_key", "fv_am", "fv_pm"]).set_index("day_key")
+        extras = [_anchor_price(o[m], h[m], l[m], c[m], v[m], mod[m], hhmm(t), "open_0930") for t in cfg.extra_anchor_times]
+        rows.append((k, am, pm, *extras))
+    res = pd.DataFrame(rows, columns=["day_key", "fv_am", "fv_pm", *extra_cols]).set_index("day_key")
     res["date"] = pd.to_datetime(res.index, utc=True).tz_convert(NY).date
     return res
 
@@ -86,13 +89,17 @@ def fair_value_series(df: pd.DataFrame, cfg: FairValueConfig = FairValueConfig()
     pm_minute = hhmm(cfg.pm_time)
     am_map = anchors["fv_am"].to_dict()
     pm_map = anchors["fv_pm"].to_dict()
+    # every anchor in time order so a later session overrides an earlier one
+    schedule = [(9 * 60 + 30, am_map)]
+    if cfg.pm_anchor:
+        schedule.append((pm_minute, pm_map))
+    for t in cfg.extra_anchor_times:
+        schedule.append((hhmm(t), anchors[f"fv_{t.replace(':', '')}"].to_dict()))
+    schedule.sort(key=lambda x: x[0])
     for k in np.unique(keys):
         m = keys == k
-        am = am_map.get(k, np.nan)
-        if not np.isnan(am):
-            fv[m & (mod >= 9 * 60 + 30)] = am
-        if cfg.pm_anchor:
-            pm = pm_map.get(k, np.nan)
-            if not np.isnan(pm):
-                fv[m & (mod >= pm_minute)] = pm
+        for minute, mp in schedule:
+            val = mp.get(k, np.nan)
+            if not np.isnan(val):
+                fv[m & (mod >= minute)] = val
     return pd.Series(fv, index=df.index, name="fair_value")

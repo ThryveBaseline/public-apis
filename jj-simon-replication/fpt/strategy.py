@@ -51,6 +51,10 @@ class StrategyConfig:
     pm_start: str = "14:00"
     pm_continuation_end: str = "14:05"
     pm_end: str = "15:00"  # JJ's earlier videos: 14:00-15:00 afternoon session
+    extra_sessions: tuple = ()  # more (start, continuation_end, end) windows anchored at their start bar's open, e.g. (("08:30", "08:35", "09:29"), ("18:00", "18:05", "19:30"), ("20:00", "20:05", "21:30")) for his 8:30 news, 6 PM and 8 PM sessions
+    rolling_fair_value: bool = False  # JJ: "if there's consolidation and then more breakouts, I'll just treat the most recent consolidation as a fair price"
+    consolidation_bars: int = 8  # a consolidation = the last N bars' range below consolidation_atr_mult x ATR
+    consolidation_atr_mult: float = 1.5
     # fair value
     anchor: str = "open_0930"
     band_points: float = 38.0
@@ -97,7 +101,8 @@ def generate_trades(df: pd.DataFrame, cfg: StrategyConfig | None = None) -> pd.D
     a = atr_fn(df, cfg.atr_period).to_numpy(float)
     fv = fair_value_series(
         df,
-        FairValueConfig(anchor=cfg.anchor, band_points=cfg.band_points, pm_anchor=cfg.pm_session, pm_time=cfg.pm_start),
+        FairValueConfig(anchor=cfg.anchor, band_points=cfg.band_points, pm_anchor=cfg.pm_session, pm_time=cfg.pm_start,
+                        extra_anchor_times=tuple(x[0] for x in cfg.extra_sessions)),
     ).to_numpy(float)
     sh, sl = swing_points(df, cfg.swing_left, cfg.swing_right)
     keys = day_keys(df.index)
@@ -107,6 +112,9 @@ def generate_trades(df: pd.DataFrame, cfg: StrategyConfig | None = None) -> pd.D
     windows = [("am", hhmm(cfg.session_start), hhmm(cfg.continuation_end), hhmm(cfg.window_end))]
     if cfg.pm_session:
         windows.append(("pm", hhmm(cfg.pm_start), hhmm(cfg.pm_continuation_end), hhmm(cfg.pm_end)))
+    for start, cont_end, end in cfg.extra_sessions:
+        windows.append((f"s{start.replace(':', '')}", hhmm(start), hhmm(cont_end), hhmm(end)))
+    windows.sort(key=lambda w: w[1])
 
     rev_end_min = hhmm(cfg.reversion_end) if cfg.reversion_end else None
     trades: list[dict] = []
@@ -122,6 +130,8 @@ def generate_trades(df: pd.DataFrame, cfg: StrategyConfig | None = None) -> pd.D
         position: dict | None = None
         day_high = -np.inf
         day_low = np.inf
+        rolling_fv = np.nan  # most recent consolidation's price, once one has formed after a push (JJ's rolling fair price)
+        last_window = None
         piv_high: list[list] = []  # [index, price, broken]
         piv_low: list[list] = []
         first = np.where(mod[pos] == windows[0][1])[0]
@@ -185,6 +195,17 @@ def generate_trades(df: pd.DataFrame, cfg: StrategyConfig | None = None) -> pd.D
             if win is None:
                 continue
             session, w_start, w_cont_end, w_end = win
+            if session != last_window:
+                rolling_fv = np.nan  # each session starts from its own anchor
+                last_window = session
+            if cfg.rolling_fair_value and mod[t] >= w_cont_end:
+                j0 = t - cfg.consolidation_bars + 1
+                if j0 >= day_bars[0]:
+                    rng = h[j0 : t + 1].max() - l[j0 : t + 1].min()
+                    if rng <= cfg.consolidation_atr_mult * a[t] and abs(c[t] - fvt) > rng:
+                        rolling_fv = float(c[j0 : t + 1].mean())
+                if not np.isnan(rolling_fv):
+                    fvt = rolling_fv
             setup = "continuation" if mod[t] < w_cont_end else "reversion"
             if setup == "continuation" and mod[t] < w_start + cfg.skip_first_minutes:
                 continue

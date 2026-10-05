@@ -30,6 +30,11 @@ def _cfg_from_args(a) -> StrategyConfig:
             setattr(cfg, name, v)
     if getattr(a, "pm_session", False):
         cfg.pm_session = True
+    if getattr(a, "all_sessions", False):
+        cfg.pm_session = True
+        cfg.extra_sessions = (("08:30", "08:35", "09:29"), ("18:00", "18:05", "19:30"), ("20:00", "20:05", "21:30"))
+    if getattr(a, "rolling_fair_value", False):
+        cfg.rolling_fair_value = True
     if getattr(a, "require_band_touch", False):
         cfg.require_band_touch = True
     if getattr(a, "no_grade_a", False):
@@ -68,6 +73,8 @@ def main(argv=None):
     b.add_argument("--slippage-points", type=float, dest="slippage_points")
     b.add_argument("--commission", type=float, dest="commission_per_contract_side")
     b.add_argument("--pm-session", action="store_true", dest="pm_session")
+    b.add_argument("--all-sessions", action="store_true", help="JJ's full day: 08:30 news, 09:30, 14:00, 18:00 and 20:00 sessions")
+    b.add_argument("--rolling-fair-value", action="store_true", dest="rolling_fair_value", help="re-anchor fair value to the most recent consolidation (JJ's stated practice)")
     b.add_argument("--require-band-touch", action="store_true", dest="require_band_touch")
     b.add_argument("--no-grade-a", action="store_true", dest="no_grade_a")
 

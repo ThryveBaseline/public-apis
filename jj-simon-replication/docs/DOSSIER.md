@@ -21,7 +21,7 @@ with URLs), `docs/research/*.md` (per-angle reports), `docs/research/sources.csv
 | Business | Mentorship operated by SIMON FUND LLC (entry model, trade recaps, risk-management dashboard, weekly 1-on-1 calls; price behind an application funnel; curriculum lists continuation and mean-reversion specifics, understanding and identifying fair price, expected value and variance, risk of ruin and bankroll management, prop-firm math, volume by session, VWAP, news days); Whop listing 4.9/5 from 46 reviews with 6,125 members; AllPros 4.6/5 from 5 reviews ([allpros.io](https://allpros.io/course/jjs-mentorship)); a $49/month community tier on Whop and a $299.99 pre-recorded workshop; free mini-course and Discord; webinar funnel ([jjwebinar.com](https://jjwebinar.com/)); the free PropFirmEV calculator | **JJ** / **3rd** |
 | Audience | about 32,800 YouTube subscribers, 17K Instagram, 18.1K TikTok (Oct 2026) | platform counts |
 | Credential detail | LinkedIn: University of Washington; built options-pricing software (Black-Scholes and Cox-Ross-Rubinstein) as a student project | **JJ** |
-| Appearances | Chart Fanatics (host Riz Iqbal): "This Kid Printed $2M In Payouts Trading 30 Times/Day, Here's How." ([-lxNWJGWtbg](https://www.youtube.com/watch?v=-lxNWJGWtbg), uploaded 2026-09-18; no transcript is indexed anywhere, so "45+ accounts" and "30 times/day" exist only in its title and description); Titans of Tomorrow (host Waqar Asim), "The Genius Who Outsmarted The Prop Firm Game, And Made $1.5M In Payouts" / audio title "Quant Finance Graduate Reveals His $1.5M Prop Firm Strategy" ([aCOgfvL6lK8](https://www.youtube.com/watch?v=aCOgfvL6lK8), 2026-06-22; chapters "Why High Risk-Reward Fails Evaluations" 7:23, "Taking 20 Trades A Day Without Tilting" 12:01, "JJ's Mean Reversion Trading Model" 16:00, "His Session Open Strategy Explained" 20:07); Words of Rizdom (Riz Iqbal's audio podcast; billed "$1.8+ Million in Payouts in JUST 18 Months", "20+ scalps a day", "3 fixed simple strategies", trades live on the episode). Not him: the "Leap in with Captain Green" podcast's JJ Simon is a Singapore environment official; the Trading Nut "JJ" and the Business Insider "Kane Simons" are other people. | **3rd** |
+| Appearances | Chart Fanatics (host Riz Iqbal): "STEAL The 1-Minute Strategy That Made Him $1.8M+" ([KHEQ5g55dQ4](https://www.youtube.com/watch?v=KHEQ5g55dQ4), uploaded 2026-10-04; the episode behind the reel that started this dossier, whose blurb promises "statistics, risk models and account strategies ... optimal risk and R:R ... 45+ accounts ... knowing exactly when to stop trading"; a 22,000-word transcript exists in the GB10 corpus, see Section 11); Titans of Tomorrow clip "This Kid Printed $2M In Payouts Trading 30 Times/Day, Here's How." ([-lxNWJGWtbg](https://www.youtube.com/watch?v=-lxNWJGWtbg), 2026-09-18, nine minutes cut from the June episode below; the research sessions mis-attributed it to Chart Fanatics from search snippets); Titans of Tomorrow (host Waqar Asim), "The Genius Who Outsmarted The Prop Firm Game, And Made $1.5M In Payouts" / audio title "Quant Finance Graduate Reveals His $1.5M Prop Firm Strategy" ([aCOgfvL6lK8](https://www.youtube.com/watch?v=aCOgfvL6lK8), 2026-06-22; chapters "Why High Risk-Reward Fails Evaluations" 7:23, "Taking 20 Trades A Day Without Tilting" 12:01, "JJ's Mean Reversion Trading Model" 16:00, "His Session Open Strategy Explained" 20:07); Words of Rizdom (Riz Iqbal's audio podcast; billed "$1.8+ Million in Payouts in JUST 18 Months", "20+ scalps a day", "3 fixed simple strategies", trades live on the episode). Not him: the "Leap in with Captain Green" podcast's JJ Simon is a Singapore environment official; the Trading Nut "JJ" and the Business Insider "Kane Simons" are other people. | **3rd** |
 
 ## 2. The Fair Pricing Theory model
 
@@ -47,6 +47,32 @@ depending on filter, and that continuations had the higher win rate and
 profit factor. Other codifiers anchor differently: krisskross18's
 TradingView script uses the 09:29 candle open; the 365-day backtester
 "the candle right before the NASDAQ opens"; joetroyer offers six sources.
+
+**His own words on the anchor and its drift (Titans of Tomorrow clip, Sept 2026).**
+"First fair price that I will assume is just 9:29 Eastern before the market
+opens. And then from there, if there's consolidation and then more
+breakouts, I'll just treat the most recent consolidation as a fair price."
+On why the open is exploitable: "Whenever the session opens obviously
+increase in volatility ... it creates an unfair move. So just because
+volume came into the market and it moved a specific direction that
+shouldn't change the fair underlying price of the stocks." On news:
+"news most of the time is going to be priced in pretty fairly so that when
+news comes out there's a huge candle, I'll just trade a continuation of
+that candle for my first trade of the day. And then after that I'll take
+usually like three to four trades trying to revert that move ... back to
+the pre-news price." On cycles: "Not from session to session ... But within
+a session, I do believe there are unfair moves and if you are able to
+revert those unfair moves, then you have a positive expectancy."
+`rolling_fair_value=True` implements the consolidation re-anchor.
+
+**His full day (same clip).** 08:30 news: one continuation, three or four
+reversions. 09:30 New York: "one continuation, three or four reversions."
+Then "a longer trade ... going into lunch hour like 11:00 a.m. ... I'm
+trying to play it out from 11:00 all the way until 2:00." 14:00: "one
+continuation, three to four reversions." 18:00: "same thing." 20:00 Asian
+session: "one more time." That is the arithmetic behind "20-30 trades a
+day": five sessions of four or five trades. `--all-sessions` enables the
+08:30, 18:00 and 20:00 windows.
 
 **Window (JJ).** 09:30 to 11:00 ET, "a 90-minute window"; an afternoon
 session 14:00-15:00 in earlier videos; videos from September 2026
@@ -87,6 +113,17 @@ stronger half of his rules in the first 30 minutes and weak after 10:00.
 | Management | none: fixed target, no partials | **JJ** via fxreplay |
 | Entry timing | on the displacement close (code: next bar open) | **JJ**; fill timing is an assumption |
 
+In his own words (Titans of Tomorrow clip): phase one is time, "the minute
+any session opens, I'm ready to take a continuation"; phase two starts
+"when volume starts dying out, it will usually start to consolidate ... I
+will trade when it breaks structure back towards the opening price", "as
+long as it's before 11:00 a.m."; the signal is binary, "Either it broke
+structure or it didn't. I try to take the discretion out of it just
+because I'm trying to take so many trades"; execution: "as long as it
+closes below the structure that it broke, I'm good with entering". He does
+not use chart patterns ("most of it is artificial when market makers are
+balancing their inventory") or institutional-footprint signals.
+
 Additional detail from the `entries` research angle (44 facts): the MSB is a
 **close** past the wick high/low of the recent price leg (AndrewFXTD's
 codification), BOS is the same test with the trend; the mechanical
@@ -117,6 +154,16 @@ at a time, and whether open trades are flattened at 11:00.
 | Target | 1.5R fixed | **JJ** via fxreplay |
 | Losing weeks | "optimal risk management to ensure payouts even during losing weeks by adjusting contract size and stop loss based on candle size and market volatility" | **JJ** (transcript summary) |
 | ATR period | not published; code uses Wilder 14 | assumption |
+
+**Static risk, in his words (Titans of Tomorrow clip).** "The stop loss
+take profit are static ... on prop firms, it is infinitely better to use
+static risk in terms of like exactly 1,000, exactly 500." Asked whether a
+structure-based stop would be better: "No. No. I found infinitely better to
+have a static stop loss." On management: "I never go break even ... unless
+there is a new session opening ... Or, if we have news coming out ... like
+95% of my trades I'm not going to go break even. I find it better to just
+let it play out." And the thesis in one line: "a small bias is like
+extremely profitable on prop firms if you have good risk management."
 
 **His own reasoning for 1.5R (JJ, `risk-model` angle, 38 facts).**
 Evaluations are "minus 2K max loss and plus 3K profit target, making it
@@ -340,6 +387,22 @@ consecutive-loss rules; the Chart Fanatics episode's statistics; current
 firm rules.
 
 ## 11. Sources
+
+**Primary corpus on the GB10.** Your machine's session collected 58
+verbatim transcripts (296,678 words) of his channel and the podcast
+episodes, plus the usable pages, at `~/jj-simon-sources` and committed them
+on branch `claude/jj-simon-sources` (commit f638a1f) without pushing, since
+redistributing full transcripts is a publication decision for you. Highest
+value items for a replicator: KHEQ5g55dQ4 (Chart Fanatics, 21,988 words),
+aCOgfvL6lK8 (Titans of Tomorrow, 16,917), MVP7X-3v8xk ("Watch Me Backtest
+My $1,500,000 Trading Strategy", 9,091), 74CRg-mID5c ("How I Made $1.8M
+Trading Prop Firms (Strategy Breakdown)", 8,864), AxP-cg50TdM ("$100,000
+Per Month", 7,463), dJdBnSBJlgQ ("$550,000 on evaluations", 7,628),
+KN7j6NXXAio ("$1.6M", 6,577), BLvsYJ4sqn8 (6 & 8PM session, 6,923),
+GMDUiamqgig (6PM & 8PM on funded accounts, 2,681), sWJa8vRfPb8 ("Why I
+Can't Show You My Risk Management", 5,148), and the Road to $1M / weekly
+episodes 1-13. A local Qwen 35B model on that machine can extract the rules
+from all of them in one pass once you allow the batch run.
 
 Primary (JJ): his YouTube channel ([@itsjjsimon](https://www.youtube.com/@itsjjsimon)); [jjwebinar.com](https://jjwebinar.com/); [jj.jjsimontrades.com/schedule-call](https://jj.jjsimontrades.com/schedule-call); transcripts of "The Strategy Behind My $1.6M in Prop Firm Payouts", "Here's How You Can Make $100,000 Per Month On Prop Firms", "I Made $105,700 in 3 Weeks Day Trading NQ Futures (Road to $1M Ep. 2)" on [sozai.app](https://sozai.app/).
 Podcasts: Chart Fanatics ([-lxNWJGWtbg](https://www.youtube.com/watch?v=-lxNWJGWtbg), [chartfanatics.com](https://www.chartfanatics.com/)); [aCOgfvL6lK8](https://www.youtube.com/watch?v=aCOgfvL6lK8); [PCDHJBdj-Z4](https://www.youtube.com/watch?v=PCDHJBdj-Z4).
