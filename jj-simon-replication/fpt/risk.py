@@ -211,3 +211,33 @@ def optimal_fixed_risk(p_win: float, rr: float, drawdown_allowance: float, targe
             "median_days_to_pass": float(np.nanmedian(days_to_pass)) if passed.any() else float("nan"),
         })
     return out
+
+
+# ---------------------------------------------------------------------------
+# JJ Simon's prop-firm arithmetic (his own framing, see docs/DOSSIER.md s.4)
+# ---------------------------------------------------------------------------
+
+def cost_to_funded(eval_fee: float, pass_rate: float) -> float:
+    """Expected spend to get one funded account: fee / pass rate
+    (his example: $100 / 0.30 = $333)."""
+    return eval_fee / pass_rate if pass_rate > 0 else float("inf")
+
+
+def cost_per_drawdown_dollar(eval_fee: float, drawdown: float) -> float:
+    """Dollars paid per dollar of drawdown bought (his example: $750 for
+    $4,500 of drawdown = $0.166 per $1)."""
+    return eval_fee / drawdown
+
+
+def eval_expected_value(p_payout: float, payout: float, eval_fee: float) -> float:
+    """EV of buying one evaluation: p * payout - (1 - p) * fee (his example:
+    10% x $2,000 - 90% x $100 = +$110)."""
+    return p_payout * payout - (1.0 - p_payout) * eval_fee
+
+
+def two_trade_pass_probability(p_win: float, strict: bool = True) -> float:
+    """Evaluation posture: max risk, target cleared by two 1.5R wins.
+    strict=True: pass only on win-win (his '1 in 4 at 50%').
+    strict=False: two wins before two losses (WW, WLW, LWW)."""
+    p, q = p_win, 1.0 - p_win
+    return p * p if strict else p * p + 2 * p * p * q

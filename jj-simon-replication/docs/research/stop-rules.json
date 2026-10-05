@@ -13,7 +13,7 @@
    "confidence": "high"
   },
   {
-   "claim": "Sessions are fixed windows: 09:30-11:00 and 14:00-15:00 NY; first 10-15 minutes continuation, then mean reversion toward the 09:30 (or 14:00) price.",
+   "claim": "Sessions are fixed windows: 09:30–11:00 and 14:00–15:00 NY; first 10–15 minutes continuation, then mean reversion toward the 09:30 (or 14:00) price.",
    "quote": "traded exclusively on the 1-minute chart during two New York sessions: 9:30-11:00 AM and 2:00-3:00 PM ... In the first 10-15 minutes, traders look for continuation moves ... For the remainder of the window, the focus shifts to mean-reversion setups",
    "source_url": "https://fxreplay.com/strategies/jj-simons-fair-value-theory-nq-strategy",
    "source_title": "JJ Simon's Fair Value Theory Strategy (fxreplay.com)",
@@ -26,7 +26,7 @@
    "claim": "Per-account stop: on evals he goes max risk and quits the eval after exactly two winning trades (target hit) or treats a loss as a cheap eval and moves on.",
    "quote": "He goes maximum risk and clears the whole target in exactly two trades and then moves on. ... When JJ Simon loses a trade, it's described as a cheap eval and he moves on.",
    "source_url": "https://jjwebinar.com/",
-   "source_title": "JJ Simon - Free Live Training (jjwebinar.com)",
+   "source_title": "JJ Simon — Free Live Training (jjwebinar.com)",
    "source_kind": "JJ sales/webinar page",
    "jj_own_words": true,
    "date": "2026",
@@ -36,14 +36,14 @@
    "claim": "Funded accounts: risk drops sharply once funded ('aggressive to get funded, conservative to stay funded').",
    "quote": "The moment he is funded, he flips gears with risk coming right down",
    "source_url": "https://jjwebinar.com/",
-   "source_title": "JJ Simon - Free Live Training (jjwebinar.com)",
+   "source_title": "JJ Simon — Free Live Training (jjwebinar.com)",
    "source_kind": "JJ sales/webinar page",
    "jj_own_words": true,
    "date": "2026",
    "confidence": "high"
   },
   {
-   "claim": "Daily routine stop: one trade per account per day, one account at a time, so each account's exposure per day is a single ~1R loss or 1.5R win.",
+   "claim": "Daily routine stop: one trade per account per day, one account at a time — so each account's exposure per day is a single ~1R loss or 1.5R win.",
    "quote": "He recommends trading one account at a time and one trade per account per day as the optimal way to trade prop firms.",
    "source_url": "https://sozai.app/transcript/strategy-behind-1-6m-prop-firm-payouts/",
    "source_title": "The Strategy Behind My $1.6M in Prop Firm Payouts (sozai.app)",
@@ -66,7 +66,7 @@
    "claim": "Sizing is set around the daily loss limit and trailing drawdown so firm rules do not knock accounts out.",
    "quote": "sizing around the daily loss limit and trailing drawdown so the rules stop taking traders out",
    "source_url": "https://jjwebinar.com/",
-   "source_title": "JJ Simon - Free Live Training (jjwebinar.com)",
+   "source_title": "JJ Simon — Free Live Training (jjwebinar.com)",
    "source_kind": "JJ sales/webinar page",
    "jj_own_words": true,
    "date": "2026",
@@ -113,7 +113,7 @@
    "confidence": "high"
   },
   {
-   "claim": "Risk per trade ~$1,000 via ATR tiers: ATR>20 -> 50pt SL/75pt TP (1 contract); ATR 7-20 -> 25/37.5 (2 contracts); ATR<7 -> 16.5/24.75 (3 contracts). He most often uses 25/37.5.",
+   "claim": "Risk per trade ~$1,000 via ATR tiers: ATR>20 → 50pt SL/75pt TP (1 contract); ATR 7–20 → 25/37.5 (2 contracts); ATR<7 → 16.5/24.75 (3 contracts). He most often uses 25/37.5.",
    "quote": "He most often uses 25 point SL and 37.5 point TP for 1.5R, but in more volatile times he uses 50 point SL and 75 point TP. These SL distances with 1, 2, or 3 NQ contracts equate to $1k risk per trade.",
    "source_url": "https://jjwebinar.com/",
    "source_title": "jjwebinar.com / fxreplay.com",
@@ -143,7 +143,7 @@
    "confidence": "high"
   },
   {
-   "claim": "He calls trading psychology 'fake'; the mini-course lesson 4 is 'The Lie About Psychology - Why Trading Psychology Is Fake'. His mentorship nonetheless has a module 'The Killer In Trading: Emotions & Overtrading'.",
+   "claim": "He calls trading psychology 'fake'; the mini-course lesson 4 is 'The Lie About Psychology — Why Trading Psychology Is Fake'. His mentorship nonetheless has a module 'The Killer In Trading: Emotions & Overtrading'.",
    "quote": "Lesson 04 'The Lie About Psychology' ... 'Why Trading Psychology Is Fake' ... 'JJ Simon 2026 Mentorship: The Killer In Trading Emotions & Overtrading Sample Video'",
    "source_url": "https://jj.jjsimontrades.com/mini-course",
    "source_title": "Free Quant Strategy Mini Course (jj.jjsimontrades.com) / YouTube 1AhJ5FfcTDo",
@@ -196,14 +196,14 @@
    "claim": "Third-party TradingView indicator built on his method adds guardrails: skip the 08:30 news candle, post-open entry cutoff, funded-vs-eval warnings, mid-day low-volume window.",
    "quote": "Session timing guardrails skip the 08:30 news candle, honor post-open entry cutoffs, funded-vs-eval warnings, and the mid-day low-volume window.",
    "source_url": "https://www.tradingview.com/script/j4BFY7JW-Fair-Price-Theory-NQ-Reversion-Continuation/",
-   "source_title": "Fair Price Theory - NQ Reversion / Continuation - Indicator by joetroyer (TradingView)",
+   "source_title": "Fair Price Theory - NQ Reversion / Continuation — Indicator by joetroyer (TradingView)",
    "source_kind": "third-party indicator",
    "jj_own_words": false,
    "date": "2026",
    "confidence": "medium"
   },
   {
-   "claim": "Third-party verdicts: method is mechanically profitable but modest (PF ~1.2 raw -> ~1.7 optimized; 52-55% WR; ~49-52% annual return on $100k micro backtest).",
+   "claim": "Third-party verdicts: method is mechanically profitable but modest (PF ~1.2 raw → ~1.7 optimized; 52–55% WR; ~49–52% annual return on $100k micro backtest).",
    "quote": "mechanically profitable but not extraordinarily so, yielding consistent modest returns ... profit factors improving from around 1.2 to 1.7 after optimization",
    "source_url": "https://sozai.app/transcript/jj-simons-strategy-backtest-365-days/",
    "source_title": "Is JJ Simons Strategy Profitable? I Backtested 365 Days (sozai.app)",
@@ -214,7 +214,7 @@
   },
   {
    "claim": "NOT JJ: the widely-circulated 'stop at one-third of daily loss limit ($833 of $2,500)' rule comes from generic prop-firm guides (futureshive, crosstrade), not from JJ.",
-   "quote": "stop trading for the day if you lose one-third of your daily loss limit - for a $2,500 limit, that means stopping at an $833 loss",
+   "quote": "stop trading for the day if you lose one-third of your daily loss limit—for a $2,500 limit, that means stopping at an $833 loss",
    "source_url": "https://www.futureshive.com/blog/daily-loss-limit-prop-firm-guide-2026",
    "source_title": "Daily Loss Limit Explained for Prop Firm Traders (2026 Guide)",
    "source_kind": "generic third-party guide",
@@ -232,13 +232,13 @@
   },
   {
    "name": "Afternoon session",
-   "value": "14:00-15:00 ET",
+   "value": "14:00–15:00 ET",
    "context": "fair value = 14:00 price",
    "source_url": "https://fxreplay.com/strategies/jj-simons-fair-value-theory-nq-strategy"
   },
   {
    "name": "Continuation window",
-   "value": "first 10-15 min after 09:30",
+   "value": "first 10–15 min after 09:30",
    "context": "then mean reversion",
    "source_url": "https://fxreplay.com/strategies/jj-simons-fair-value-theory-nq-strategy"
   },
@@ -256,7 +256,7 @@
   },
   {
    "name": "Trades per eval",
-   "value": "exactly 2 (max risk) or 2-4 (conservative)",
+   "value": "exactly 2 (max risk) or 2–4 (conservative)",
    "context": "each ~half of target for consistency rules",
    "source_url": "https://jjwebinar.com/"
   },
@@ -269,7 +269,7 @@
   {
    "name": "Risk per trade",
    "value": "~$1,000",
-   "context": "1/2/3 contracts x 50/25/16.5 pts",
+   "context": "1/2/3 contracts × 50/25/16.5 pts",
    "source_url": "https://fxreplay.com/strategies/jj-simons-fair-value-theory-nq-strategy"
   },
   {
@@ -280,7 +280,7 @@
   },
   {
    "name": "Stop/target tiers (points)",
-   "value": ">20 ATR 50/75; 7-20 ATR 25/37.5; <7 ATR 16.5/24.75",
+   "value": ">20 ATR 50/75; 7–20 ATR 25/37.5; <7 ATR 16.5/24.75",
    "context": "ATR on 1-min",
    "source_url": "https://fxreplay.com/strategies/jj-simons-fair-value-theory-nq-strategy"
   },
@@ -318,31 +318,31 @@
  "sources": [
   {
    "url": "https://sozai.app/transcript/made-105700-3-weeks-day-trading-nq-futures/",
-   "title": "I Made $105,700 in 3 Weeks Day Trading NQ Futures (Road to $1M Ep. 2) - Transcript & Summary",
+   "title": "I Made $105,700 in 3 Weeks Day Trading NQ Futures (Road to $1M Ep. 2) — Transcript & Summary",
    "kind": "transcript-summary (JJ video)",
    "date": "2026"
   },
   {
    "url": "https://sozai.app/transcript/strategy-behind-1-6m-prop-firm-payouts/",
-   "title": "The Strategy Behind My $1.6M in Prop Firm Payouts - Transcript & Summary",
+   "title": "The Strategy Behind My $1.6M in Prop Firm Payouts — Transcript & Summary",
    "kind": "transcript-summary (JJ video)",
    "date": "2026"
   },
   {
    "url": "https://sozai.app/transcript/make-100000-per-month-prop-firms/",
-   "title": "Here's How You Can Make $100,000 Per Month On Prop Firms - Transcript & Summary",
+   "title": "Here's How You Can Make $100,000 Per Month On Prop Firms — Transcript & Summary",
    "kind": "transcript-summary (JJ video)",
    "date": "video ~2026-07/08"
   },
   {
    "url": "https://sozai.app/transcript/jj-simons-strategy-backtest-365-days/",
-   "title": "Is JJ Simons Strategy Profitable? I Backtested 365 Days With a Custom Indicator - Transcript & Summary",
+   "title": "Is JJ Simons Strategy Profitable? I Backtested 365 Days With a Custom Indicator — Transcript & Summary",
    "kind": "transcript-summary (third-party video)",
    "date": "2026"
   },
   {
    "url": "https://jjwebinar.com/",
-   "title": "JJ Simon - Free Live Training (jjwebinar.com)",
+   "title": "JJ Simon — Free Live Training (jjwebinar.com)",
    "kind": "JJ sales page",
    "date": "2026"
   },
@@ -389,6 +389,12 @@
    "date": "2026"
   },
   {
+   "url": "https://www.tiktok.com/discover/jj-simon-trading-review",
+   "title": "Jj Simon Trading Review (TikTok discover)",
+   "kind": "TikTok aggregate",
+   "date": "2026"
+  },
+  {
    "url": "https://x.com/itsjjsimon",
    "title": "itsjjsimon (@itsjjsimon) on X",
    "kind": "X profile/posts (JJ)",
@@ -414,7 +420,7 @@
   },
   {
    "url": "https://www.tradingview.com/script/j4BFY7JW-Fair-Price-Theory-NQ-Reversion-Continuation/",
-   "title": "Fair Price Theory - NQ Reversion / Continuation - Indicator by joetroyer (TradingView)",
+   "title": "Fair Price Theory - NQ Reversion / Continuation — Indicator by joetroyer (TradingView)",
    "kind": "third-party indicator",
    "date": "2026"
   },
@@ -432,7 +438,7 @@
   },
   {
    "url": "https://www.youtube.com/watch?v=6xZw32_Jp7U",
-   "title": "Win Rate vs. Edge: JJ Simon Strategy vs. Mechanical Fair Value Gap - 52 Trades",
+   "title": "Win Rate vs. Edge: JJ Simon Strategy vs. Mechanical Fair Value Gap — 52 Trades",
    "kind": "third-party video",
    "date": ""
   },
@@ -445,19 +451,19 @@
  ],
  "contradictions": [
   "'Psychology is fake' (mini-course lesson 4) vs a paid mentorship module titled 'The Killer In Trading: Emotions & Overtrading'.",
-  "'No maximum amount of trades' / 30 trades a day vs 'one trade per account per day is optimal' - reconciled only if the cap is per account, not per trader.",
-  "Third parties describe eval posture as 'aggressive' (max risk, 2 trades) but a transcript also says a conservative eval uses 2-4 trades; the two co-exist as options.",
+  "'No maximum amount of trades' / 30 trades a day vs 'one trade per account per day is optimal' — reconciled only if the cap is per account, not per trader.",
+  "Third parties describe eval posture as 'aggressive' (max risk, 2 trades) but a transcript also says a conservative eval uses 2–4 trades; the two co-exist as options.",
   "Chart Fanatics promises 'knowing exactly when to stop trading' from statistics, but no indexed source states a dollar/R/loss-count daily stop; the only hard stops found are the 11:00 clock and per-account one-trade/two-trade rules."
  ],
  "open_questions": [
-  "Explicit daily loss limit in $, R or number of losses - not found; the '$833 one-third' rule is generic, not his.",
-  "Consecutive-loss rule across accounts (e.g., stop after N losing accounts in a row) - not found.",
-  "Afternoon session stop (15:00) in his own words - only in third-party write-ups.",
-  "How 'when to stop' is computed from statistics (expected losing streak, drawdown math) - Chart Fanatics content not indexed.",
-  "Which accounts pay in a losing week (evals lose, funded win? how risk is split) - only the outcome ($18k) is documented.",
+  "Explicit daily loss limit in $, R or number of losses — not found; the '$833 one-third' rule is generic, not his.",
+  "Consecutive-loss rule across accounts (e.g., stop after N losing accounts in a row) — not found.",
+  "Afternoon session stop (15:00) in his own words — only in third-party write-ups.",
+  "How 'when to stop' is computed from statistics (expected losing streak, drawdown math) — Chart Fanatics content not indexed.",
+  "Which accounts pay in a losing week (evals lose, funded win? how risk is split) — only the outcome ($18k) is documented.",
   "Weekly/monthly review habits beyond 'trade recaps' and a 'risk management dashboard' in the mentorship.",
-  "Explicit revenge-trading guardrails in his words - none surfaced; the mechanical no-management/skip-if-not-met rules are the implicit guardrail.",
-  "Whether he skips news days (FOMC/CPI) - no source."
+  "Explicit revenge-trading guardrails in his words — none surfaced; the mechanical no-management/skip-if-not-met rules are the implicit guardrail.",
+  "Whether he skips news days (FOMC/CPI) — no source."
  ],
  "queries_run": 40
 }

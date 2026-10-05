@@ -44,6 +44,9 @@ class StrategyConfig:
     session_start: str = "09:30"
     continuation_end: str = "09:35"  # JJ: continuation only in the first ~5 minutes; fxreplay codifies 10-15 (set "09:45")
     window_end: str = "11:00"
+    skip_first_minutes: int = 0  # fxreplay's filtered test skips the first 3 minutes for continuations
+    reversion_end: str | None = None  # fxreplay's filtered test: reversions only until ~10:00; None = window_end
+    big_open_candle_points: float | None = 25.0  # JJ: if the opening candle is larger than this, cut size in half and use the 50-point stop
     pm_session: bool = False
     pm_start: str = "14:00"
     pm_continuation_end: str = "14:05"
@@ -56,7 +59,7 @@ class StrategyConfig:
     # entry mechanics
     atr_period: int = 14
     wick_pct: float = 0.20
-    min_body_atr: float = 1.0  # displacement body must be >= this x ATR (assumption, see docs/ASSUMPTIONS.md)
+    min_body_atr: float = 0.5  # displacement body must be >= this x ATR; the codifications call candle size a discretionary, optional filter (see docs/ASSUMPTIONS.md)
     swing_left: int = 3
     swing_right: int = 3
     structure_lookback: int = 60  # bars; a swing older than this is not "recent structure"
@@ -105,6 +108,7 @@ def generate_trades(df: pd.DataFrame, cfg: StrategyConfig | None = None) -> pd.D
     if cfg.pm_session:
         windows.append(("pm", hhmm(cfg.pm_start), hhmm(cfg.pm_continuation_end), hhmm(cfg.pm_end)))
 
+    rev_end_min = hhmm(cfg.reversion_end) if cfg.reversion_end else None
     trades: list[dict] = []
     for k in np.unique(keys):
         pos = np.where(keys == k)[0]
@@ -120,6 +124,8 @@ def generate_trades(df: pd.DataFrame, cfg: StrategyConfig | None = None) -> pd.D
         day_low = np.inf
         piv_high: list[list] = []  # [index, price, broken]
         piv_low: list[list] = []
+        first = np.where(mod[pos] == windows[0][1])[0]
+        open_range = float(h[pos[first[0]]] - l[pos[first[0]]]) if len(first) else 0.0
 
         for t in day_bars:
             # ---- manage an open position on this bar ----
@@ -180,6 +186,10 @@ def generate_trades(df: pd.DataFrame, cfg: StrategyConfig | None = None) -> pd.D
                 continue
             session, w_start, w_cont_end, w_end = win
             setup = "continuation" if mod[t] < w_cont_end else "reversion"
+            if setup == "continuation" and mod[t] < w_start + cfg.skip_first_minutes:
+                continue
+            if setup == "reversion" and rev_end_min is not None and mod[t] >= rev_end_min:
+                continue
             if c[t] == fvt:
                 continue
             above = c[t] > fvt
@@ -224,6 +234,11 @@ def generate_trades(df: pd.DataFrame, cfg: StrategyConfig | None = None) -> pd.D
                 contracts = min(tier.contracts, cfg.max_contracts)
             else:
                 contracts = contracts_for_risk(cfg.risk_dollars, stop_pts, cfg.point_value, cfg.max_contracts)
+            if cfg.big_open_candle_points is not None and open_range > cfg.big_open_candle_points and session == "am":
+                wide = max(cfg.atr_tiers, key=lambda x: x[1])  # the widest stop tier (50 points)
+                stop_pts = wide[1]
+                contracts = max(1, contracts // 2)
+                tier = tier.__class__(name="big_open", min_atr=wide[0], stop_points=stop_pts, contracts=contracts)
             if contracts <= 0:
                 continue
 

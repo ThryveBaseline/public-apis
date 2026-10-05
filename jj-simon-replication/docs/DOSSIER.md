@@ -17,7 +17,7 @@ with URLs), `docs/research/*.md` (per-angle reports), `docs/research/sources.csv
 | Credential | Quantitative finance degree, University of Washington ([channel / schedule-call page](https://jj.jjsimontrades.com/schedule-call)) | **JJ** |
 | Experience | "full-time futures trader with 16 months of experience" at the $1.5M mark ([$1.6M video transcript summary](https://sozai.app/transcript/strategy-behind-1-6m-prop-firm-payouts/)) | **JJ** |
 | Payout claims over time | $1.3M, $1.5M ("over $1,500,000 in verified prop firm payouts across E8, Topstep, Tradeify and more", [jjwebinar.com](https://jjwebinar.com/)), $1.6M, $1.8M, $1.9M ([video HlWSP7ajgpQ](https://www.youtube.com/watch?v=HlWSP7ajgpQ)), $2,000,000+ ([schedule-call page](https://jj.jjsimontrades.com/schedule-call)) | **JJ**; figures rise with time and differ by platform bio |
-| Payouts by firm (his $1.6M breakdown) | Topstep ~$292,000; E8 ~$222,000; Funded Engineer ~$180,000; MyFundedFutures ~$92,000 ([$1.6M video](https://sozai.app/transcript/strategy-behind-1-6m-prop-firm-payouts/)); a third-party summary attributes ~$129,500 to Funded Next; Tradeify, Lucid, Alpha Futures, Bulwark also named | **JJ** / **3rd** |
+| Payouts by firm (his $1.6M breakdown) | Topstep ~$292,000; E8 ~$222,000; Funded Engineer ~$180,000; MyFundedFutures ~$92,000; Bulwark ~$55,000; Apex ~$60,000 ([$1.6M video](https://sozai.app/transcript/strategy-behind-1-6m-prop-firm-payouts/)); a third-party summary attributes ~$129,500 to Funded Next; Tradeify, Lucid, Alpha Futures also named | **JJ** / **3rd** |
 | Business | Mentorship (NQ execution structure, risk management, funded-account consistency, trade recaps, psychology, mean reversion, fair pricing theory; AllPros rating 4.6/5, [allpros.io](https://allpros.io/course/jjs-mentorship)); free webinar funnel ([jjwebinar.com](https://jjwebinar.com/)); Discord | **3rd** (review site) |
 | Appearances | Chart Fanatics podcast: "This Kid Printed $2M In Payouts Trading 30 Times/Day" ([-lxNWJGWtbg](https://www.youtube.com/watch?v=-lxNWJGWtbg)); "The Genius Who Outsmarted The Prop Firm Game, And Made $1.5M In Payouts" ([aCOgfvL6lK8](https://www.youtube.com/watch?v=aCOgfvL6lK8)); "Leap in with Captain Green Podcast" ([PCDHJBdj-Z4](https://www.youtube.com/watch?v=PCDHJBdj-Z4)); Titans of Tomorrow; Words of Rizdom | **3rd** |
 
@@ -74,6 +74,21 @@ stronger half of his rules in the first 30 minutes and weak after 10:00.
 | Management | none: fixed target, no partials | **JJ** via fxreplay |
 | Entry timing | on the displacement close (code: next bar open) | **JJ**; fill timing is an assumption |
 
+Additional detail from the `entries` research angle (44 facts): the MSB is a
+**close** past the wick high/low of the recent price leg (AndrewFXTD's
+codification), BOS is the same test with the trend; the mechanical
+displacement rule is only the wick test, measured with a fib set to
+0 / 0.2 / 1, and candle size relative to its neighbours is "discretionary,
+optional"; entries are market orders after the displacement close; he says
+"aim to only take A+ setups" but also that on prop firms he takes
+"literally any displacement entry seen towards fair price" to scale;
+fxreplay's filtered variant (skip the first 3 minutes for continuations,
+reversions only in the first ~30 minutes, avoid 10:00-11:00 and
+15:00-16:00) reported about 62% win rate and PF 2.46; joetroyer's
+continuation variant waits for a retrace to the fair line instead of
+entering on the displacement close; a September 2026 video covers the
+18:00 and 20:00 sessions ([GMDUiamqgig](https://www.youtube.com/watch?v=GMDUiamqgig)).
+
 Unpublished and therefore assumptions in the code (see `ASSUMPTIONS.md`):
 the swing definition behind BOS/MSB (the commercial indicator pack offers
 "wick-based or rolling" BOS, which shows the ambiguity), a size threshold
@@ -89,6 +104,25 @@ at a time, and whether open trades are flattened at 11:00.
 | Target | 1.5R fixed | **JJ** via fxreplay |
 | Losing weeks | "optimal risk management to ensure payouts even during losing weeks by adjusting contract size and stop loss based on candle size and market volatility" | **JJ** (transcript summary) |
 | ATR period | not published; code uses Wilder 14 | assumption |
+
+**His own reasoning for 1.5R (JJ, `risk-model` angle, 38 facts).**
+Evaluations are "minus 2K max loss and plus 3K profit target, making it
+automatically optimal to do a one to 1.5"; trading in 1:1.5 units raises
+the pass rate "based on how the drawdown trails"; break-even is 40%; his
+sample ran 57.5%. Posture: "aggressive risk to get funded and then
+conservative risk management to stay funded"; "on the eval, optimize for
+your pass rate; on the funded, maximize your expected value: probability
+of getting a payout multiplied by how large that payout is". Sizing
+exception: "when opening candles are larger than 25 points, he cuts the
+size in half" and uses the 50-point stop. The business math he teaches:
+cost to funded = fee / pass rate ($100 / 0.30 = $333); cost per dollar of
+drawdown = fee / drawdown ($750 for $4,500); EV of an evaluation =
+P(payout) x payout - P(no payout) x fee (10% x $2,000 - 90% x $100 =
++$110); "the optimal profit target on his accounts was $1,800 per day";
+about 40 accounts "where all of your accounts end the day traded" is six
+figures a month; he says he spent $550,000 on evaluations learning this.
+Variance he reports: -$21,000 over seven days inside a +$48K month with a
+$45K payout. `python -m fpt.cli evalmath` reproduces the arithmetic.
 
 **The arithmetic the method rests on.** At the third-party-measured 52-54%
 win rate and 1.5R the expectancy is +0.3 to +0.35R per qualifying trade;
@@ -182,7 +216,7 @@ roughly two breaches per account per six months.
 | Study | Rules coded | Result | Notes |
 |---|---|---|---|
 | fxreplay, "Fair Value Theory NQ Strategy Backtesting Reimagined" ([page](https://fxreplay.com/strategies/jj-simons-fair-value-theory-nq-strategy), [PDF](https://cdn.prod.website-files.com/668852f921e36c3365b91d03/69f277ffef6be0e125ad6a90_JJ%20Simon%20Fair%20value%20theory.pdf)) | 09:30 and 14:00 anchors; continuation first 10-15 min, reversion after; MSB/BOS + displacement (<20% counter-wick); ATR tiers 50/25/16.5 with 1/2/3 contracts; 1.5R | 158 trades, 54% win rate, PF 1.76, max streaks 8 wins / 5 losses; another pass: 150 trades, +46R, 52%, PF 1.66 before filters | filters that helped: skip first 3 minutes for continuations; reversions only in the first ~30 minutes; avoid 10:00-11:00 |
-| 365-day custom-indicator backtest ([transcript](https://sozai.app/transcript/jj-simons-strategy-backtest-365-days/)) | same family, coded as an indicator | 289 trades in a year, +$48,700 on 100k (49%), PF 1.7 | about 1.2 trades a day |
+| 365-day custom-indicator backtest ([transcript](https://sozai.app/transcript/jj-simons-strategy-backtest-365-days/), [video Esv74mEfTFY](https://www.youtube.com/watch?v=Esv74mEfTFY)) | same family, coded as an indicator | baseline PF ~1.2; optimized 289 trades, +$48,700 on 100k (49%), PF 1.7, 55% win rate, MDD ~2.4%; an alternate run on the same page: 314 trades, 56.69% win rate, PF 1.94, +$51,893, MDD $3,207 | about 1.2 trades a day; "mechanically profitable but not extraordinarily so" |
 | "Backtesting JJ Simon's NQ Strategy" ([SNO1wqJTq5A](https://www.youtube.com/watch?v=SNO1wqJTq5A), [summary](https://youtubesummary.com/summary/SNO1wqJTq5A)) | 1-minute scalp: fair value, BOS/MSB, displacement, ATR risk | see research files | |
 | "JJ Simon Strategy Backtest: 40 Trades" ([c61c4CxTpYI](https://www.youtube.com/watch?v=c61c4CxTpYI)) | small sample | see research files | |
 | "Can JJ Simon's $1.5M Trading Strategy Really Pass a Prop Firm Challenge?" ([JcW8Wjnw8ck](https://www.youtube.com/watch?v=JcW8Wjnw8ck)) | forward test on an evaluation | see research files | |

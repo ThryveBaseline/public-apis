@@ -257,3 +257,26 @@ def test_round_robin_routing_one_trade_per_account_per_day():
     res = simulate_portfolio(cfg)
     assert res["accounts"] == 4
     assert 0 <= res["p_net_positive"] <= 1
+
+
+def test_jj_prop_firm_math():
+    assert R.cost_to_funded(100, 0.30) == pytest.approx(333.33, abs=0.01)
+    assert R.cost_per_drawdown_dollar(750, 4500) == pytest.approx(0.1667, abs=1e-3)
+    assert R.eval_expected_value(0.10, 2000, 100) == pytest.approx(110.0)
+    assert R.two_trade_pass_probability(0.5) == 0.25
+    assert R.two_trade_pass_probability(0.5, strict=False) == 0.5
+
+
+def test_time_filters_and_big_open_candle(bars):
+    cfg = StrategyConfig(skip_first_minutes=3, reversion_end="10:00", continuation_end="09:45")
+    t = generate_trades(bars, cfg)
+    m = t["signal_time"].dt.hour * 60 + t["signal_time"].dt.minute
+    cont = t[t["setup"] == "continuation"]
+    rev = t[t["setup"] == "reversion"]
+    assert (m[cont.index] >= 9 * 60 + 33).all()
+    assert (m[rev.index] < 10 * 60).all()
+    big = generate_trades(bars, StrategyConfig(big_open_candle_points=0.0))  # every opening candle counts as big
+    assert (big["stop_points"] == 50.0).all()
+    assert (big["contracts"] == 1).all()
+    none = generate_trades(bars, StrategyConfig(big_open_candle_points=None))
+    assert len(none) >= len(big) * 0 + 1

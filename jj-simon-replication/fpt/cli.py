@@ -24,7 +24,7 @@ from .strategy import StrategyConfig
 
 def _cfg_from_args(a) -> StrategyConfig:
     cfg = StrategyConfig()
-    for name in ("rr", "risk_dollars", "max_trades_per_day", "daily_loss_stop_r", "max_consecutive_losses", "min_body_atr", "wick_pct", "anchor", "size_mode", "continuation_end", "window_end", "slippage_points", "commission_per_contract_side"):
+    for name in ("rr", "risk_dollars", "max_trades_per_day", "daily_loss_stop_r", "max_consecutive_losses", "min_body_atr", "wick_pct", "anchor", "size_mode", "continuation_end", "window_end", "slippage_points", "commission_per_contract_side", "skip_first_minutes", "reversion_end", "big_open_candle_points"):
         v = getattr(a, name, None)
         if v is not None:
             setattr(cfg, name, v)
@@ -62,6 +62,9 @@ def main(argv=None):
     b.add_argument("--anchor", choices=["open_0930", "close_0929", "vwap_0929_0930"])
     b.add_argument("--continuation-end", dest="continuation_end")
     b.add_argument("--window-end", dest="window_end")
+    b.add_argument("--skip-first-minutes", type=int, dest="skip_first_minutes")
+    b.add_argument("--reversion-end", dest="reversion_end", help="e.g. 10:00 (fxreplay's filtered variant)")
+    b.add_argument("--big-open-candle-points", type=float, dest="big_open_candle_points")
     b.add_argument("--slippage-points", type=float, dest="slippage_points")
     b.add_argument("--commission", type=float, dest="commission_per_contract_side")
     b.add_argument("--pm-session", action="store_true", dest="pm_session")
@@ -105,6 +108,14 @@ def main(argv=None):
     f.add_argument("--json", action="store_true")
 
     sub.add_parser("firms", help="list firm presets and their verification status")
+
+    m = sub.add_parser("evalmath", help="JJ's prop-firm arithmetic: cost to funded, cost per drawdown dollar, eval EV, two-trade pass probability")
+    m.add_argument("--fee", type=float, default=100.0)
+    m.add_argument("--pass-rate", type=float, default=0.30)
+    m.add_argument("--drawdown", type=float, default=2000.0)
+    m.add_argument("--p-payout", type=float, default=0.10)
+    m.add_argument("--payout", type=float, default=2000.0)
+    m.add_argument("--p", type=float, default=0.5)
 
     c = sub.add_parser("implied", help="back out the per-account daily edge implied by a reported result")
     c.add_argument("--payout", type=float, required=True, help="dollars reported")
@@ -193,6 +204,16 @@ def main(argv=None):
             print(f"payouts median {res['payouts_total']['median']:,.0f}, costs median {res['costs_total']['median']:,.0f}, P(net>0) {res['p_net_positive']:.1%}, breaches/sim {res['breaches_per_sim']['mean']:.1f}")
             print("monthly net median: " + ", ".join(f"{x:,.0f}" for x in res["monthly_net_median"]))
             print("funded accounts (median) by month: " + ", ".join(f"{x:.0f}" for x in res["funded_accounts_median_by_month"]))
+        return 0
+
+    if a.cmd == "evalmath":
+        print(json.dumps({
+            "cost_to_funded": R.cost_to_funded(a.fee, a.pass_rate),
+            "cost_per_drawdown_dollar": R.cost_per_drawdown_dollar(a.fee, a.drawdown),
+            "eval_expected_value": R.eval_expected_value(a.p_payout, a.payout, a.fee),
+            "two_trade_pass_probability_strict": R.two_trade_pass_probability(a.p, True),
+            "two_trade_pass_probability_two_wins_before_two_losses": R.two_trade_pass_probability(a.p, False),
+        }, indent=2))
         return 0
 
     if a.cmd == "implied":
