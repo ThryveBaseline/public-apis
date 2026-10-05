@@ -21,7 +21,7 @@ with URLs), `docs/research/*.md` (per-angle reports), `docs/research/sources.csv
 | Business | Mentorship operated by SIMON FUND LLC (entry model, trade recaps, risk-management dashboard, weekly 1-on-1 calls; price behind an application funnel; curriculum lists continuation and mean-reversion specifics, understanding and identifying fair price, expected value and variance, risk of ruin and bankroll management, prop-firm math, volume by session, VWAP, news days); Whop listing 4.9/5 from 46 reviews with 6,125 members; AllPros 4.6/5 from 5 reviews ([allpros.io](https://allpros.io/course/jjs-mentorship)); a $299.99 pre-recorded workshop; free mini-course and Discord; webinar funnel ([jjwebinar.com](https://jjwebinar.com/)); the free PropFirmEV calculator | **JJ** / **3rd** |
 | Audience | about 32,800 YouTube subscribers, 17K Instagram, 18.1K TikTok (Oct 2026) | platform counts |
 | Credential detail | LinkedIn: University of Washington; built options-pricing software (Black-Scholes and Cox-Ross-Rubinstein) as a student project | **JJ** |
-| Appearances | Chart Fanatics podcast: "This Kid Printed $2M In Payouts Trading 30 Times/Day" ([-lxNWJGWtbg](https://www.youtube.com/watch?v=-lxNWJGWtbg)); "The Genius Who Outsmarted The Prop Firm Game, And Made $1.5M In Payouts" ([aCOgfvL6lK8](https://www.youtube.com/watch?v=aCOgfvL6lK8)); "Leap in with Captain Green Podcast" ([PCDHJBdj-Z4](https://www.youtube.com/watch?v=PCDHJBdj-Z4)); Titans of Tomorrow; Words of Rizdom | **3rd** |
+| Appearances | Chart Fanatics (host Riz Iqbal): "This Kid Printed $2M In Payouts Trading 30 Times/Day, Here's How." ([-lxNWJGWtbg](https://www.youtube.com/watch?v=-lxNWJGWtbg), uploaded 2026-09-18; no transcript is indexed anywhere, so "45+ accounts" and "30 times/day" exist only in its title and description); Titans of Tomorrow (host Waqar Asim), "The Genius Who Outsmarted The Prop Firm Game, And Made $1.5M In Payouts" / audio title "Quant Finance Graduate Reveals His $1.5M Prop Firm Strategy" ([aCOgfvL6lK8](https://www.youtube.com/watch?v=aCOgfvL6lK8), 2026-06-22; chapters "Why High Risk-Reward Fails Evaluations" 7:23, "Taking 20 Trades A Day Without Tilting" 12:01, "JJ's Mean Reversion Trading Model" 16:00, "His Session Open Strategy Explained" 20:07); Words of Rizdom (Riz Iqbal's audio podcast; billed "$1.8+ Million in Payouts in JUST 18 Months", "20+ scalps a day", "3 fixed simple strategies", trades live on the episode). Not him: the "Leap in with Captain Green" podcast's JJ Simon is a Singapore environment official; the Trading Nut "JJ" and the Business Insider "Kane Simons" are other people. | **3rd** |
 
 ## 2. The Fair Pricing Theory model
 
@@ -198,7 +198,15 @@ effective on live accounts". He has published a calculator, PropFirmEV,
 that replays a trader's statistics through each firm's rulebook thousands
 of times at one trade per day; `fpt/portfolio.py` is the same idea.
 Monthly examples from his posts: a $48K month with a $45K payout; four
-June payouts totalling $25,000; a record-month target of $90,000.
+June payouts totalling $25,000; a record-month target of $90,000. He also
+says he picks which account takes a given setup "based on the market
+displacement and points away from fair price", and sizes by "max EV then
+mess with variance, but keep variance low to start". His cost-per-drawdown
+rule of thumb: above about $0.50 of fee per $1 of drawdown a firm is
+"generally not profitable" to use. Note the arithmetic gap: the per-firm
+figures he lists ($292K + ~$50K old Topstep dashboard + $222K + $180K +
+$129.5K + $105K + $92K + $75K + $60K + $55K) sum to roughly $1.26M against
+the $1.6M headline of the same video; the remainder is unexplained.
 Unknown still: the copier stack, account sizes per firm, and spend versus
 payouts per month.
 
@@ -254,14 +262,17 @@ roughly two breaches per account per six months.
 
 | Study | Rules coded | Result | Notes |
 |---|---|---|---|
-| fxreplay, "Fair Value Theory NQ Strategy Backtesting Reimagined" ([page](https://fxreplay.com/strategies/jj-simons-fair-value-theory-nq-strategy), [PDF](https://cdn.prod.website-files.com/668852f921e36c3365b91d03/69f277ffef6be0e125ad6a90_JJ%20Simon%20Fair%20value%20theory.pdf)) | 09:30 and 14:00 anchors; continuation first 10-15 min, reversion after; MSB/BOS + displacement (<20% counter-wick); ATR tiers 50/25/16.5 with 1/2/3 contracts; 1.5R | 158 trades, 54% win rate, PF 1.76, max streaks 8 wins / 5 losses; another pass: 150 trades, +46R, 52%, PF 1.66 before filters | filters that helped: skip first 3 minutes for continuations; reversions only in the first ~30 minutes; avoid 10:00-11:00 |
+| fxreplay (published 2026-04-29, with an author page for JJ, so written with him), "Fair Value Theory NQ Strategy Backtesting Reimagined" ([page](https://fxreplay.com/strategies/jj-simons-fair-value-theory-nq-strategy), [PDF](https://cdn.prod.website-files.com/668852f921e36c3365b91d03/69f277ffef6be0e125ad6a90_JJ%20Simon%20Fair%20value%20theory.pdf), [video](https://www.youtube.com/watch?v=SNO1wqJTq5A)) | 09:30 and 14:00 anchors; continuation first 10-15 min, reversion after; MSB (close past the wick of the recent leg) or BOS + displacement (<20% counter-wick); ATR tiers 50/25/16.5 with 1/2/3 contracts; 1.5R | 158 trades, 54% win rate, PF 1.76, max streaks 8 wins / 5 losses, continuations slightly stronger; pre-filter pass: 150 trades, +46R, 52%, PF 1.66; post-filter about 62% and PF 2.46; a half-month February 2026 subset: 43 trades, 58%, +19R; reversion-only subset PF ~1.46 | filters: skip first 3 minutes for continuations; reversions only in the first ~30 minutes; avoid 10:00-11:00 and 15:00-16:00; presenter calls JJ's payout claims "not fully verified" |
+| ATSLibrary paid Pine pack "JJ SIMONS STRATEGY (Indicator & Strategy Pack)" (~$97, not by JJ) | continuation and reversion off the pre-open fair line, open-candle bias filter, wick-based or rolling BOS, one-reversion-per-session and cooldown options | vendor-reported NAS100 CFD test: 314 trades, 56.69% win rate, PF 1.94, +$51,893, max drawdown $3,207 | CFD, not NQ futures; not independent |
 | 365-day custom-indicator backtest ([transcript](https://sozai.app/transcript/jj-simons-strategy-backtest-365-days/), [video Esv74mEfTFY](https://www.youtube.com/watch?v=Esv74mEfTFY)) | same family, coded as an indicator | baseline PF ~1.2; optimized 289 trades, +$48,700 on 100k (49%), PF 1.7, 55% win rate, MDD ~2.4%; an alternate run on the same page: 314 trades, 56.69% win rate, PF 1.94, +$51,893, MDD $3,207 | about 1.2 trades a day; "mechanically profitable but not extraordinarily so" |
 | "Backtesting JJ Simon's NQ Strategy" ([SNO1wqJTq5A](https://www.youtube.com/watch?v=SNO1wqJTq5A), [summary](https://youtubesummary.com/summary/SNO1wqJTq5A)) | 1-minute scalp: fair value, BOS/MSB, displacement, ATR risk | see research files | |
 | "JJ Simon Strategy Backtest: 40 Trades" ([c61c4CxTpYI](https://www.youtube.com/watch?v=c61c4CxTpYI)) | small sample | see research files | |
 | "Can JJ Simon's $1.5M Trading Strategy Really Pass a Prop Firm Challenge?" ([JcW8Wjnw8ck](https://www.youtube.com/watch?v=JcW8Wjnw8ck)) | forward test on an evaluation | see research files | |
-| TradingView indicators: joetroyer ([link](https://www.tradingview.com/script/j4BFY7JW-Fair-Price-Theory-NQ-Reversion-Continuation/)), AndrewFXTD ([link](https://www.tradingview.com/script/jfW4Vilk/)) | joetroyer: fair line anchored at session open with six selectable sources, +/-38-point band, displacement back toward the line; AndrewFXTD: sessions + fib, states "$1 per point" which is wrong for NQ ($20) | | |
+| TradingView indicators: joetroyer ([link](https://www.tradingview.com/script/j4BFY7JW-Fair-Price-Theory-NQ-Reversion-Continuation/)), AndrewFXTD ([link](https://www.tradingview.com/script/jfW4Vilk/)), microupnup "Fair Price Strategy" ([link](https://www.tradingview.com/script/mpU3gOF5-Fair-Price-Strategy/)), ethanforgotten "JJSimon strat" ([link](https://www.tradingview.com/script/9jDxlxC6-JJSimon-strat/)) | joetroyer: fair line anchored at each session open (NY AM, NY PM, London, Asia) with six selectable sources, +/-38-point band, displacement back toward the line, 4-of-5 confluence grading, continuation waits for a retrace to the line; AndrewFXTD: 09:30-11:00 and 14:00-15:00, fib 0/0.2/1 encodes the 20% wick rule, 25/37.5 default; microupnup: the 09:29 candle's range; ethanforgotten: closed source, marks BOS and the triggering displacement candle | | the "$1 per point on NQ" line that appears in search excerpts is a summarizer error (NQ is $20, MNQ $2) |
 
-Critiques to weigh: these are small samples (150-290 trades), sensitive to
+Mechanized versions of the rules fire about 1.2-1.3 trades a day (289-314
+trades a year), an order of magnitude below the 10-30 a day he describes.
+Critiques to weigh: these are small samples (150-314 trades), sensitive to
 the continuation window and to fills on 16.5-point stops with 3 contracts;
 prop-firm payouts are gross of evaluation and reset spend; and the 10-30
 trades-a-day cadence in his videos is not what the codified rules generate.
@@ -284,7 +295,9 @@ Contradictions found so far:
 5. Account count: 20-30 vs 40 vs 45+.
 6. Payout totals: every platform bio shows a different figure ($1.3M to $2M+), consistent with growth over time but not pinned to dates.
 7. fxreplay statistics: 158 / 54% / PF 1.76 vs 150 / 52% / PF 1.66 (different passes of one study).
-8. Firm naming: Funded Engineer (JJ) vs Funded Next (third-party summary).
+8. Firm naming: Funded Engineer (JJ) vs Funded Next (third-party summary); both appear in his own breakdown.
+9. The per-firm payout figures he lists sum to roughly $1.26M, not the $1.6M headline of the same video.
+10. Two of the podcast appearances in the original brief were wrong: the Captain Green podcast guest is a different JJ Simon, and the Titans of Tomorrow video and "The Genius Who Outsmarted The Prop Firm Game" are one episode.
 
 Unknowns being researched (results land in `docs/research/`): the exact
 BOS/MSB and displacement definitions in his own words; the ATR period; the

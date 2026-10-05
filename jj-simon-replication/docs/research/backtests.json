@@ -1,0 +1,1054 @@
+{
+ "angle": "backtests",
+ "facts": [
+  {
+   "claim": "fxreplay codes fair value as two fixed reference prices: the 9:30 ET NQ open price and the 2:00 PM ET price.",
+   "quote": "For the NQ ... JJ has identified two price levels that consistently act as fair value: the 9:30 AM market open price and the 2:00 PM NY afternoon price.",
+   "source_url": "https://fxreplay.com/strategies/jj-simons-fair-value-theory-nq-strategy",
+   "source_title": "JJ Simon's Fair Value Theory Strategy (FX Replay strategy page)",
+   "source_kind": "strategy page / third-party writeup",
+   "jj_own_words": false,
+   "date": "2026-04-29 (listed publish date on fxreplay.com/learn)",
+   "confidence": "high"
+  },
+  {
+   "claim": "fxreplay restricts the strategy to the 1-minute chart in two windows: 09:30-11:00 and 14:00-15:00 ET.",
+   "quote": "The strategy is traded exclusively on the 1-minute chart during two New York sessions: 9:30-11:00 AM and 2:00-3:00 PM.",
+   "source_url": "https://fxreplay.com/strategies/jj-simons-fair-value-theory-nq-strategy",
+   "source_title": "FX Replay strategy page",
+   "source_kind": "strategy page / third-party writeup",
+   "jj_own_words": false,
+   "date": "2026-04-29",
+   "confidence": "high"
+  },
+  {
+   "claim": "fxreplay's phase split: continuation setups in the first 10-15 minutes of each window, mean-reversion to fair value for the remainder.",
+   "quote": "In the first 10-15 minutes, traders look for continuation moves ... For the remainder of the window, the focus shifts to mean-reversion setups.",
+   "source_url": "https://fxreplay.com/strategies/jj-simons-fair-value-theory-nq-strategy",
+   "source_title": "FX Replay strategy page",
+   "source_kind": "strategy page / third-party writeup",
+   "jj_own_words": false,
+   "date": "2026-04-29",
+   "confidence": "high"
+  },
+  {
+   "claim": "Entry trigger as coded by fxreplay: a Market Structure Break (MSB) or Break of Structure (BOS) confirmed by a strong displacement candle; fixed 1.5R target, no management, no partials.",
+   "quote": "All entries require the same two-condition trigger: a Market Structure Break (MSB), or Break of Structure (BOS), confirmed by a strong displacement candle. ... trades target a fixed 1.5R with no active trade management.",
+   "source_url": "https://fxreplay.com/strategies/jj-simons-fair-value-theory-nq-strategy",
+   "source_title": "FX Replay strategy page",
+   "source_kind": "strategy page / third-party writeup",
+   "jj_own_words": false,
+   "date": "2026-04-29",
+   "confidence": "high"
+  },
+  {
+   "claim": "fxreplay distinguishes BOS (trend continuation) from MSB (potential reversal).",
+   "quote": "A BOS, Break of Structure, signals trend continuation, while an MSB, Market Structure Break, signals a potential trend reversal.",
+   "source_url": "https://fxreplay.com/strategies/jj-simons-fair-value-theory-nq-strategy",
+   "source_title": "FX Replay strategy page",
+   "source_kind": "strategy page / third-party writeup",
+   "jj_own_words": false,
+   "date": "2026-04-29",
+   "confidence": "medium"
+  },
+  {
+   "claim": "fxreplay's ATR-tiered stop/target table: above 20 ATR = 50 pt SL / 75 pt TP; 7-20 ATR = 25 / 37.5; below 7 ATR = 16.5 / 24.75; 1, 2 or 3 NQ contracts per tier for roughly $1,000 risk. The ATR period is not stated in any indexed excerpt.",
+   "quote": "Above 20 ATR: 50 point SL, 75 point TP; 7-20 ATR: 25 point SL, 37.5 point TP; Below 7 ATR: 16.5 point SL, 24.75 point TP ... Using 1, 2, or 3 NQ contracts at the appropriate ATR tier equates to approximately $1,000 of risk per trade.",
+   "source_url": "https://fxreplay.com/strategies/jj-simons-fair-value-theory-nq-strategy",
+   "source_title": "FX Replay strategy page",
+   "source_kind": "strategy page / third-party writeup",
+   "jj_own_words": false,
+   "date": "2026-04-29",
+   "confidence": "high"
+  },
+  {
+   "claim": "Search-engine excerpt of the fxreplay page states 'one point = $1 on NQ'. This is wrong for the full-size NQ contract ($20/pt) and would match MNQ ($2/pt) only loosely; treat as a summarizer error or an MNQ framing.",
+   "quote": "(one point = $1 on NQ)",
+   "source_url": "https://fxreplay.com/strategies/jj-simons-fair-value-theory-nq-strategy",
+   "source_title": "FX Replay strategy page (search excerpt)",
+   "source_kind": "strategy page / third-party writeup",
+   "jj_own_words": false,
+   "date": "2026-04-29",
+   "confidence": "low"
+  },
+  {
+   "claim": "fxreplay published a companion PDF titled 'JJ Simon's Fair Value Theory NQ Strategy Backtesting Reimagined' on its CDN.",
+   "quote": "JJ Simon's Fair Value Theory NQ Strategy Backtesting Reimagined",
+   "source_url": "https://cdn.prod.website-files.com/668852f921e36c3365b91d03/69f277ffef6be0e125ad6a90_JJ%20Simon%20Fair%20value%20theory.pdf",
+   "source_title": "FX Replay PDF",
+   "source_kind": "pdf",
+   "jj_own_words": false,
+   "date": "2026 (undated)",
+   "confidence": "high"
+  },
+  {
+   "claim": "fxreplay also maintains an author page for JJ Simon, implying the strategy write-up was published with/for him.",
+   "quote": "",
+   "source_url": "https://fxreplay.com/author/jj-simon",
+   "source_title": "FX Replay author page: JJ Simon",
+   "source_kind": "strategy page / third-party writeup",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "medium"
+  },
+  {
+   "claim": "fxreplay's video backtest: aggregate validation set of 158 trades (continuations + reversions), 54% win rate, profit factor 1.76, max win streak 8, max loss streak 5; continuation setups had a slightly higher win rate than reversions.",
+   "quote": "Across 158 trades (continuations + mean reversions combined) ... 54% win rate and 1.76 profit factor, with a maximum win streak of 8 and maximum loss streak of 5.",
+   "source_url": "https://youtubesummary.com/summary/SNO1wqJTq5A",
+   "source_title": "Video Summary - Backtesting JJ Simon's NQ Strategy (youtubesummary.com)",
+   "source_kind": "video summary",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "fxreplay's pre-filter sample: 150 trades, 52% win rate, PF 1.66, +46R. Post-filter: about 62% win rate and PF 2.46.",
+   "quote": "Before filters: 150 trades, 46R, 52% win rate, 1.66 profit factor. After filters: ~62% win rate, 2.46 profit factor.",
+   "source_url": "https://www.youtube.com/watch?v=SNO1wqJTq5A",
+   "source_title": "Backtesting JJ Simon's NQ Strategy (FX Replay YouTube)",
+   "source_kind": "video",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "fxreplay's filters: skip the first ~3 minutes after 09:30 for continuations; take mean reversions only within the first ~30 minutes of the NY open (i.e. avoid 10:00-11:00 reversions).",
+   "quote": "the presenter suggests avoiding the first ~3 minutes after 9:30 a.m. for continuations and limiting mean reversions to within the first ~30 minutes of the NY open.",
+   "source_url": "https://youtubesummary.com/summary/SNO1wqJTq5A",
+   "source_title": "youtubesummary.com summary of FX Replay video",
+   "source_kind": "video summary",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "fxreplay sub-sample: a half-month February 2026 subset of 43 trades returned 58% win rate and +19R.",
+   "quote": "the February 2026 subset showed 43 trades with a win rate of 58% and generated 19R total profit (representing only half of February).",
+   "source_url": "https://youtubesummary.com/summary/SNO1wqJTq5A",
+   "source_title": "youtubesummary.com summary of FX Replay video",
+   "source_kind": "video summary",
+   "jj_own_words": false,
+   "date": "2026-02 (data window)",
+   "confidence": "medium"
+  },
+  {
+   "claim": "fxreplay's presenter explicitly says JJ's payout claims are not independently verified and reports JJ's claim at the time as $1.2M over roughly 12-13 months across Topstep, E8 and Funded Next.",
+   "quote": "JJ is said to claim $1.2M in payouts over approximately 12-13 months across futures prop firms (Topstep, E8, Funded Next), but the presenter notes it's 'not fully verified.'",
+   "source_url": "https://youtubesummary.com/summary/SNO1wqJTq5A",
+   "source_title": "youtubesummary.com summary of FX Replay video",
+   "source_kind": "video summary",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "fxreplay's presenter notes results are timing-dependent and that multiple sample periods were tested.",
+   "quote": "reporting strong performance across multiple sample periods ... results can be timing-dependent",
+   "source_url": "https://youtubesummary.com/summary/SNO1wqJTq5A",
+   "source_title": "youtubesummary.com",
+   "source_kind": "video summary",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "medium"
+  },
+  {
+   "claim": "The 365-day custom-indicator backtest (YouTube 'Is JJ Simons Method Profitable? We Backtested 365 Days With a Custom Indicator') defines fair price as the pre-open candle, i.e. the last 1-minute candle before 09:30 ET.",
+   "quote": "The fair price is just the price of the candle right before the NASDAQ opens, the pre-open price, before all that institutional volume hits.",
+   "source_url": "https://sozai.app/transcript/jj-simons-strategy-backtest-365-days/",
+   "source_title": "sozai.app transcript: Is JJ Simons Strategy Profitable? I Backtested 365 Days With a Custom Indicator",
+   "source_kind": "transcript",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "The 365-day test's phase split differs from fxreplay: continuation only in the first 5 minutes, then reversion-only for the remaining 85 minutes of a 90-minute session.",
+   "quote": "take a continuation away from fair price in the first 5 minutes, and after that only looking for reversion for the following 85 minutes to make a 90-minute session total.",
+   "source_url": "https://sozai.app/transcript/jj-simons-strategy-backtest-365-days/",
+   "source_title": "sozai.app transcript (365-day backtest)",
+   "source_kind": "transcript",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "365-day test, un-optimized: profit factor about 1.2. Optimized: 49% return on a $100K micro-Nasdaq (MNQ) account, PF 1.7, 55% win rate; max drawdown about 2.5% of account.",
+   "quote": "a profit factor of about 1.2 initially ... Optimization improved performance to a 49% return on a $100K micro Nasdaq account with a 1.7 profit factor and 55% win rate. ... max drawdown around 2.5% of the account.",
+   "source_url": "https://sozai.app/transcript/jj-simons-strategy-backtest-365-days/",
+   "source_title": "sozai.app transcript (365-day backtest)",
+   "source_kind": "transcript",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "The same 365-day video is elsewhere summarized as '52% return' / 'nearly $52,000 on a 100k account' - a second tuned variant mentioned in the video, not a separate study.",
+   "quote": "One tuned version made nearly $52,000 on a 100k account with a 52% return without breaching prop firm drawdown limits.",
+   "source_url": "https://www.youtube.com/watch?v=Esv74mEfTFY",
+   "source_title": "Is JJ Simons Method Profitable? We Backtested 365 Days With a Custom Indicator",
+   "source_kind": "video",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "medium"
+  },
+  {
+   "claim": "Conclusion of the 365-day tester: mechanically profitable but modest, regime-dependent, best used as a testable framework.",
+   "quote": "JJ Simon's method is mechanically profitable but not extraordinarily so, yielding consistent modest returns. ... The method is regime-dependent and past results do not guarantee future performance.",
+   "source_url": "https://sozai.app/transcript/jj-simons-strategy-backtest-365-days/",
+   "source_title": "sozai.app transcript (365-day backtest)",
+   "source_kind": "transcript",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "The 365-day video's hook quotes JJ's own framing that 'one candle' (the pre-open candle) made him $1.3M.",
+   "quote": "JJ Simon claims one candle made him $1.3 million - one line on a chart, the price of a single candle right before the NASDAQ opens.",
+   "source_url": "https://sozai.app/transcript/jj-simons-strategy-backtest-365-days/",
+   "source_title": "sozai.app transcript (365-day backtest)",
+   "source_kind": "transcript",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "medium"
+  },
+  {
+   "claim": "A paid Pine 'JJ SIMONS STRATEGY (Indicator & Strategy Pack)' (NAS100 Continuation + Reversion) exists on ATSLibrary and resellers for about $97. The seller states it is not made by JJ Simon and not part of his mentorship.",
+   "quote": "This is not an indicator made by JJ Simon, nor is it part of the mentorship. It's code from someone who implemented the strategy and made an indicator based on it.",
+   "source_url": "https://atslibrary.com/product/jj-simons-strategy-indicator-strategy-pack-full-pinecode/",
+   "source_title": "JJ SIMONS STRATEGY (Indicator & Strategy Pack) FULL PINECODE - ATSLibrary",
+   "source_kind": "product page",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "Pack features: continuation and reversion off the pre-open fair line; open-candle bias filter; wick-based or rolling break of structure; session and time-window controls; adjustable stop/target/management; one-reversion-per-session and cooldown options; indicator + automated strategy with editable Pine source.",
+   "quote": "Continuation and reversion off the pre open fair line, open candle bias filter, wick based or rolling break of structure, session and time window controls, adjustable stop, target and management, one reversion per session and cooldown options.",
+   "source_url": "https://atslibrary.com/product/jj-simons-strategy-indicator-strategy-pack-full-pinecode/",
+   "source_title": "ATSLibrary product page",
+   "source_kind": "product page",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "Pack's advertised backtest: NAS100 (CFD, not NQ futures), last 365 days, $100K account: net +$51,893 (+51.89%), PF 1.94, win rate 56.69% (178 of 314 trades), max drawdown $3,207 (2.38%). Vendor-reported, not independent.",
+   "quote": "Backtested on NAS100, last 365 days, 100K account: Net profit: +$51,893 (+51.89%), Profit factor: 1.94, Win rate: 56.69% (178 of 314), Max drawdown: $3,207 (2.38%).",
+   "source_url": "https://tradingaz.top/jj-simon-trading-view-indicator-strategy/",
+   "source_title": "Download JJ Simon (tradingaz.top mirror of product description)",
+   "source_kind": "product page (mirror)",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "medium"
+  },
+  {
+   "claim": "Pirated copies of the pack circulate (jjsimonindicator.blogspot.com, tradingaz.top); do not rely on them.",
+   "quote": "",
+   "source_url": "https://jjsimonindicator.blogspot.com/",
+   "source_title": "JJ Simon: Trading View Indicator Strategy [DOWNLOAD]",
+   "source_kind": "pirate mirror",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "medium"
+  },
+  {
+   "claim": "joetroyer's 'Fair Price Theory - NQ Reversion / Continuation' anchors a fair-price line to each session open (NY AM, NY PM, London, Asia) and plots Reversion (orange diamonds) and Continuation (blue triangles) setups on the NQ 1-minute chart.",
+   "quote": "anchors a 'fair price' line to each session open, then reads price structure around it to plot two setup types: Reversion (orange diamonds) ... and Continuation (blue triangles)",
+   "source_url": "https://www.tradingview.com/script/j4BFY7JW-Fair-Price-Theory-NQ-Reversion-Continuation/",
+   "source_title": "Fair Price Theory - NQ Reversion / Continuation - Indicator by joetroyer",
+   "source_kind": "tradingview indicator",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "joetroyer Reversion definition: price extends to the edge of a +/-38-point premium/discount band around fair price and a displacement candle closes back through toward the fair line.",
+   "quote": "Reversion (orange diamonds) where price extends to the edge of the +/-38-point premium/discount band, and a displacement candle closes back through toward the fair line",
+   "source_url": "https://www.tradingview.com/script/j4BFY7JW-Fair-Price-Theory-NQ-Reversion-Continuation/",
+   "source_title": "joetroyer indicator",
+   "source_kind": "tradingview indicator",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "joetroyer Continuation definition: price closes through the fair line with a break of structure, retraces to the line, and continues in the break direction.",
+   "quote": "Continuation (blue triangles) where price closes through the fair line with a break of structure, retraces to the line, and continues in the break direction.",
+   "source_url": "https://www.tradingview.com/script/j4BFY7JW-Fair-Price-Theory-NQ-Reversion-Continuation/",
+   "source_title": "joetroyer indicator",
+   "source_kind": "tradingview indicator",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "joetroyer grades signals with a mechanical 4-of-5 confluence check, confirms on bar close (non-repainting), has a live confluence panel, a Learning Mode that draws swing pivots, BOS and displacement candles, and alerts for both setups.",
+   "quote": "Each signal is graded on a mechanical 4-of-5 confluence check and confirmed on bar close (non-repainting). ... optional Learning Mode that draws swing pivots, break-of-structure, and displacement candles",
+   "source_url": "https://www.tradingview.com/script/j4BFY7JW-Fair-Price-Theory-NQ-Reversion-Continuation/",
+   "source_title": "joetroyer indicator",
+   "source_kind": "tradingview indicator",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "joetroyer's selectable fair-value sources: candle before the volume spike, session open, 9:29 line, VWAP, previous-day close, or a manual line.",
+   "quote": "The fair-value source can be the 'candle before the volume spike, session open, 9:29 line, VWAP, prev-day close, or a manual line.'",
+   "source_url": "https://www.tradingview.com/script/j4BFY7JW-Fair-Price-Theory-NQ-Reversion-Continuation/",
+   "source_title": "joetroyer indicator",
+   "source_kind": "tradingview indicator",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "medium"
+  },
+  {
+   "claim": "AndrewFXTD's 'Fair Value Theory + Sessions + Fib' is built for 1m NQ, windows 9:30-11:00 and 2:00-3:00 NY, fib levels 0 / 0.2 / 1 (the 0.2 encodes the 20% counter-wick rule), continuation first ~10-15 min then reversion, entries = displacement candle + BOS/MSB.",
+   "quote": "Fib retracement settings use 0, 0.2, and 1 ... looks for continuations away from fair value the first ~10-15 minutes, then mean reversions back to fair value ... displacement candle + BOS or MSB",
+   "source_url": "https://www.tradingview.com/script/jfW4Vilk/",
+   "source_title": "Fair Value Theory + Sessions + Fib - Indicator by AndrewFXTD",
+   "source_kind": "tradingview indicator",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "AndrewFXTD's default risk: 25 pt SL / 37.5 pt TP most commonly, 50 / 75 in volatile conditions, ATR-adjusted.",
+   "quote": "Most commonly uses 25 point SL and 37.5 point TP for 1.5R, or 50 point SL and 75 point TP in volatile times, with adjustments based on ATR levels",
+   "source_url": "https://www.tradingview.com/script/jfW4Vilk/",
+   "source_title": "AndrewFXTD indicator",
+   "source_kind": "tradingview indicator",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "microupnup's 'Fair Price Strategy' (FPS) is a third TradingView implementation centered on the 9:29 candle, marking its range and flagging mean-reversion and continuation after liquidity sweeps and structure breaks.",
+   "quote": "a structure-based intraday trading indicator centered around the 9:29 fair price candle ... automatically marks the fair price range created by the 9:29 candle",
+   "source_url": "https://www.tradingview.com/script/mpU3gOF5-Fair-Price-Strategy/",
+   "source_title": "Fair Price Strategy - Indicator by microupnup",
+   "source_kind": "tradingview indicator",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "ethanforgotten's 'JJSimon strat' is a closed-source but free TradingView indicator that marks breaks of structure and the displacement candle that triggered each long/short.",
+   "quote": "includes displacement and break of structure (BOS) shows that display different breaks of structure into the market and what displacement candle caused a short/long to happen",
+   "source_url": "https://www.tradingview.com/script/9jDxlxC6-JJSimon-strat/",
+   "source_title": "JJSimon strat - Indicator by ethanforgotten",
+   "source_kind": "tradingview indicator",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "No public GitHub repository implementing JJ Simon's strategy was found; the only 'open' Pine code is the paid ATSLibrary pack.",
+   "quote": "",
+   "source_url": "https://github.com/topics/pinescript-strategies",
+   "source_title": "GitHub search (negative result)",
+   "source_kind": "negative search result",
+   "jj_own_words": false,
+   "date": "2026-10-05",
+   "confidence": "medium"
+  },
+  {
+   "claim": "'JJ Simon Strategy Backtest: 40 Trades Proves This Works (Or ...)' (earlier title 'Testing JJ Simons' Fair Value Strategy (40 Trades Later...)') frames the test as whether a mechanical strategy survives a full-time job plus prop-firm rules. No statistics surfaced in indexed text.",
+   "quote": "whether a mechanical trading strategy can survive the reality of a full-time job and strict prop firm requirements",
+   "source_url": "https://www.youtube.com/watch?v=c61c4CxTpYI",
+   "source_title": "JJ Simon Strategy Backtest: 40 Trades Proves This Works (Or ...)",
+   "source_kind": "video",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "medium"
+  },
+  {
+   "claim": "'Can JJ Simon's $1.5M Trading Strategy Really Pass a Prop Firm Challenge?' tests the strategy in a prop-firm simulation; uploaded about 38 days before 2026-10-05. Verdict not available in indexed text.",
+   "quote": "JJ Simon claims he made over $1.5 million trading his strategy. So I tested his strategy and tried to pass a prop firm simulation using it.",
+   "source_url": "https://www.youtube.com/watch?v=JcW8Wjnw8ck",
+   "source_title": "Can JJ Simon's $1.5M Trading Strategy Really Pass a Prop Firm Challenge?",
+   "source_kind": "video",
+   "jj_own_words": false,
+   "date": "~2026-08-28",
+   "confidence": "medium"
+  },
+  {
+   "claim": "'Win Rate vs. Edge: JJ Simon Strategy vs. Mechanical Fair Value Gap - 52 Trades' compares JJ's higher-win-rate strategy with a mechanical FVG strategy over 52 completed trades. Figures not indexed.",
+   "quote": "comparing JJ Simon's strategy with higher win rate versus a mechanical Fair Value Gap strategy after 52 completed trades",
+   "source_url": "https://www.youtube.com/watch?v=6xZw32_Jp7U",
+   "source_title": "Win Rate vs. Edge: JJ Simon Strategy vs. Mechanical Fair Value Gap - 52 Trades",
+   "source_kind": "video",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "medium"
+  },
+  {
+   "claim": "'JJ Simons Strategy Exposed: Profitable or Impossible?' asks whether a part-time trader can hold the edge.",
+   "quote": "explores whether you can actually trade the JJ Simmons strategy and maintain a profitable edge if you don't trade full-time",
+   "source_url": "https://www.youtube.com/watch?v=FVS85GQGaT0",
+   "source_title": "JJ Simons Strategy Exposed: Profitable or Impossible?",
+   "source_kind": "video",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "medium"
+  },
+  {
+   "claim": "A YouTube Short 'The Truth About JJ Simons' Strategy' (about 97 days before 2026-10-05) raises the same 9-to-5 / family practicality objection.",
+   "quote": "questioning whether it actually works in practice if you have a 9-5 job or a family",
+   "source_url": "https://www.youtube.com/shorts/SsDNK-XaMjo",
+   "source_title": "The Truth About JJ Simons' Strategy",
+   "source_kind": "video (short)",
+   "jj_own_words": false,
+   "date": "~2026-06-30",
+   "confidence": "medium"
+  },
+  {
+   "claim": "'I Will Trade JJ Simon's Fair Value Strategy In Real Time Since No One Else Will.' (about 103 days before 2026-10-05) takes one continuation and one reversion live.",
+   "quote": "trades a continuation setup and a mean reversion setup that is based on JJ Simon's Fair Value",
+   "source_url": "https://www.youtube.com/watch?v=IYRtWZHb7Ws",
+   "source_title": "I Will Trade JJ Simon's Fair Value Strategy In Real Time Since No One Else Will.",
+   "source_kind": "video",
+   "jj_own_words": false,
+   "date": "~2026-06-24",
+   "confidence": "medium"
+  },
+  {
+   "claim": "'This Strategy Generates 1,500,000? My Take On JJ Simon's Fair Market Value' (about 82 days before 2026-10-05) is an explainer with an idealized example, not a backtest.",
+   "quote": "explains how the creator understands JJ Simon's Fair Value Strategy, then shows an ideal example",
+   "source_url": "https://www.youtube.com/watch?v=2mDNljz-1dU",
+   "source_title": "This Strategy Generates 1,500,000? My Take On JJ Simon's Fair Market Value",
+   "source_kind": "video",
+   "jj_own_words": false,
+   "date": "~2026-07-15",
+   "confidence": "medium"
+  },
+  {
+   "claim": "'Can JJ Simon's Trading Strategy Really Make Money?' is another backtest video; no figures indexed.",
+   "quote": "",
+   "source_url": "https://www.youtube.com/watch?v=KaYc0m3fcdo",
+   "source_title": "Can JJ Simon's Trading Strategy Really Make Money?",
+   "source_kind": "video",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "low"
+  },
+  {
+   "claim": "faketrades.in lists JJ Simon with one strategy tested ('My $1,300,000 Trading Strategy (Explained in 10 Minutes)'), rating 1.0 star, marked '1 busted'. Its tests run on Indian market data, so it is not a valid NQ test.",
+   "quote": "1 strategy tested with an average rating of 1.0 star ... marked as 1 busted ... backing every verdict with a real backtest on Indian market data",
+   "source_url": "https://app.faketrades.in/guru/jj-simon",
+   "source_title": "JJ Simon - strategies backtested (faketrades.in)",
+   "source_kind": "backtest aggregator",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "medium"
+  },
+  {
+   "claim": "X user Joey (@WhizzTrades) reports forward-testing 'JJ Simon's strategy (or similar to it)' for May 2026 and calls it easy, mechanical and algo-able. No numbers.",
+   "quote": "I tested JJ Simon's strategy (or similar to it) for the month of May 2026 - Super easy - Pretty mechanical - Can easily make this into an algo TBH",
+   "source_url": "https://x.com/WhizzTrades/status/2066967293033103835",
+   "source_title": "Joey on X",
+   "source_kind": "social post",
+   "jj_own_words": false,
+   "date": "2026-06-16",
+   "confidence": "high"
+  },
+  {
+   "claim": "JJ's displacement-candle rule (own words via transcript): decisive close with counter-wick under 20% of the open-to-counter-wick-extreme distance.",
+   "quote": "A displacement candle must close decisively, with a counter-wick measuring less than 20% of the distance from the candle's open to the counter-wick high or low.",
+   "source_url": "https://sozai.app/transcript/strategy-behind-1-6m-prop-firm-payouts/",
+   "source_title": "sozai.app transcript: The Strategy Behind My $1.6M in Prop Firm Payouts",
+   "source_kind": "transcript",
+   "jj_own_words": true,
+   "date": "~2026-08 (sozai page ~66 days before 2026-10-05)",
+   "confidence": "high"
+  },
+  {
+   "claim": "JJ grades setups: A+ = break of structure, A = displacement, B = never take.",
+   "quote": "An A+ setup is a break of structure. An A setup is a displacement. A B setup is something you would never take. Just don't take a B setup.",
+   "source_url": "https://sozai.app/transcript/strategy-behind-1-6m-prop-firm-payouts/",
+   "source_title": "sozai.app transcript ($1.6M strategy)",
+   "source_kind": "transcript",
+   "jj_own_words": true,
+   "date": "~2026-08",
+   "confidence": "high"
+  },
+  {
+   "claim": "JJ's own two-week sample: 80 trades over 8 days (10/day), 57.5% win rate at 1:1.5.",
+   "quote": "2 weeks of data showing 80 trades across 8 days with 10 trades per day, demonstrating a 57.5% win rate",
+   "source_url": "https://sozai.app/transcript/strategy-behind-1-6m-prop-firm-payouts/",
+   "source_title": "sozai.app transcript ($1.6M strategy)",
+   "source_kind": "transcript",
+   "jj_own_words": true,
+   "date": "~2026-08",
+   "confidence": "high"
+  },
+  {
+   "claim": "JJ's 1.5R rationale: eval accounts with -$2K max loss and +$3K target make 1:1.5 'automatically optimal'; he demonstrates 25 pt SL / 38 pt TP.",
+   "quote": "evaluation accounts have a maximum loss of -$2K and a profit target of +$3K, making 1:1.5 automatically optimal ... a 25-point stop loss with a 38-point take profit",
+   "source_url": "https://sozai.app/transcript/strategy-behind-1-6m-prop-firm-payouts/",
+   "source_title": "sozai.app transcript ($1.6M strategy)",
+   "source_kind": "transcript",
+   "jj_own_words": true,
+   "date": "~2026-08",
+   "confidence": "high"
+  },
+  {
+   "claim": "JJ stops trading the AM session at 11:00 ET (own words).",
+   "quote": "Unfortunately, I end trading at 11:00 and after 11:00, it reverted all the way back up here.",
+   "source_url": "https://sozai.app/transcript/strategy-behind-1-6m-prop-firm-payouts/",
+   "source_title": "sozai.app transcript ($1.6M strategy)",
+   "source_kind": "transcript",
+   "jj_own_words": true,
+   "date": "~2026-08",
+   "confidence": "high"
+  },
+  {
+   "claim": "JJ selects which prop-firm account to trade a given setup on based on displacement size and distance from fair price; aggressive risk to get funded, conservative to stay funded; cycles one trade across multiple funded accounts.",
+   "quote": "adjusting which prop firm account to trade based on the market displacement and points away from fair price ... aggressive risk to get funded and then conservative risk management to stay funded",
+   "source_url": "https://sozai.app/transcript/strategy-behind-1-6m-prop-firm-payouts/",
+   "source_title": "sozai.app transcript ($1.6M strategy)",
+   "source_kind": "transcript",
+   "jj_own_words": true,
+   "date": "~2026-08",
+   "confidence": "medium"
+  },
+  {
+   "claim": "JJ (TikTok) concedes that over the last 5 years the simplest continuation model beat the simplest mean-reversion model - a counter-point to a reversion-first replication.",
+   "quote": "the most simple continuation model outperformed the most simple mean reversion model the last 5 years. if you made mean reversion profitable, how did you do it?",
+   "source_url": "https://www.tiktok.com/discover/jj-simon-trading-review",
+   "source_title": "TikTok discover page: Jj Simon Trading Review (quoting @itsjjsimon)",
+   "source_kind": "social post",
+   "jj_own_words": true,
+   "date": "2026",
+   "confidence": "medium"
+  },
+  {
+   "claim": "JJ (TikTok) on sizing philosophy: maximize EV, then adjust variance, keeping variance low at first.",
+   "quote": "max EV then mess with variance, but keep variance low to start",
+   "source_url": "https://www.tiktok.com/@itsjjsimon",
+   "source_title": "JJ Simon (@itsjjsimon) TikTok",
+   "source_kind": "social post",
+   "jj_own_words": true,
+   "date": "2026",
+   "confidence": "medium"
+  },
+  {
+   "claim": "JJ published his own backtest video, 'Watch Me Backtest My $1,500,000 Trading Strategy'. Statistics not indexed.",
+   "quote": "",
+   "source_url": "https://www.youtube.com/watch?v=MVP7X-3v8xk",
+   "source_title": "Watch Me Backtest My $1,500,000 Trading Strategy",
+   "source_kind": "video",
+   "jj_own_words": true,
+   "date": "2026",
+   "confidence": "medium"
+  },
+  {
+   "claim": "allpros.io: JJ's Mentorship rated 4.6/5 from 5 verified reviews; 100% said worth the money; strengths community support 80%, practical content 80%, fast results 60%, real experience 60%; quoted learner: 'I got my first ever payout thanks to JJ.' Pricing not public (pirate sites list $2,500).",
+   "quote": "JJ's Mentorship may be useful for traders who already understand futures basics ... Its strength is risk management and funded-account discipline rather than signal dependency. ... payout claims are not guaranteed",
+   "source_url": "https://allpros.io/course/jjs-mentorship",
+   "source_title": "JJ's Mentorship Reviews 2026 (allpros.io)",
+   "source_kind": "review site",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "Whop: JJ's Mentorship rated 4.9 from 46 reviews; tagline 'Learn profitable prop firm futures trading'; a separate 'JJ's Pre Recorded Workshop' product also exists.",
+   "quote": "4.9 rating with 46 reviews",
+   "source_url": "https://whop.com/jj-s-mentorship-ba4a/",
+   "source_title": "JJ's Mentorship (Whop)",
+   "source_kind": "review site / storefront",
+   "jj_own_words": false,
+   "date": "2026",
+   "confidence": "high"
+  },
+  {
+   "claim": "No Trustpilot page for JJ Simon / jjsimontrades.com surfaced; Trustpilot results were for unrelated 'Simon' businesses.",
+   "quote": "",
+   "source_url": "https://www.trustpilot.com/",
+   "source_title": "Trustpilot (negative result)",
+   "source_kind": "negative search result",
+   "jj_own_words": false,
+   "date": "2026-10-05",
+   "confidence": "medium"
+  },
+  {
+   "claim": "No Reddit, futures.io, EliteTrader or ForexFactory threads about JJ Simon surfaced via site-restricted search.",
+   "quote": "",
+   "source_url": "https://www.reddit.com/",
+   "source_title": "Reddit / forums (negative result)",
+   "source_kind": "negative search result",
+   "jj_own_words": false,
+   "date": "2026-10-05",
+   "confidence": "medium"
+  },
+  {
+   "claim": "No dedicated 'scam' exposé of JJ Simon was found; critiques centre on (a) modest edge after mechanization, (b) practicality for part-time traders, (c) unverified payout totals.",
+   "quote": "",
+   "source_url": "https://www.youtube.com/watch?v=FVS85GQGaT0",
+   "source_title": "aggregate of critique videos",
+   "source_kind": "analysis",
+   "jj_own_words": false,
+   "date": "2026-10-05",
+   "confidence": "medium"
+  }
+ ],
+ "numbers": [
+  {
+   "name": "fxreplay validation trades",
+   "value": "158",
+   "context": "continuations + reversions combined",
+   "source_url": "https://youtubesummary.com/summary/SNO1wqJTq5A"
+  },
+  {
+   "name": "fxreplay validation win rate",
+   "value": "54%",
+   "context": "158-trade set",
+   "source_url": "https://youtubesummary.com/summary/SNO1wqJTq5A"
+  },
+  {
+   "name": "fxreplay validation profit factor",
+   "value": "1.76",
+   "context": "158-trade set",
+   "source_url": "https://youtubesummary.com/summary/SNO1wqJTq5A"
+  },
+  {
+   "name": "fxreplay max win streak / max loss streak",
+   "value": "8 / 5",
+   "context": "158-trade set",
+   "source_url": "https://youtubesummary.com/summary/SNO1wqJTq5A"
+  },
+  {
+   "name": "fxreplay pre-filter trades / WR / PF / R",
+   "value": "150 / 52% / 1.66 / +46R",
+   "context": "before time filters",
+   "source_url": "https://www.youtube.com/watch?v=SNO1wqJTq5A"
+  },
+  {
+   "name": "fxreplay post-filter WR / PF",
+   "value": "~62% / 2.46",
+   "context": "skip first 3 min for continuations; reversions only in first ~30 min",
+   "source_url": "https://www.youtube.com/watch?v=SNO1wqJTq5A"
+  },
+  {
+   "name": "fxreplay Feb-2026 subset",
+   "value": "43 trades, 58% WR, +19R",
+   "context": "half of February 2026",
+   "source_url": "https://youtubesummary.com/summary/SNO1wqJTq5A"
+  },
+  {
+   "name": "fxreplay ATR tiers (SL/TP pts)",
+   "value": ">20 ATR: 50/75; 7-20: 25/37.5; <7: 16.5/24.75",
+   "context": "ATR period unspecified",
+   "source_url": "https://fxreplay.com/strategies/jj-simons-fair-value-theory-nq-strategy"
+  },
+  {
+   "name": "fxreplay contracts per tier",
+   "value": "1 / 2 / 3 NQ",
+   "context": "approx $1,000 risk per trade",
+   "source_url": "https://fxreplay.com/strategies/jj-simons-fair-value-theory-nq-strategy"
+  },
+  {
+   "name": "fxreplay page publish date",
+   "value": "2026-04-29",
+   "context": "fxreplay.com/learn listing",
+   "source_url": "https://fxreplay.com/learn"
+  },
+  {
+   "name": "365-day test initial PF",
+   "value": "~1.2",
+   "context": "un-optimized custom indicator",
+   "source_url": "https://sozai.app/transcript/jj-simons-strategy-backtest-365-days/"
+  },
+  {
+   "name": "365-day test optimized return",
+   "value": "49% on $100K MNQ",
+   "context": "after optimization",
+   "source_url": "https://sozai.app/transcript/jj-simons-strategy-backtest-365-days/"
+  },
+  {
+   "name": "365-day test optimized PF / WR",
+   "value": "1.7 / 55%",
+   "context": "after optimization",
+   "source_url": "https://sozai.app/transcript/jj-simons-strategy-backtest-365-days/"
+  },
+  {
+   "name": "365-day test max drawdown",
+   "value": "~2.5%",
+   "context": "of account",
+   "source_url": "https://sozai.app/transcript/jj-simons-strategy-backtest-365-days/"
+  },
+  {
+   "name": "365-day test alt variant",
+   "value": "+~$52,000 (52%) on $100K",
+   "context": "second tuned variant",
+   "source_url": "https://www.youtube.com/watch?v=Esv74mEfTFY"
+  },
+  {
+   "name": "365-day test prior-known figures",
+   "value": "289 trades, +$48,700 (49%), PF 1.7",
+   "context": "from task brief; consistent with 49%/1.7",
+   "source_url": "https://www.youtube.com/watch?v=Esv74mEfTFY"
+  },
+  {
+   "name": "365-day test continuation window",
+   "value": "first 5 minutes",
+   "context": "then 85 min reversion-only",
+   "source_url": "https://sozai.app/transcript/jj-simons-strategy-backtest-365-days/"
+  },
+  {
+   "name": "ATSLibrary pack net profit",
+   "value": "+$51,893 (+51.89%)",
+   "context": "NAS100 CFD, 365 days, $100K",
+   "source_url": "https://tradingaz.top/jj-simon-trading-view-indicator-strategy/"
+  },
+  {
+   "name": "ATSLibrary pack PF",
+   "value": "1.94",
+   "context": "vendor-reported",
+   "source_url": "https://tradingaz.top/jj-simon-trading-view-indicator-strategy/"
+  },
+  {
+   "name": "ATSLibrary pack WR",
+   "value": "56.69% (178 of 314)",
+   "context": "vendor-reported",
+   "source_url": "https://tradingaz.top/jj-simon-trading-view-indicator-strategy/"
+  },
+  {
+   "name": "ATSLibrary pack max DD",
+   "value": "$3,207 (2.38%)",
+   "context": "vendor-reported",
+   "source_url": "https://tradingaz.top/jj-simon-trading-view-indicator-strategy/"
+  },
+  {
+   "name": "ATSLibrary pack price",
+   "value": "$97",
+   "context": "reseller thread",
+   "source_url": "https://clubbingbuy.exchange/threads/jj-simons-strategy-indicator-strategy-pack-full-pinecode-97.4954/"
+  },
+  {
+   "name": "joetroyer band",
+   "value": "+/-38 points",
+   "context": "premium/discount band around fair price",
+   "source_url": "https://www.tradingview.com/script/j4BFY7JW-Fair-Price-Theory-NQ-Reversion-Continuation/"
+  },
+  {
+   "name": "joetroyer confluence",
+   "value": "4 of 5",
+   "context": "mechanical grading",
+   "source_url": "https://www.tradingview.com/script/j4BFY7JW-Fair-Price-Theory-NQ-Reversion-Continuation/"
+  },
+  {
+   "name": "AndrewFXTD fib levels",
+   "value": "0 / 0.2 / 1",
+   "context": "0.2 = 20% counter-wick",
+   "source_url": "https://www.tradingview.com/script/jfW4Vilk/"
+  },
+  {
+   "name": "AndrewFXTD default SL/TP",
+   "value": "25/37.5 (50/75 volatile)",
+   "context": "points",
+   "source_url": "https://www.tradingview.com/script/jfW4Vilk/"
+  },
+  {
+   "name": "microupnup anchor",
+   "value": "9:29 candle",
+   "context": "fair price range",
+   "source_url": "https://www.tradingview.com/script/mpU3gOF5-Fair-Price-Strategy/"
+  },
+  {
+   "name": "faketrades.in rating",
+   "value": "1.0 star, 1 busted",
+   "context": "Indian market data",
+   "source_url": "https://app.faketrades.in/guru/jj-simon"
+  },
+  {
+   "name": "allpros rating",
+   "value": "4.6/5, 5 reviews",
+   "context": "100% worth the money",
+   "source_url": "https://allpros.io/course/jjs-mentorship"
+  },
+  {
+   "name": "Whop rating",
+   "value": "4.9, 46 reviews",
+   "context": "",
+   "source_url": "https://whop.com/jj-s-mentorship-ba4a/"
+  },
+  {
+   "name": "Mentorship list price (pirate sites)",
+   "value": "$2,500",
+   "context": "unverified",
+   "source_url": "https://wsotradingcourses.com/product/jj-simon-trades-trading-mentorship-course/"
+  },
+  {
+   "name": "JJ own sample",
+   "value": "80 trades / 8 days / 57.5% WR",
+   "context": "1:1.5 R:R",
+   "source_url": "https://sozai.app/transcript/strategy-behind-1-6m-prop-firm-payouts/"
+  },
+  {
+   "name": "JJ eval math",
+   "value": "-$2K max loss, +$3K target -> 1:1.5",
+   "context": "25 pt SL / 38 pt TP example",
+   "source_url": "https://sozai.app/transcript/strategy-behind-1-6m-prop-firm-payouts/"
+  },
+  {
+   "name": "JJ AM cutoff",
+   "value": "11:00 ET",
+   "context": "own words",
+   "source_url": "https://sozai.app/transcript/strategy-behind-1-6m-prop-firm-payouts/"
+  },
+  {
+   "name": "JJ displacement wick rule",
+   "value": "<20%",
+   "context": "counter-wick vs open-to-extreme",
+   "source_url": "https://sozai.app/transcript/strategy-behind-1-6m-prop-firm-payouts/"
+  },
+  {
+   "name": "JJ claim per fxreplay presenter",
+   "value": "$1.2M over ~12-13 months",
+   "context": "not independently verified",
+   "source_url": "https://youtubesummary.com/summary/SNO1wqJTq5A"
+  }
+ ],
+ "sources": [
+  {
+   "url": "https://fxreplay.com/strategies/jj-simons-fair-value-theory-nq-strategy",
+   "title": "JJ Simon's Fair Value Theory Strategy",
+   "kind": "strategy page",
+   "date": "2026-04-29"
+  },
+  {
+   "url": "https://cdn.prod.website-files.com/668852f921e36c3365b91d03/69f277ffef6be0e125ad6a90_JJ%20Simon%20Fair%20value%20theory.pdf",
+   "title": "JJ Simon's Fair Value Theory NQ Strategy Backtesting Reimagined (PDF)",
+   "kind": "pdf",
+   "date": "2026"
+  },
+  {
+   "url": "https://fxreplay.com/author/jj-simon",
+   "title": "FX Replay author page: JJ Simon",
+   "kind": "strategy page",
+   "date": "2026"
+  },
+  {
+   "url": "https://fxreplay.com/learn",
+   "title": "FX Replay Trading Blog (listing)",
+   "kind": "strategy page",
+   "date": "2026"
+  },
+  {
+   "url": "https://www.youtube.com/watch?v=SNO1wqJTq5A",
+   "title": "Backtesting JJ Simon's NQ Strategy (FX Replay)",
+   "kind": "video",
+   "date": "2026"
+  },
+  {
+   "url": "https://youtubesummary.com/summary/SNO1wqJTq5A",
+   "title": "Video Summary - Backtesting JJ Simon's NQ Strategy",
+   "kind": "video summary",
+   "date": "2026"
+  },
+  {
+   "url": "https://www.youtube.com/watch?v=Esv74mEfTFY",
+   "title": "Is JJ Simons Method Profitable? We Backtested 365 Days With a Custom Indicator",
+   "kind": "video",
+   "date": "2026"
+  },
+  {
+   "url": "https://sozai.app/transcript/jj-simons-strategy-backtest-365-days/",
+   "title": "sozai.app transcript of the 365-day backtest",
+   "kind": "transcript",
+   "date": "2026"
+  },
+  {
+   "url": "https://www.youtube.com/watch?v=c61c4CxTpYI",
+   "title": "JJ Simon Strategy Backtest: 40 Trades Proves This Works (Or ...)",
+   "kind": "video",
+   "date": "2026"
+  },
+  {
+   "url": "https://www.youtube.com/watch?v=JcW8Wjnw8ck",
+   "title": "Can JJ Simon's $1.5M Trading Strategy Really Pass a Prop Firm Challenge?",
+   "kind": "video",
+   "date": "~2026-08-28"
+  },
+  {
+   "url": "https://www.youtube.com/watch?v=6xZw32_Jp7U",
+   "title": "Win Rate vs. Edge: JJ Simon Strategy vs. Mechanical Fair Value Gap - 52 Trades",
+   "kind": "video",
+   "date": "2026"
+  },
+  {
+   "url": "https://www.youtube.com/watch?v=FVS85GQGaT0",
+   "title": "JJ Simons Strategy Exposed: Profitable or Impossible?",
+   "kind": "video",
+   "date": "2026"
+  },
+  {
+   "url": "https://www.youtube.com/shorts/SsDNK-XaMjo",
+   "title": "The Truth About JJ Simons' Strategy (Short)",
+   "kind": "video",
+   "date": "~2026-06-30"
+  },
+  {
+   "url": "https://www.youtube.com/watch?v=IYRtWZHb7Ws",
+   "title": "I Will Trade JJ Simon's Fair Value Strategy In Real Time Since No One Else Will.",
+   "kind": "video",
+   "date": "~2026-06-24"
+  },
+  {
+   "url": "https://www.youtube.com/watch?v=2mDNljz-1dU",
+   "title": "This Strategy Generates 1,500,000? My Take On JJ Simon's Fair Market Value",
+   "kind": "video",
+   "date": "~2026-07-15"
+  },
+  {
+   "url": "https://www.youtube.com/watch?v=KaYc0m3fcdo",
+   "title": "Can JJ Simon's Trading Strategy Really Make Money?",
+   "kind": "video",
+   "date": "2026"
+  },
+  {
+   "url": "https://www.youtube.com/watch?v=MVP7X-3v8xk",
+   "title": "Watch Me Backtest My $1,500,000 Trading Strategy (JJ Simon)",
+   "kind": "video (JJ)",
+   "date": "2026"
+  },
+  {
+   "url": "https://www.tradingview.com/script/j4BFY7JW-Fair-Price-Theory-NQ-Reversion-Continuation/",
+   "title": "Fair Price Theory - NQ Reversion / Continuation (joetroyer)",
+   "kind": "tradingview indicator",
+   "date": "2026"
+  },
+  {
+   "url": "https://www.tradingview.com/script/jfW4Vilk/",
+   "title": "Fair Value Theory + Sessions + Fib (AndrewFXTD)",
+   "kind": "tradingview indicator",
+   "date": "2026"
+  },
+  {
+   "url": "https://www.tradingview.com/script/mpU3gOF5-Fair-Price-Strategy/",
+   "title": "Fair Price Strategy (microupnup)",
+   "kind": "tradingview indicator",
+   "date": "2026"
+  },
+  {
+   "url": "https://www.tradingview.com/script/9jDxlxC6-JJSimon-strat/",
+   "title": "JJSimon strat (ethanforgotten)",
+   "kind": "tradingview indicator",
+   "date": "2026"
+  },
+  {
+   "url": "https://atslibrary.com/product/jj-simons-strategy-indicator-strategy-pack-full-pinecode/",
+   "title": "JJ SIMONS STRATEGY (Indicator & Strategy Pack) FULL PINECODE - ATSLibrary",
+   "kind": "product page",
+   "date": "2026"
+  },
+  {
+   "url": "https://clubbingbuy.exchange/threads/jj-simons-strategy-indicator-strategy-pack-full-pinecode-97.4954/",
+   "title": "Realised - JJ SIMONS STRATEGY ... FULL PINECODE 97$ (clubbingbuy)",
+   "kind": "product page / reseller",
+   "date": "2026"
+  },
+  {
+   "url": "https://tradingaz.top/jj-simon-trading-view-indicator-strategy/",
+   "title": "Download JJ Simon (tradingaz.top mirror)",
+   "kind": "pirate mirror",
+   "date": "2026"
+  },
+  {
+   "url": "https://jjsimonindicator.blogspot.com/",
+   "title": "JJ Simon: Trading View Indicator Strategy [DOWNLOAD]",
+   "kind": "pirate mirror",
+   "date": "2026"
+  },
+  {
+   "url": "https://app.faketrades.in/guru/jj-simon",
+   "title": "JJ Simon - strategies backtested (faketrades.in)",
+   "kind": "backtest aggregator",
+   "date": "2026"
+  },
+  {
+   "url": "https://allpros.io/course/jjs-mentorship",
+   "title": "JJ's Mentorship Reviews 2026 (allpros.io)",
+   "kind": "review site",
+   "date": "2026"
+  },
+  {
+   "url": "https://whop.com/jj-s-mentorship-ba4a/",
+   "title": "JJ's Mentorship (Whop)",
+   "kind": "review site",
+   "date": "2026"
+  },
+  {
+   "url": "https://whop.com/jj-s-pre-recorded-workshop-73/",
+   "title": "JJ's Pre Recorded Workshop (Whop)",
+   "kind": "storefront",
+   "date": "2026"
+  },
+  {
+   "url": "https://wsotradingcourses.com/product/jj-simon-trades-trading-mentorship-course/",
+   "title": "JJ Simon Trades: Trading Mentorship (pirate course listing)",
+   "kind": "pirate mirror",
+   "date": "2026"
+  },
+  {
+   "url": "https://x.com/WhizzTrades/status/2066967293033103835",
+   "title": "Joey (@WhizzTrades) on X",
+   "kind": "social post",
+   "date": "2026-06-16"
+  },
+  {
+   "url": "https://www.tiktok.com/discover/jj-simon-trading-review",
+   "title": "TikTok discover: Jj Simon Trading Review",
+   "kind": "social post",
+   "date": "2026"
+  },
+  {
+   "url": "https://www.tiktok.com/@itsjjsimon",
+   "title": "JJ Simon (@itsjjsimon) TikTok",
+   "kind": "social post",
+   "date": "2026"
+  },
+  {
+   "url": "https://sozai.app/transcript/strategy-behind-1-6m-prop-firm-payouts/",
+   "title": "The Strategy Behind My $1.6M in Prop Firm Payouts - Transcript (sozai.app)",
+   "kind": "transcript (JJ)",
+   "date": "~2026-08"
+  },
+  {
+   "url": "https://jjwebinar.com/",
+   "title": "How To Get Consistent Prop Firm Payouts Using The Fair Pricing Theory (jjwebinar.com)",
+   "kind": "JJ marketing page",
+   "date": "2026"
+  },
+  {
+   "url": "https://jj.jjsimontrades.com/schedule-call",
+   "title": "The Quant Trading Strategy Behind My $2,000,000 In Prop Firm Payouts (jjsimontrades.com)",
+   "kind": "JJ marketing page",
+   "date": "2026"
+  }
+ ],
+ "contradictions": [
+  "Continuation window: fxreplay/AndrewFXTD say first 10-15 minutes; the 365-day custom-indicator test uses first 5 minutes; fxreplay's filtered variant also drops the first 3 minutes.",
+  "Fair value anchor: fxreplay says the 9:30 open price; the 365-day test and microupnup use the 9:29 (pre-open) candle; joetroyer offers six selectable sources (volume-spike candle, session open, 9:29 line, VWAP, prev-day close, manual).",
+  "Reversion window: fxreplay's filtered version takes reversions only in the first ~30 minutes, whereas JJ's own rule (and the 365-day test) trades reversions through 11:00.",
+  "Point value: a search excerpt of the fxreplay page says 'one point = $1 on NQ'; NQ is $20/pt and MNQ $2/pt. The 365-day test explicitly used micro Nasdaq.",
+  "Profit factor range across tests: 1.2 (raw 365-day) -> 1.66 (fxreplay raw) -> 1.7 (365-day optimized) -> 1.76 (fxreplay validation) -> 1.94 (vendor NAS100 CFD) -> 2.46 (fxreplay filtered). The higher figures all follow filtering/optimization on the same data.",
+  "Trades per day: JJ's own transcript sample is ~10/day; the Chart Fanatics title says 30/day; Words of Rizdom says 20+ scalps/day; the 365-day test produced ~1.2/day (289 trades / 250 days) and the vendor pack ~1.3/day (314 trades). Mechanized rule sets fire far less often than JJ trades.",
+  "Instrument: the vendor pack's 314-trade result is on NAS100 CFD, not NQ futures; fxreplay and the 365-day test used NQ/MNQ.",
+  "JJ's own TikTok statement that the simplest continuation model beat the simplest mean-reversion model over 5 years sits uneasily with a reversion-dominant strategy; fxreplay also found continuations had the slightly higher win rate.",
+  "faketrades.in's '1.0 star / busted' verdict is on Indian market data and should not be weighed against NQ results."
+ ],
+ "open_questions": [
+  "ATR period and timeframe used for the 20 / 7 ATR tier thresholds (none of the indexed sources state it).",
+  "Exact swing-pivot definition (lookback bars) used for BOS/MSB in fxreplay's test and in each TradingView script.",
+  "Whether 'fair value' at 2:00 PM is the 2:00 PM 1-minute open, the 13:59 close, or something else.",
+  "Full statistics of the 40-trade, 52-trade, 'prop firm challenge' and 'Really Make Money' videos (not in any indexed text).",
+  "Contents of the fxreplay PDF beyond its title (not fetchable under the network policy).",
+  "Monthly and by-setup breakdowns for the 365-day test and fxreplay test; only aggregate numbers surfaced.",
+  "Slippage/commission assumptions in every backtest (none stated in indexed excerpts).",
+  "Whether the 'one reversion per session' and 'open candle bias filter' options in the ATSLibrary pack were on for its advertised 314-trade result.",
+  "Rationale for joetroyer's +/-38-point band and whether it scales with ATR."
+ ],
+ "queries_run": 57
+}
