@@ -27,6 +27,8 @@ class PortfolioConfig:
     sims: int = 2000
     seed: int = 0
     copy_trading: bool = True
+    routing: str = "copy"  # "copy": every account takes every signal | "round_robin": each signal goes to the next account, at most one trade per account per day (JJ: "one account at a time, one trade per account per day")
+    eval_risk_mode: str = "fixed"  # "fixed": evaluations risk risk_per_trade | "two_trade": evaluations risk profit_target / (2 * rr) so two wins clear the target (JJ's "max risk, exactly two trades" eval posture)
     restart_failed: bool = True
     start_funded: bool = False
     daily_loss_stop_r: float | None = None
@@ -70,15 +72,29 @@ def simulate_portfolio(cfg: PortfolioConfig, presets: dict[str, FirmRules] | Non
     for key, count in cfg.accounts:
         rules = presets[key]
         risk = cfg.risk_per_trade[key] if isinstance(cfg.risk_per_trade, dict) else cfg.risk_per_trade
+        eval_risk = rules.profit_target / (2.0 * cfg.rr) if cfg.eval_risk_mode == "two_trade" else risk
         for i in range(count):
-            accounts.append((key, PropAccount(rules, sims, risk, start_phase=1 if cfg.start_funded else EVAL, restart_failed=cfg.restart_failed)))
+            accounts.append((key, PropAccount(rules, sims, risk, start_phase=1 if cfg.start_funded else EVAL, restart_failed=cfg.restart_failed, eval_risk=eval_risk)))
     total_days = cfg.months * cfg.trading_days_per_month
     monthly_cash = np.zeros((sims, cfg.months))
     monthly_costs = np.zeros((sims, cfg.months))
     funded_counts = np.zeros((sims, cfg.months))
     prev_costs = sum(a.costs_total for _, a in accounts)
+    n_acc = len(accounts)
+    offset = np.zeros(sims, dtype=int)
     for day in range(total_days):
-        if cfg.copy_trading:
+        if cfg.routing == "round_robin":
+            r, mask = _day_outcomes(rng, cfg, sims)
+            n = mask.sum(axis=1)
+            maxn = r.shape[1]
+            rows = np.arange(sims)
+            for k, (_, acct) in enumerate(accounts):
+                idx = (k - offset) % n_acc
+                take = idx < n
+                r_k = r[rows, np.minimum(idx, maxn - 1)][:, None]
+                acct.apply_day(r_k, take[:, None])
+            offset = (offset + n) % n_acc
+        elif cfg.copy_trading:
             r, mask = _day_outcomes(rng, cfg, sims)
             for _, acct in accounts:
                 acct.apply_day(r, mask)

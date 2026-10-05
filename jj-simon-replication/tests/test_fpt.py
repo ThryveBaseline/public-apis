@@ -238,3 +238,22 @@ def test_implied_edge():
     assert out["r_per_account_day"] == pytest.approx(0.1762, abs=1e-3)
     assert R.trades_per_day_for_daily_r(0.35, 0.54, 1.5) == pytest.approx(1.0)
     assert R.trades_per_day_for_daily_r(1.0, 0.3, 1.5) == float("inf")
+
+
+def test_two_trade_eval_posture():
+    rules = FIRM_PRESETS["topstep_100k"].with_(min_trading_days=1, consistency_pct=None)
+    acct = PropAccount(rules, sims=2, risk_per_trade=1000.0, eval_risk=rules.profit_target / 3.0)
+    r = np.array([[1.5, 1.5], [-1.0, -1.0]])
+    acct.apply_day(r, np.ones((2, 2), bool))
+    assert acct.phase[0] == FUNDED  # two 1.5R wins at target/3 risk clear the $6,000 target
+    assert acct.phase[1] == FAILED  # two $2,000 losses breach the $3,000 drawdown
+    # funded phase uses the lower risk
+    acct.apply_day(np.array([[-1.0], [0.0]]), np.array([[True], [False]]))
+    assert acct.balance[0] == pytest.approx(99_000)
+
+
+def test_round_robin_routing_one_trade_per_account_per_day():
+    cfg = PortfolioConfig(accounts=[("topstep_100k", 4)], sims=30, months=1, trades_per_day=3.0, routing="round_robin", eval_risk_mode="two_trade")
+    res = simulate_portfolio(cfg)
+    assert res["accounts"] == 4
+    assert 0 <= res["p_net_positive"] <= 1

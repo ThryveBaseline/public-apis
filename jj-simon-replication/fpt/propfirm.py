@@ -69,10 +69,11 @@ class PropAccount:
     slots are real. Dollar P&L = R * risk_per_trade.
     """
 
-    def __init__(self, rules: FirmRules, sims: int, risk_per_trade: float, start_phase: int = EVAL, restart_failed: bool = True):
+    def __init__(self, rules: FirmRules, sims: int, risk_per_trade: float, start_phase: int = EVAL, restart_failed: bool = True, eval_risk: float | None = None):
         self.rules = rules
         self.sims = sims
-        self.risk = float(risk_per_trade)
+        self.risk = float(risk_per_trade)  # funded-phase risk per trade
+        self.eval_risk = float(eval_risk) if eval_risk is not None else float(risk_per_trade)
         self.restart_failed = restart_failed
         self.phase = np.full(sims, start_phase, dtype=np.int8)
         self.balance = np.full(sims, rules.account_size, dtype=float)
@@ -132,7 +133,8 @@ class PropAccount:
             m = mask[:, k] & alive & ~stopped
             if not m.any():
                 continue
-            pnl = np.where(m, r_matrix[:, k] * self.risk, 0.0)
+            risk = np.where(self.phase == EVAL, self.eval_risk, self.risk)
+            pnl = np.where(m, r_matrix[:, k] * risk, 0.0)
             self.balance += pnl
             day_pnl += pnl
             traded |= m

@@ -99,6 +99,8 @@ def main(argv=None):
     f.add_argument("--daily-loss-stop-r", type=float)
     f.add_argument("--max-consecutive-losses", type=int)
     f.add_argument("--start-funded", action="store_true")
+    f.add_argument("--routing", choices=["copy", "round_robin"], default="copy", help="round_robin = one trade per account per day, accounts in rotation (JJ's stated routine)")
+    f.add_argument("--eval-risk-mode", choices=["fixed", "two_trade"], default="fixed", dest="eval_risk_mode", help="two_trade = evaluations risk target/(2*rr) per trade (JJ's max-risk eval posture)")
     f.add_argument("--scan-risk", action="store_true", help="scan several risk levels instead of one run")
     f.add_argument("--json", action="store_true")
 
@@ -173,7 +175,7 @@ def main(argv=None):
         for spec in a.account or ["topstep_100k:10"]:
             key, _, cnt = spec.partition(":")
             accounts.append((key, int(cnt or 1)))
-        cfg = PortfolioConfig(accounts=accounts, risk_per_trade=a.risk, p_win=a.p, rr=a.rr, trades_per_day=a.trades_per_day, months=a.months, sims=a.sims, daily_loss_stop_r=a.daily_loss_stop_r, max_consecutive_losses=a.max_consecutive_losses, start_funded=a.start_funded)
+        cfg = PortfolioConfig(accounts=accounts, risk_per_trade=a.risk, p_win=a.p, rr=a.rr, trades_per_day=a.trades_per_day, months=a.months, sims=a.sims, daily_loss_stop_r=a.daily_loss_stop_r, max_consecutive_losses=a.max_consecutive_losses, start_funded=a.start_funded, routing=a.routing, eval_risk_mode=a.eval_risk_mode)
         if a.scan_risk:
             rows = optimal_risk_scan(cfg)
             print(f"{'risk/trade':>10} {'net median':>12} {'net p5':>12} {'P(net>0)':>9} {'breaches':>9} {'payouts mean':>13}")
