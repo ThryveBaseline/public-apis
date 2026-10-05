@@ -117,6 +117,7 @@ qualifying trade per day, Section 8). The simulators therefore default to
 | Why prop firms | "prop firms offer more profitability due to their evaluation rules, drawdown limits, and profit targets"; an aggressive high-frequency NY-session method with risk tailored to prop-firm rules | **JJ** |
 | Income target | "$100,000 per month on prop firms" (video title) | **JJ** |
 | Execution stack | copier tooling not confirmed in public sources (TopstepX copier, Tradovate group trading, Replikanto, Tradecopia are the candidates) | unverified |
+| Routing | "one account at a time and one trade per account per day"; evaluations: max risk, target in exactly two trades; funded: risk "coming right down" | **JJ** ([$1.6M video](https://sozai.app/transcript/strategy-behind-1-6m-prop-firm-payouts/), [jjwebinar.com](https://jjwebinar.com/)) |
 
 `fpt/portfolio.py` reproduces the economics: identical signals copied to N
 accounts, each under its firm's rules, with evaluation fees, resets,
@@ -130,17 +131,39 @@ firm presets are templates (`verified=False`) until Section 9 is confirmed.
 
 ## 6. Stop-trading rules and discipline
 
-Published statements are qualitative ("knowing exactly when to stop
-trading", Chart Fanatics blurb; losing weeks handled by sizing). The
-reconstruction used in the code:
+What his own material says (research angle `stop-rules`, 22 sourced facts):
 
-* **Time stop**: the window ends at 11:00 (and 15:00 for the afternoon session).
-* **Statistical daily stop**: the loss at which the day has fallen outside what the edge statistically produces. For 54% / 1.5R and 1.5 qualifying trades a day the 5th-percentile day is about -2R (-$2,000 at $1,000 risk); for 10 trades a day it is about -3R. `python -m fpt.cli edge` prints it for any parameters.
-* **Streak stop**: over 200 trades at 54% the median longest losing streak is 6 and the 99th percentile 12; a stop after N consecutive losses should be set from these quantiles, not from feel (`risk.losing_streak_quantiles`).
-* **Trade-count stop**: max trades per day (10 by his own statement).
+| Rule | His statement | Source |
+|---|---|---|
+| Clock stop | "I end trading at 11:00 ... 'Done for this day'", even when the reversion completes after 11:00 | [Road to $1M Ep. 2](https://sozai.app/transcript/made-105700-3-weeks-day-trading-nq-futures/) **JJ** |
+| Per-account cadence | "one account at a time and one trade per account per day as the optimal way to trade prop firms" | [$1.6M video](https://sozai.app/transcript/strategy-behind-1-6m-prop-firm-payouts/) **JJ** |
+| Total cadence | "there's no maximum amount of trades"; about 10 a day in the NY session, spread across accounts | same **JJ** |
+| Evaluation posture | "maximum risk and clears the whole target in exactly two trades and then moves on"; a loss is "a cheap eval" and he moves on; at 50% win rate "roughly one in every four evals gets funded, and he just plays the numbers" | [jjwebinar.com](https://jjwebinar.com/) **JJ** |
+| Funded posture | "The moment he is funded, he flips gears with risk coming right down"; sizing "around the daily loss limit and trailing drawdown so the rules stop taking traders out" | [jjwebinar.com](https://jjwebinar.com/) **JJ** |
+| Losing weeks | risk per account tuned to volatility so "even red weeks still grant him payouts"; example: "not my best week, but I was still able to take $18,000 worth of payouts" | [jjwebinar.com](https://jjwebinar.com/), [Ep. 2](https://sozai.app/transcript/made-105700-3-weeks-day-trading-nq-futures/) **JJ** |
+| Mechanics as discipline | fixed 1.5R, no management, no partials, skip the trade if the conditions are not met | [fxreplay](https://fxreplay.com/strategies/jj-simons-fair-value-theory-nq-strategy) **3rd** |
+| Psychology | mini-course lesson "The Lie About Psychology: Why Trading Psychology Is Fake", yet a mentorship module "The Killer In Trading: Emotions & Overtrading" | [mini-course](https://jj.jjsimontrades.com/mini-course) **JJ** |
+| His own sample | 80 trades over 8 days, 57.5% win rate at 1.5R | [$1.6M video](https://sozai.app/transcript/strategy-behind-1-6m-prop-firm-payouts/) **JJ** |
 
-Section 10 lists what the research sessions were asked to pin down from
-his own words.
+Not found in any indexed source: a dollar, R or loss-count daily stop, a
+consecutive-loss rule, news-day rules. The "stop at one third of the daily
+loss limit" rule that circulates online comes from generic prop-firm
+guides, not from him. The statistical reconstruction used by the code
+(`python -m fpt.cli edge`): the 5th-percentile day for his edge is about
+-2R at 1.5 qualifying trades a day and -3R at 10; the median longest losing
+streak over 200 trades at 57.5% is 5 and the 99th percentile about 11.
+
+**How the pieces fit.** "One trade per account per day" plus "about 10
+trades a day" means the day's signals are routed across accounts, not
+copied to all of them, which is why 40 accounts produce ~$176 per account
+per day rather than 10 trades' worth each. Evaluations take the first
+signals at target/3 risk (two 1.5R wins = target, satisfying a 50%
+consistency rule exactly); funded accounts take one signal a day at about
+$1,000. `python -m fpt.cli portfolio --routing round_robin --eval-risk-mode
+two_trade` simulates exactly this; with 40 accounts, 10 signals a day at
+57.5% and template firm rules it yields a median of roughly $35-45k net per
+month after the first month, with about 24 accounts funded at any time and
+roughly two breaches per account per six months.
 
 ## 7. Reported results timeline
 
