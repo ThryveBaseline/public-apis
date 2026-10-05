@@ -4,9 +4,10 @@ Reconstructed rules (sources in docs/DOSSIER.md):
   * Instrument NQ, 1-minute chart, New York time.
   * Fair value = the 09:30 open price (pre-open candle). Afternoon anchor at
     14:00 is optional.
-  * Window: 09:30-11:00 ("the 90-minute window"). First 10-15 minutes:
-    CONTINUATION trades in the direction of the opening push away from fair
-    value. Remainder of the window: REVERSION trades back toward fair value.
+  * Window: 09:30-11:00 ("the 90-minute window"). First minutes (JJ: ~5,
+    fxreplay's codification: 10-15): CONTINUATION trades in the direction of
+    the opening push away from fair value. Remainder of the window:
+    REVERSION trades back toward fair value. Optional 14:00-15:00 session.
   * Entry trigger for both: a break of structure (BOS, with the move) or
     market structure break (MSB, against the prior swing) CONFIRMED by a
     displacement candle (counter-wick < 20% of open-to-extreme). Grades:
@@ -41,12 +42,12 @@ TRADE_COLUMNS = [
 class StrategyConfig:
     # sessions (New York time, HH:MM)
     session_start: str = "09:30"
-    continuation_end: str = "09:45"
+    continuation_end: str = "09:35"  # JJ: continuation only in the first ~5 minutes; fxreplay codifies 10-15 (set "09:45")
     window_end: str = "11:00"
     pm_session: bool = False
     pm_start: str = "14:00"
-    pm_continuation_end: str = "14:15"
-    pm_end: str = "15:30"
+    pm_continuation_end: str = "14:05"
+    pm_end: str = "15:00"  # JJ's earlier videos: 14:00-15:00 afternoon session
     # fair value
     anchor: str = "open_0930"
     band_points: float = 38.0
