@@ -18,7 +18,9 @@ with URLs), `docs/research/*.md` (per-angle reports), `docs/research/sources.csv
 | Experience | "full-time futures trader with 16 months of experience" at the $1.5M mark ([$1.6M video transcript summary](https://sozai.app/transcript/strategy-behind-1-6m-prop-firm-payouts/)) | **JJ** |
 | Payout claims over time | $1.3M, $1.5M ("over $1,500,000 in verified prop firm payouts across E8, Topstep, Tradeify and more", [jjwebinar.com](https://jjwebinar.com/)), $1.6M, $1.8M, $1.9M ([video HlWSP7ajgpQ](https://www.youtube.com/watch?v=HlWSP7ajgpQ)), $2,000,000+ ([schedule-call page](https://jj.jjsimontrades.com/schedule-call)) | **JJ**; figures rise with time and differ by platform bio |
 | Payouts by firm (his $1.6M breakdown) | Topstep ~$292,000; E8 ~$222,000; Funded Engineer ~$180,000; MyFundedFutures ~$92,000; Bulwark ~$55,000; Apex ~$60,000 ([$1.6M video](https://sozai.app/transcript/strategy-behind-1-6m-prop-firm-payouts/)); a third-party summary attributes ~$129,500 to Funded Next; Tradeify, Lucid, Alpha Futures also named | **JJ** / **3rd** |
-| Business | Mentorship (NQ execution structure, risk management, funded-account consistency, trade recaps, psychology, mean reversion, fair pricing theory; AllPros rating 4.6/5, [allpros.io](https://allpros.io/course/jjs-mentorship)); free webinar funnel ([jjwebinar.com](https://jjwebinar.com/)); Discord | **3rd** (review site) |
+| Business | Mentorship operated by SIMON FUND LLC (entry model, trade recaps, risk-management dashboard, weekly 1-on-1 calls; price behind an application funnel; curriculum lists continuation and mean-reversion specifics, understanding and identifying fair price, expected value and variance, risk of ruin and bankroll management, prop-firm math, volume by session, VWAP, news days); Whop listing 4.9/5 from 46 reviews with 6,125 members; AllPros 4.6/5 from 5 reviews ([allpros.io](https://allpros.io/course/jjs-mentorship)); a $299.99 pre-recorded workshop; free mini-course and Discord; webinar funnel ([jjwebinar.com](https://jjwebinar.com/)); the free PropFirmEV calculator | **JJ** / **3rd** |
+| Audience | about 32,800 YouTube subscribers, 17K Instagram, 18.1K TikTok (Oct 2026) | platform counts |
+| Credential detail | LinkedIn: University of Washington; built options-pricing software (Black-Scholes and Cox-Ross-Rubinstein) as a student project | **JJ** |
 | Appearances | Chart Fanatics podcast: "This Kid Printed $2M In Payouts Trading 30 Times/Day" ([-lxNWJGWtbg](https://www.youtube.com/watch?v=-lxNWJGWtbg)); "The Genius Who Outsmarted The Prop Firm Game, And Made $1.5M In Payouts" ([aCOgfvL6lK8](https://www.youtube.com/watch?v=aCOgfvL6lK8)); "Leap in with Captain Green Podcast" ([PCDHJBdj-Z4](https://www.youtube.com/watch?v=PCDHJBdj-Z4)); Titans of Tomorrow; Words of Rizdom | **3rd** |
 
 ## 2. The Fair Pricing Theory model
@@ -34,6 +36,17 @@ He has said the open is fair price in roughly 95% of cases; his mentorship
 has separate "understanding fair price" and "identifying fair price"
 modules plus VWAP and volume-analysis modules for the rest (3rd-party
 course listings; the exact alternates are not public).
+
+In his own words "the fair price is 95% of the time going to be the market
+open" and "fair price again at the 9:30 a.m. open" ([$1.6M video](https://sozai.app/transcript/strategy-behind-1-6m-prop-firm-payouts/));
+on news releases: "The spike off the number is the unfair move, fade it
+back to fair price" ([X](https://x.com/itsjjsimon)). The FX Replay PDF adds
+that "the best setups require displacement + break of structure on the
+same candle", that mean reversions alone ran PF ~1.46 with 49-59% win rate
+depending on filter, and that continuations had the higher win rate and
+profit factor. Other codifiers anchor differently: krisskross18's
+TradingView script uses the 09:29 candle open; the 365-day backtester
+"the candle right before the NASDAQ opens"; joetroyer offers six sources.
 
 **Window (JJ).** 09:30 to 11:00 ET, "a 90-minute window"; an afternoon
 session 14:00-15:00 in earlier videos; videos from September 2026
