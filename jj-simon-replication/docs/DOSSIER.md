@@ -18,7 +18,7 @@ with URLs), `docs/research/*.md` (per-angle reports), `docs/research/sources.csv
 | Experience | "full-time futures trader with 16 months of experience" at the $1.5M mark ([$1.6M video transcript summary](https://sozai.app/transcript/strategy-behind-1-6m-prop-firm-payouts/)) | **JJ** |
 | Payout claims over time | $1.3M, $1.5M ("over $1,500,000 in verified prop firm payouts across E8, Topstep, Tradeify and more", [jjwebinar.com](https://jjwebinar.com/)), $1.6M, $1.8M, $1.9M ([video HlWSP7ajgpQ](https://www.youtube.com/watch?v=HlWSP7ajgpQ)), $2,000,000+ ([schedule-call page](https://jj.jjsimontrades.com/schedule-call)) | **JJ**; figures rise with time and differ by platform bio |
 | Payouts by firm (his $1.6M breakdown) | Topstep ~$292,000; E8 ~$222,000; Funded Engineer ~$180,000; MyFundedFutures ~$92,000; Bulwark ~$55,000; Apex ~$60,000 ([$1.6M video](https://sozai.app/transcript/strategy-behind-1-6m-prop-firm-payouts/)); a third-party summary attributes ~$129,500 to Funded Next; Tradeify, Lucid, Alpha Futures also named | **JJ** / **3rd** |
-| Business | Mentorship operated by SIMON FUND LLC (entry model, trade recaps, risk-management dashboard, weekly 1-on-1 calls; price behind an application funnel; curriculum lists continuation and mean-reversion specifics, understanding and identifying fair price, expected value and variance, risk of ruin and bankroll management, prop-firm math, volume by session, VWAP, news days); Whop listing 4.9/5 from 46 reviews with 6,125 members; AllPros 4.6/5 from 5 reviews ([allpros.io](https://allpros.io/course/jjs-mentorship)); a $299.99 pre-recorded workshop; free mini-course and Discord; webinar funnel ([jjwebinar.com](https://jjwebinar.com/)); the free PropFirmEV calculator | **JJ** / **3rd** |
+| Business | Mentorship operated by SIMON FUND LLC (entry model, trade recaps, risk-management dashboard, weekly 1-on-1 calls; price behind an application funnel; curriculum lists continuation and mean-reversion specifics, understanding and identifying fair price, expected value and variance, risk of ruin and bankroll management, prop-firm math, volume by session, VWAP, news days); Whop listing 4.9/5 from 46 reviews with 6,125 members; AllPros 4.6/5 from 5 reviews ([allpros.io](https://allpros.io/course/jjs-mentorship)); a $49/month community tier on Whop and a $299.99 pre-recorded workshop; free mini-course and Discord; webinar funnel ([jjwebinar.com](https://jjwebinar.com/)); the free PropFirmEV calculator | **JJ** / **3rd** |
 | Audience | about 32,800 YouTube subscribers, 17K Instagram, 18.1K TikTok (Oct 2026) | platform counts |
 | Credential detail | LinkedIn: University of Washington; built options-pricing software (Black-Scholes and Cox-Ross-Rubinstein) as a student project | **JJ** |
 | Appearances | Chart Fanatics (host Riz Iqbal): "This Kid Printed $2M In Payouts Trading 30 Times/Day, Here's How." ([-lxNWJGWtbg](https://www.youtube.com/watch?v=-lxNWJGWtbg), uploaded 2026-09-18; no transcript is indexed anywhere, so "45+ accounts" and "30 times/day" exist only in its title and description); Titans of Tomorrow (host Waqar Asim), "The Genius Who Outsmarted The Prop Firm Game, And Made $1.5M In Payouts" / audio title "Quant Finance Graduate Reveals His $1.5M Prop Firm Strategy" ([aCOgfvL6lK8](https://www.youtube.com/watch?v=aCOgfvL6lK8), 2026-06-22; chapters "Why High Risk-Reward Fails Evaluations" 7:23, "Taking 20 Trades A Day Without Tilting" 12:01, "JJ's Mean Reversion Trading Model" 16:00, "His Session Open Strategy Explained" 20:07); Words of Rizdom (Riz Iqbal's audio podcast; billed "$1.8+ Million in Payouts in JUST 18 Months", "20+ scalps a day", "3 fixed simple strategies", trades live on the episode). Not him: the "Leap in with Captain Green" podcast's JJ Simon is a Singapore environment official; the Trading Nut "JJ" and the Business Insider "Kane Simons" are other people. | **3rd** |
@@ -250,13 +250,23 @@ roughly two breaches per account per six months.
 
 | When (approx.) | Claim | Source |
 |---|---|---|
-| ~12-13 months in | $1.2M payouts | third-party summary |
+| start ~Feb 2025 (implied: $1.5M at "16 months" in June 2026) | first payouts; two early Topstep payouts of $4,500 each | his $1.6M video |
+| spring 2026 | $1.2M payouts "over 12-13 months" (fxreplay presenter), then $1.3M (video "My $1,300,000 Trading Strategy", PropFirmEV, old X bio) | third-party summary; his pages |
 | mid-2026 | $1.5M, "16 months of experience"; "Road to $1M" series goal: $1.5M to $2.5M | [Road to $1M Ep. 2 summary](https://sozai.app/transcript/made-105700-3-weeks-day-trading-nq-futures/) |
-| Ep. 2 | $105,700 in 3 weeks of NQ trading across his accounts | same |
-| 2026 | $1.6M (video: "The Strategy Behind My $1.6M in Prop Firm Payouts") | [transcript](https://sozai.app/transcript/strategy-behind-1-6m-prop-firm-payouts/) |
-| 2026 | $1.9M ("I Hit $1.9M In Prop Firm Payouts (My Trades This Week LIVE)") | [HlWSP7ajgpQ](https://www.youtube.com/watch?v=HlWSP7ajgpQ) |
-| Sept 2026 | "$400,000 in 90 Days" (adds 18:00 / 20:00 sessions) | his channel |
-| 2026 | $2,000,000+ | [schedule-call page](https://jj.jjsimontrades.com/schedule-call) |
+| ~2026-06-15 | Road to $1M Ep. 1: "$87,000 From Prop Firms in 2 Weeks" | [gjWiGBiVis0](https://www.youtube.com/watch?v=gjWiGBiVis0) |
+| late June / July 2026 | Ep. 2: $105,700 in 3 weeks across ~40 accounts | [transcript](https://sozai.app/transcript/made-105700-3-weeks-day-trading-nq-futures/) |
+| 2026-07-24 | $1.6M: "The Strategy Behind My $1.6M in Prop Firm Payouts" (per-firm breakdown, A+/A/B grades, 80-trade sample) | [KN7j6NXXAio](https://www.youtube.com/watch?v=KN7j6NXXAio) |
+| ~Aug 2026 | $1.8M: "How I Scaled To $1.8M In Prop Firm Payouts" | [4BXpI-hYqe0](https://www.youtube.com/watch?v=4BXpI-hYqe0) |
+| 2026-09-13 | $1.9M: "I Hit $1.9M In Prop Firm Payouts (My Trades This Week LIVE, Ep. 12)" | [HlWSP7ajgpQ](https://www.youtube.com/watch?v=HlWSP7ajgpQ) |
+| ~2026-09-18 | "The ONE Setup That Made Me $400,000 in 90 Days (6 & 8PM Session)" | [BLvsYJ4sqn8](https://www.youtube.com/watch?v=BLvsYJ4sqn8) |
+| 2026-09-18 | Chart Fanatics episode ($2M, "30 times/day") | [-lxNWJGWtbg](https://www.youtube.com/watch?v=-lxNWJGWtbg) |
+| ~2026-09-21 | "How I Made Money Trading Prop Firms On A Bad Week (Week 13)" | [l6iq0ljhxIo](https://www.youtube.com/watch?v=l6iq0ljhxIo) |
+| late Sept / Oct 2026 | $2,000,000+: "I Hit $2,000,000 In Prop Firm Payouts (Week In My Life)", channel bio, sales page | [PN1UKQMPb5M](https://www.youtube.com/watch?v=PN1UKQMPb5M), [schedule-call page](https://jj.jjsimontrades.com/schedule-call) |
+
+The run from $1.5M (June) to $2M+ (late September) implies about $500k in
+three months, which is not itemized anywhere found. Earlier episodes of the
+weekly series (Weeks 1-12, "My Trades This Week LIVE" 1-11) were not
+indexed.
 
 ## 8. Independent backtests and critiques
 
@@ -277,13 +287,36 @@ the continuation window and to fills on 16.5-point stops with 3 contracts;
 prop-firm payouts are gross of evaluation and reset spend; and the 10-30
 trades-a-day cadence in his videos is not what the codified rules generate.
 
-## 9. Prop-firm rule parameters
+## 9. Prop-firm rule parameters (as of 2026-10-05)
 
-Templates live in `fpt/propfirm.py` (`FIRM_PRESETS`); `docs/research/firm_rules.json`
-carries the researched values with URLs and dates once delivered. Confirm
-every number on the firm's site before trusting a simulation: targets,
-drawdown type and lock, daily loss limits, consistency %, payout minimum
-days, caps and splits, copier policy and maximum accounts per person.
+Researched in `docs/research/prop-firm-rules.md` (58 queries, official help
+centers where marked) and encoded in `fpt/propfirm.py` (`FIRM_PRESETS`,
+each with `verified` and `source`). Highlights for a 100K account:
+
+| Firm / plan | Cost | Target / drawdown | Daily limit | Consistency | Payouts | Split | Funded cap |
+|---|---|---|---|---|---|---|---|
+| Topstep Combine -> XFA | $99/mo + $149 activation | $6,000 / $3,000 EOD-trailing, locks at start | $2,000 soft | 55% of target in the Combine | 5 winning days of $150+, $125 min, $3,000-$4,000 per request | 90/10 | 5 XFAs |
+| E8 Signature | $260 one-time | $6,000 / $3,000 EOD-dynamic | none | 35% best-day once funded | first after 14 days then every 5 profitable days, cap 4.5% then $25k | 80/20 | n/a |
+| MyFundedFutures Pro | $267/mo | $6,000 / $3,000 EOD-trailing | none | 50% | every 14 days, $1,000 min, buffer $3,100 | 80/20 | 3 if any 100K+ |
+| Tradeify Growth | $255 one-time, reset $169 | $6,000 / $3,500 EOD-trailing | $2,500 soft | 35% funded | 5 winning days, balance above $104,500, $2,000-$4,000 | 90/10 | 5 |
+| Tradeify Select | $265 one-time | $6,000 / $3,000 EOD-trailing | none (eval) | 40% eval | daily (Select Daily) or 5-day (Flex) | 90/10 | 5 |
+| Lucid Flex | $89-$407 | $6,000 / $3,000 EOD-trailing, locks | optional | none funded | 5 profitable days, $500 min, up to $2,500, 5 payouts then live | 90/10 | 5 per household |
+| Alpha Standard | $159/mo + $149 | $6,000 / $4,000 EOD-trailing | none | 40% qualified | 5 winning days of $200+, up to 4/month, $4,000 max | 70-90% tiered | 5 |
+| Apex 4.0 Intraday | $249 one-time + $69 | n/a / $3,000 trailing, safety net +$100 | none | 50% in PA | 5 qualifying days, $500 min, weekly | 100% of first $25k then 90/10 | 20 per household |
+
+Two facts matter most for replication. Every firm allows copying between
+accounts you own (Alpha only from an external master). And the official
+funded-account caps (Topstep 5, MyFundedFutures 3-5, Tradeify 5, Lucid 5,
+Alpha 5, Apex 20) sum to about 45, which is exactly the "45+ accounts" in
+the Chart Fanatics blurb: his account count is the sum of what the firms
+permit, not a free choice. "Funded Engineer", credited with ~$180,000 in
+his July 2026 video, was an FX prop firm that filed for bankruptcy on 15
+July 2024, before his trading career began; the transcript almost
+certainly mishears another firm's name (candidates from his own firm list:
+Funded Futures Network, FFF, Funding Futures). The simulator's default
+45-account mix follows the caps: `--account topstep_100k:5 --account
+tradeify_100k_growth:5 --account mffu_100k_pro:3 --account lucid_100k_flex:5
+--account alpha_100k_standard:5 --account apex_100k_intraday:20`.
 
 ## 10. Contradictions, unknowns and verification status
 
@@ -297,7 +330,8 @@ Contradictions found so far:
 7. fxreplay statistics: 158 / 54% / PF 1.76 vs 150 / 52% / PF 1.66 (different passes of one study).
 8. Firm naming: Funded Engineer (JJ) vs Funded Next (third-party summary); both appear in his own breakdown.
 9. The per-firm payout figures he lists sum to roughly $1.26M, not the $1.6M headline of the same video.
-10. Two of the podcast appearances in the original brief were wrong: the Captain Green podcast guest is a different JJ Simon, and the Titans of Tomorrow video and "The Genius Who Outsmarted The Prop Firm Game" are one episode.
+10. "Funded Engineer" (~$180,000 in his breakdown) went bankrupt in July 2024, before he started; the firm name is almost certainly misheard in the transcript.
+11. Two of the podcast appearances in the original brief were wrong: the Captain Green podcast guest is a different JJ Simon, and the Titans of Tomorrow video and "The Genius Who Outsmarted The Prop Firm Game" are one episode.
 
 Unknowns being researched (results land in `docs/research/`): the exact
 BOS/MSB and displacement definitions in his own words; the ATR period; the

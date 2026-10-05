@@ -57,7 +57,7 @@ python -m fpt.cli evaluation --firm topstep_100k --p 0.54 --rr 1.5
 
 # the account operation
 python -m fpt.cli firms
-python -m fpt.cli portfolio --account topstep_100k:20 --account tradeify_100k_select:15 --account mffu_100k_starter:10 --months 6
+python -m fpt.cli portfolio --account topstep_100k:5 --account tradeify_100k_growth:5 --account mffu_100k_pro:3 --account lucid_100k_flex:5 --account alpha_100k_standard:5 --account apex_100k_intraday:20 --months 6
 python -m fpt.cli portfolio --account topstep_100k:10 --months 3 --scan-risk
 ```
 
