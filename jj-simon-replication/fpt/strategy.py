@@ -80,7 +80,9 @@ class StrategyConfig:
     daily_loss_stop_r: float | None = None
     daily_profit_stop_r: float | None = None
     max_consecutive_losses: int | None = None
+    stop_scope: str = "day"  # "day" | "session": whether the daily-R / consecutive-loss stops reset at each session start (Chart Fanatics episode, second-hand: three losses in a row end that session)
     flat_at_window_end: bool = True
+    target_points: float | None = None  # fixed target in points instead of rr x stop (reported for funded accounts without a consistency rule: 100-point targets; stop pairing unverified)
     # costs (per contract per side)
     commission_per_contract_side: float = 2.50
     slippage_points: float = 0.25
@@ -115,6 +117,8 @@ def generate_trades(df: pd.DataFrame, cfg: StrategyConfig | None = None) -> pd.D
     for start, cont_end, end in cfg.extra_sessions:
         windows.append((f"s{start.replace(':', '')}", hhmm(start), hhmm(cont_end), hhmm(end)))
     windows.sort(key=lambda w: w[1])
+    window_starts = {w[1] for w in windows}
+    am_start = hhmm(cfg.session_start)
 
     rev_end_min = hhmm(cfg.reversion_end) if cfg.reversion_end else None
     trades: list[dict] = []
@@ -132,9 +136,9 @@ def generate_trades(df: pd.DataFrame, cfg: StrategyConfig | None = None) -> pd.D
         day_low = np.inf
         rolling_fv = np.nan  # most recent consolidation's price, once one has formed after a push (JJ's rolling fair price)
         last_window = None
-        piv_high: list[list] = []  # [index, price, broken]
+        piv_high: list[list] = []  # [index, price, broken, broken_at_bar]
         piv_low: list[list] = []
-        first = np.where(mod[pos] == windows[0][1])[0]
+        first = np.where(mod[pos] == am_start)[0]  # the 09:30 candle, whatever other sessions are enabled
         open_range = float(h[pos[first[0]]] - l[pos[first[0]]]) if len(first) else 0.0
 
         for t in day_bars:
@@ -143,7 +147,10 @@ def generate_trades(df: pd.DataFrame, cfg: StrategyConfig | None = None) -> pd.D
                 d = position["direction"]
                 exit_price = None
                 reason = None
-                if d > 0:
+                if cfg.flat_at_window_end and mod[t] >= position["window_end"]:
+                    # flatten at this bar's open: nothing that happens later in the bar counts
+                    exit_price, reason = o[t] - d * cfg.slippage_points, "window_end"
+                elif d > 0:
                     if l[t] <= position["stop"]:
                         exit_price, reason = position["stop"] - cfg.slippage_points, "stop"
                     elif h[t] >= position["target"]:
@@ -153,8 +160,6 @@ def generate_trades(df: pd.DataFrame, cfg: StrategyConfig | None = None) -> pd.D
                         exit_price, reason = position["stop"] + cfg.slippage_points, "stop"
                     elif l[t] <= position["target"]:
                         exit_price, reason = position["target"], "target"
-                if exit_price is None and cfg.flat_at_window_end and mod[t] >= position["window_end"]:
-                    exit_price, reason = o[t] - d * cfg.slippage_points, "window_end"
                 if exit_price is None and t == last_bar:
                     exit_price, reason = c[t] - d * cfg.slippage_points, "session_end"
                 if exit_price is not None:
@@ -170,7 +175,11 @@ def generate_trades(df: pd.DataFrame, cfg: StrategyConfig | None = None) -> pd.D
                     if cfg.max_consecutive_losses is not None and consec_losses >= cfg.max_consecutive_losses:
                         stopped = True
 
-            # ---- session extremes (from the first window open) ----
+            # ---- session extremes, measured from each session's own start ----
+            if mod[t] in window_starts:
+                day_high, day_low = -np.inf, np.inf
+                if cfg.stop_scope == "session":
+                    daily_r, consec_losses, stopped = 0.0, 0, False
             if mod[t] >= windows[0][1]:
                 day_high = max(day_high, h[t])
                 day_low = min(day_low, l[t])
@@ -179,9 +188,16 @@ def generate_trades(df: pd.DataFrame, cfg: StrategyConfig | None = None) -> pd.D
             j = t - cfg.swing_right
             if j >= day_bars[0]:
                 if sh[j]:
-                    piv_high.append([j, h[j], False])
+                    piv_high.append([j, h[j], False, -1])
                 if sl[j]:
-                    piv_low.append([j, l[j], False])
+                    piv_low.append([j, l[j], False, -1])
+            # ---- any close through a swing level consumes it (same on every bar, as in the Pine port) ----
+            for p in piv_high:
+                if not p[2] and c[t] > p[1]:
+                    p[2], p[3] = True, t
+            for p in piv_low:
+                if not p[2] and c[t] < p[1]:
+                    p[2], p[3] = True, t
 
             if position is not None or stopped or trades_today >= cfg.max_trades_per_day:
                 continue
@@ -195,6 +211,8 @@ def generate_trades(df: pd.DataFrame, cfg: StrategyConfig | None = None) -> pd.D
             if win is None:
                 continue
             session, w_start, w_cont_end, w_end = win
+            if cfg.flat_at_window_end and mod[t + 1] >= w_end:
+                continue  # the fill bar would be flattened at its own open
             if session != last_window:
                 rolling_fv = np.nan  # each session starts from its own anchor
                 last_window = session
@@ -236,14 +254,11 @@ def generate_trades(df: pd.DataFrame, cfg: StrategyConfig | None = None) -> pd.D
             for p in reversed(pivots):
                 if p[0] < t - cfg.structure_lookback:
                     break
-                if not p[2]:
+                if not p[2] or p[3] == t:  # still live before this bar's close
                     level = p
                     break
-            if level is not None and ((direction > 0 and c[t] > level[1]) or (direction < 0 and c[t] < level[1])):
-                grade = "A+"
-                for p in pivots:  # every level crossed by this close is now broken
-                    if (direction > 0 and c[t] > p[1]) or (direction < 0 and c[t] < p[1]):
-                        p[2] = True
+            if level is not None and level[3] == t:
+                grade = "A+"  # this displacement candle is the first close through the most recent live swing
             elif cfg.allow_grade_a:
                 grade = "A"
             else:
@@ -280,7 +295,7 @@ def generate_trades(df: pd.DataFrame, cfg: StrategyConfig | None = None) -> pd.D
                 "contracts": contracts,
                 "entry": entry,
                 "stop": entry - direction * stop_pts,
-                "target": entry + direction * cfg.rr * stop_pts,
+                "target": entry + direction * (cfg.target_points if cfg.target_points is not None else cfg.rr * stop_pts),
                 "window_end": w_end,
                 "distance_from_fv": c[t] - fvt,
             }

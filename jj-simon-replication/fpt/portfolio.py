@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from .propfirm import EVAL, FIRM_PRESETS, FirmRules, PropAccount
+from .propfirm import EVAL, FIRM_PRESETS, FUNDED, FirmRules, PropAccount
 
 
 @dataclass
@@ -20,7 +20,7 @@ class PortfolioConfig:
     risk_per_trade: float | dict[str, float] = 1000.0
     p_win: float = 0.54
     rr: float = 1.5
-    trades_per_day: float = 1.5  # qualifying trades/day implied by the public backtests and his reported results; his '10 a day' includes lower-grade trades
+    trades_per_day: float = 1.5  # qualifying signals/day (copy mode: per account; round_robin: total across accounts). The third-party backtests log ~1.2/day; his payout arithmetic implies ~0.5 R-producing trades/day per account (see README calibration)
     bootstrap_r: np.ndarray | None = None  # resample real trade R outcomes instead of parametric p/rr
     months: int = 6
     trading_days_per_month: int = 21
@@ -64,6 +64,28 @@ def _day_outcomes(rng: np.random.Generator, cfg: PortfolioConfig, sims: int) -> 
     return r, mask
 
 
+def route_round_robin(accounts: list[PropAccount], r: np.ndarray, mask: np.ndarray, offset: np.ndarray) -> np.ndarray:
+    """Hand the day's signals to the LIVE accounts in rotation, at most one
+    per account per day. Failed accounts that will be re-bought are restarted
+    first so they take part; accounts that stay failed are skipped rather than
+    silently swallowing a signal. Returns the new rotation offset per sim."""
+    sims, maxn = r.shape
+    n = mask.sum(axis=1)
+    rows = np.arange(sims)
+    for acct in accounts:
+        if acct.restart_failed:
+            acct._restart_failed()
+    live = np.stack([((a.phase == EVAL) | (a.phase == FUNDED)) for a in accounts], axis=1)  # sims x accounts
+    n_live = np.maximum(live.sum(axis=1), 1)
+    rank = np.cumsum(live, axis=1) - 1  # each live account's position in today's rotation
+    for k, acct in enumerate(accounts):
+        idx = (rank[:, k] - offset) % n_live
+        take = live[:, k] & (idx < n)
+        r_k = r[rows, np.minimum(idx, maxn - 1)][:, None]
+        acct.apply_day(r_k, take[:, None])
+    return (offset + n) % n_live
+
+
 def simulate_portfolio(cfg: PortfolioConfig, presets: dict[str, FirmRules] | None = None) -> dict:
     presets = presets or FIRM_PRESETS
     rng = np.random.default_rng(cfg.seed)
@@ -79,21 +101,14 @@ def simulate_portfolio(cfg: PortfolioConfig, presets: dict[str, FirmRules] | Non
     monthly_cash = np.zeros((sims, cfg.months))
     monthly_costs = np.zeros((sims, cfg.months))
     funded_counts = np.zeros((sims, cfg.months))
-    prev_costs = sum(a.costs_total for _, a in accounts)
+    initial_costs = sum(a.costs_total for _, a in accounts)
+    prev_costs = np.zeros(sims)  # month 1 therefore includes the initial evaluation purchases, so monthly_net sums to net_total
     n_acc = len(accounts)
     offset = np.zeros(sims, dtype=int)
     for day in range(total_days):
         if cfg.routing == "round_robin":
             r, mask = _day_outcomes(rng, cfg, sims)
-            n = mask.sum(axis=1)
-            maxn = r.shape[1]
-            rows = np.arange(sims)
-            for k, (_, acct) in enumerate(accounts):
-                idx = (k - offset) % n_acc
-                take = idx < n
-                r_k = r[rows, np.minimum(idx, maxn - 1)][:, None]
-                acct.apply_day(r_k, take[:, None])
-            offset = (offset + n) % n_acc
+            offset = route_round_robin([a for _, a in accounts], r, mask, offset)
         elif cfg.copy_trading:
             r, mask = _day_outcomes(rng, cfg, sims)
             for _, acct in accounts:
@@ -128,6 +143,7 @@ def simulate_portfolio(cfg: PortfolioConfig, presets: dict[str, FirmRules] | Non
         "p_net_positive": float((net > 0).mean()),
         "breaches_per_sim": {"mean": float(breaches.mean()), "median": pct(breaches, 50)},
         "passes_per_sim": {"mean": float(passes.mean())},
+        "initial_costs": float(np.median(initial_costs)),
         "monthly_net_median": [pct(monthly_net[:, i], 50) for i in range(cfg.months)],
         "monthly_net_p5": [pct(monthly_net[:, i], 5) for i in range(cfg.months)],
         "monthly_net_p95": [pct(monthly_net[:, i], 95) for i in range(cfg.months)],

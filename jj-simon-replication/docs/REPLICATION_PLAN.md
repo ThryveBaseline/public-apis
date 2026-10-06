@@ -34,7 +34,7 @@ Sweep, one at a time, and keep the regions that are flat, not the peaks:
 - Decide the daily stop from `risk.daily_stop_from_stats` for your measured p and trades/day, and the consecutive-loss stop from `risk.losing_streak_quantiles`.
 
 ## Phase 5: forward test
-- Put `pine/fair_pricing_theory.pine` on NQ1! 1-minute, chart timezone America/New_York, and log signals for 20 sessions. Compare with `generate_trades` on the same days (they should agree on signal bars; differences come from pivot confirmation timing).
+- Put `pine/fair_pricing_theory.pine` on NQ1! 1-minute, chart timezone America/New_York, and log signals for 20 sessions. Compare with `generate_trades` on the same days (the chart marks every qualifying bar; the backtester takes the first one not overlapping an open trade, caps ten a day, applies the stops, and uses the most recent unbroken swing within the lookback where the Pine tracks only the latest swing).
 - Paper trade one evaluation-sized account for a month at the backtested parameters before copying to more accounts.
 
 ## Phase 6: scale

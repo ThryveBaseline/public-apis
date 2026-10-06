@@ -298,3 +298,155 @@ def test_extra_sessions_and_rolling_fair_value(bars):
     assert fv.iloc[30] == bars["open"].iloc[30]  # 10:00 anchor re-sets fair value
     assert fv.iloc[29] == bars["open"].iloc[0]
     assert fv.iloc[270] == bars["open"].iloc[270]  # 14:00 anchor
+
+
+# ---------------------------------------------------------------------------
+# Audit fixes (2026-10-06): hand-built bar sequences for the rule edge cases
+# ---------------------------------------------------------------------------
+
+def _day_frame(day: str, bars: dict, start="09:30", end="11:05", default=(99.5, 100.0, 99.0, 99.4)):
+    """One NY-session day of 1-minute dojis (no displacement) with overrides {"HH:MM": (o, h, l, c)}."""
+    idx = pd.date_range(f"{day} {start}", f"{day} {end}", freq="1min", tz="America/New_York")
+    rows = []
+    for ts in idx:
+        key = ts.strftime("%H:%M")
+        o, h, l, c = bars.get(key, default)
+        rows.append((o, h, l, c, 100))
+    return pd.DataFrame(rows, index=idx, columns=["open", "high", "low", "close", "volume"])
+
+
+def _seed_day(day="2026-01-05"):
+    return _day_frame(day, {}, start="09:30", end="16:00", default=(100.0, 100.5, 99.5, 100.0))
+
+
+def test_structure_already_broken_by_a_plain_close_is_not_a_plus():
+    # pivot high 99.9 at 09:36 (confirmed 09:39); 09:40 closes above it with a 35% counter-wick (no signal);
+    # the 09:41 displacement candle is therefore NOT the first close through the level -> grade A, not A+
+    day = _day_frame("2026-01-06", {
+        "09:30": (100.0, 100.5, 99.5, 100.0),
+        "09:33": (99.3, 99.6, 99.0, 99.35), "09:34": (99.3, 99.5, 99.0, 99.35), "09:35": (99.3, 99.6, 99.0, 99.35),
+        "09:36": (99.3, 99.9, 99.0, 99.4),
+        "09:37": (99.3, 99.5, 99.0, 99.35), "09:38": (99.3, 99.4, 99.0, 99.35), "09:39": (99.3, 99.3, 99.0, 99.25),
+        "09:40": (99.3, 100.3, 99.2, 99.95),
+        "09:41": (99.3, 99.95, 99.25, 99.95),
+    })
+    df = pd.concat([_seed_day(), day])
+    trades = generate_trades(df, StrategyConfig())
+    assert len(trades) >= 1
+    first = trades.iloc[0]
+    assert first["signal_time"].strftime("%H:%M") == "09:41"
+    assert first["grade"] == "A"
+    assert first["direction"] == "long" and first["setup"] == "reversion"
+
+
+def test_first_close_through_a_live_swing_is_a_plus():
+    day = _day_frame("2026-01-06", {
+        "09:30": (100.0, 100.5, 99.5, 100.0),
+        "09:33": (99.3, 99.6, 99.0, 99.35), "09:34": (99.3, 99.5, 99.0, 99.35), "09:35": (99.3, 99.6, 99.0, 99.35),
+        "09:36": (99.3, 99.9, 99.0, 99.4),
+        "09:37": (99.3, 99.5, 99.0, 99.35), "09:38": (99.3, 99.4, 99.0, 99.35), "09:39": (99.3, 99.3, 99.0, 99.25),
+        "09:41": (99.3, 99.95, 99.25, 99.95),
+    })
+    trades = generate_trades(pd.concat([_seed_day(), day]), StrategyConfig())
+    assert trades.iloc[0]["grade"] == "A+"
+
+
+def test_window_end_flattens_at_the_open_before_the_bar_range_counts():
+    day = _day_frame("2026-01-06", {
+        "09:30": (100.0, 100.5, 99.5, 100.0),
+        "10:58": (95.0, 95.7, 94.95, 95.7),      # bullish displacement below fair value -> long reversion
+        "10:59": (95.8, 96.0, 95.5, 95.9),       # fill bar
+        "11:00": (95.6, 125.0, 95.5, 120.0),     # would hit the target after the open
+    }, default=(95.5, 95.9, 95.1, 95.4))
+    trades = generate_trades(pd.concat([_seed_day(), day]), StrategyConfig())
+    assert len(trades) == 1
+    t = trades.iloc[0]
+    assert t["entry_time"].strftime("%H:%M") == "10:59"
+    assert t["exit_reason"] == "window_end"
+    assert t["exit"] == pytest.approx(95.6 - 0.25)
+
+
+def test_signal_whose_fill_would_be_flattened_is_skipped():
+    day = _day_frame("2026-01-06", {
+        "09:30": (100.0, 100.5, 99.5, 100.0),
+        "10:59": (95.0, 95.7, 94.95, 95.7),      # displacement on the last bar of the window
+        "11:00": (95.8, 125.0, 95.5, 120.0),
+    }, default=(95.5, 95.9, 95.1, 95.4))
+    trades = generate_trades(pd.concat([_seed_day(), day]), StrategyConfig())
+    assert len(trades) == 0
+
+
+def test_big_open_rule_reads_the_0930_candle_even_with_an_0830_session():
+    cfg = StrategyConfig(extra_sessions=(("08:30", "08:35", "09:29"),))
+    base = {"09:30": (100.0, 101.0, 99.0, 100.0), "09:41": (94.3, 95.95, 94.25, 95.95)}  # body large enough for the post-spike ATR
+    small_open = _day_frame("2026-01-06", {**base, "08:30": (100.0, 115.0, 85.0, 100.0)}, start="08:30", default=(95.5, 95.9, 95.1, 95.4))
+    t = generate_trades(pd.concat([_seed_day(), small_open]), cfg)
+    am = t[t["session"] == "am"]
+    assert len(am) >= 1 and (am["tier"] != "big_open").all()
+    big_open = _day_frame("2026-01-06", {**base, "09:30": (100.0, 115.0, 85.0, 100.0)}, start="08:30", default=(95.5, 95.9, 95.1, 95.4))
+    t2 = generate_trades(pd.concat([_seed_day(), big_open]), cfg)
+    am2 = t2[t2["session"] == "am"]
+    assert len(am2) >= 1 and (am2["tier"] == "big_open").all()
+
+
+def test_fixed_target_points_override():
+    day = _day_frame("2026-01-06", {"09:30": (100.0, 100.5, 99.5, 100.0), "09:41": (95.3, 95.95, 95.25, 95.95)}, default=(95.5, 95.9, 95.1, 95.4))
+    t = generate_trades(pd.concat([_seed_day(), day]), StrategyConfig(target_points=100.0)).iloc[0]
+    assert t["target"] - t["entry"] == pytest.approx(100.0)
+
+
+def test_soft_daily_loss_limit_liquidates_exactly_at_the_limit():
+    rules = FIRM_PRESETS["topstep_100k"].with_(min_trading_days=1, consistency_pct=None)
+    acct = PropAccount(rules, sims=1, risk_per_trade=1500.0)
+    pnl = acct.apply_day(np.array([[-1.0, -1.0, -1.0]]), np.ones((1, 3), bool))
+    assert pnl[0] == pytest.approx(-2_000)  # not -3,000: the breaching trade is cut at the limit
+    assert acct.balance[0] == pytest.approx(98_000) and acct.phase[0] == EVAL
+
+
+def test_consistency_rule_is_phase_specific():
+    # E8: no rule in the evaluation, 35% once funded -> two 1.5R wins at target/3 risk pass
+    e8 = FIRM_PRESETS["e8_100k_signature"].with_(min_trading_days=1)
+    acct = PropAccount(e8, sims=1, risk_per_trade=1000.0, eval_risk=e8.profit_target / 3.0)
+    acct.apply_day(np.array([[1.5]]), np.ones((1, 1), bool))
+    acct.apply_day(np.array([[1.5]]), np.ones((1, 1), bool))
+    assert acct.phase[0] == FUNDED
+    assert e8.funded_consistency_pct == 0.35
+    # Topstep: 55% rule in the Combine only -> a funded account with one big day still gets paid
+    ts = FIRM_PRESETS["topstep_100k"].with_(payout_min_days=1)
+    acct = PropAccount(ts, sims=1, risk_per_trade=1000.0, start_phase=FUNDED)
+    acct.apply_day(np.array([[3.0]]), np.ones((1, 1), bool))
+    assert acct.month_end()[0] > 0
+
+
+def test_failed_account_is_rebought_next_day_at_the_right_price():
+    ts = FIRM_PRESETS["topstep_100k"].with_(min_trading_days=1, consistency_pct=None, daily_loss_limit=None)
+    acct = PropAccount(ts, sims=1, risk_per_trade=3000.0)
+    acct.apply_day(np.array([[-1.0]]), np.ones((1, 1), bool))
+    assert acct.phase[0] == FAILED
+    acct.apply_day(np.zeros((1, 1)), np.zeros((1, 1), bool))  # next day: re-bought before trading
+    assert acct.phase[0] == EVAL and acct.costs_total[0] == pytest.approx(99.0 + 99.0)
+    tr = FIRM_PRESETS["tradeify_100k_growth"].with_(daily_loss_limit=None)
+    acct = PropAccount(tr, sims=1, risk_per_trade=1000.0, start_phase=FUNDED)
+    acct.apply_day(np.array([[-3.5]]), np.ones((1, 1), bool))
+    acct.apply_day(np.zeros((1, 1)), np.zeros((1, 1), bool))
+    assert acct.costs_total[0] == pytest.approx(255.0)  # a funded breach needs a new evaluation, not a $169 reset
+
+
+def test_round_robin_skips_dead_accounts():
+    from fpt.portfolio import route_round_robin
+    rules = FIRM_PRESETS["topstep_100k"].with_(consistency_pct=None, daily_loss_limit=None)
+    accts = [PropAccount(rules, sims=1, risk_per_trade=1000.0, restart_failed=False) for _ in range(4)]
+    for k in (0, 2):
+        accts[k].phase[:] = FAILED
+    offset = route_round_robin(accts, np.array([[1.5, 1.5]]), np.ones((1, 2), bool), np.zeros(1, dtype=int))
+    assert [int(a.trading_days[0]) for a in accts] == [0, 1, 0, 1]
+    assert int(offset[0]) == 0  # two signals over two live accounts -> back to the start
+
+
+def test_risk_math_audit_fixes():
+    assert R.expected_max_losing_streak(0.54, 100) == pytest.approx(5.38, abs=0.02)  # full Schilling, not the leading term
+    d = R.daily_stop_from_stats(0.54, 1.5, 10, 1000.0)
+    assert d["stop_r"] <= d["close_quantile_r"]  # the running loss is at least as bad as the close
+    static = R.optimal_fixed_risk(0.54, 1.5, 3000, 6000, 1.5, 30, candidates=[750.0], sims=1500)[0]["p_pass"]
+    trailing = R.optimal_fixed_risk(0.54, 1.5, 3000, 6000, 1.5, 30, candidates=[750.0], sims=1500, drawdown_type="trailing_eod", lock_profit=3000, daily_loss_limit=2000)[0]["p_pass"]
+    assert trailing < static

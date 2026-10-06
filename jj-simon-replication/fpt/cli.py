@@ -24,7 +24,7 @@ from .strategy import StrategyConfig
 
 def _cfg_from_args(a) -> StrategyConfig:
     cfg = StrategyConfig()
-    for name in ("rr", "risk_dollars", "max_trades_per_day", "daily_loss_stop_r", "max_consecutive_losses", "min_body_atr", "wick_pct", "anchor", "size_mode", "continuation_end", "window_end", "slippage_points", "commission_per_contract_side", "skip_first_minutes", "reversion_end", "big_open_candle_points"):
+    for name in ("rr", "risk_dollars", "max_trades_per_day", "daily_loss_stop_r", "max_consecutive_losses", "stop_scope", "target_points", "min_body_atr", "wick_pct", "anchor", "size_mode", "continuation_end", "window_end", "slippage_points", "commission_per_contract_side", "skip_first_minutes", "reversion_end", "big_open_candle_points"):
         v = getattr(a, name, None)
         if v is not None:
             setattr(cfg, name, v)
@@ -62,6 +62,8 @@ def main(argv=None):
     b.add_argument("--max-trades-per-day", type=int, dest="max_trades_per_day")
     b.add_argument("--daily-loss-stop-r", type=float, dest="daily_loss_stop_r")
     b.add_argument("--max-consecutive-losses", type=int, dest="max_consecutive_losses")
+    b.add_argument("--stop-scope", choices=["day", "session"], dest="stop_scope", help="session = the loss stops reset at each session start (reported: three losses in a row end the session)")
+    b.add_argument("--target-points", type=float, dest="target_points", help="fixed target in points instead of rr x stop (reported: 100-point targets on funded accounts without a consistency rule)")
     b.add_argument("--min-body-atr", type=float, dest="min_body_atr")
     b.add_argument("--wick-pct", type=float, dest="wick_pct")
     b.add_argument("--anchor", choices=["open_0930", "close_0929", "vwap_0929_0930"])
@@ -181,8 +183,12 @@ def main(argv=None):
 
     if a.cmd == "evaluation":
         rules = FIRM_PRESETS[a.firm]
-        rows = R.optimal_fixed_risk(a.p, a.rr, rules.max_drawdown, rules.profit_target, a.trades_per_day, a.max_days, sims=a.sims)
-        print(f"{rules.firm} {rules.plan}: target {rules.profit_target:,.0f}, drawdown {rules.max_drawdown:,.0f} (verified={rules.verified})")
+        dll = rules.daily_loss_limit if (rules.daily_loss_limit is not None and not rules.daily_loss_fails_account) else None
+        rows = R.optimal_fixed_risk(a.p, a.rr, rules.max_drawdown, rules.profit_target, a.trades_per_day, a.max_days, sims=a.sims,
+                                    drawdown_type=rules.drawdown_type, lock_profit=rules.drawdown_lock_profit, daily_loss_limit=dll)
+        lock = f", locks at start+{rules.drawdown_lock_profit:,.0f}" if rules.drawdown_lock_profit is not None else ""
+        print(f"{rules.firm} {rules.plan}: target {rules.profit_target:,.0f}, drawdown {rules.max_drawdown:,.0f} {rules.drawdown_type}{lock}, "
+              f"soft daily loss limit {dll if dll is None else format(dll, ',.0f')} (verified={rules.verified}); consistency and minimum-day rules not applied")
         print(f"{'risk/trade':>12} {'% of DD':>8} {'P(pass)':>8} {'P(fail)':>8} {'median days':>12}")
         for r in rows:
             print(f"{r['risk_per_trade']:>12,.0f} {r['risk_pct_of_drawdown']:>8.0%} {r['p_pass']:>8.1%} {r['p_fail']:>8.1%} {r['median_days_to_pass']:>12.1f}")

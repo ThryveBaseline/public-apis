@@ -178,11 +178,24 @@ size in half" and uses the 50-point stop. The business math he teaches:
 cost to funded = fee / pass rate ($100 / 0.30 = $333); cost per dollar of
 drawdown = fee / drawdown ($750 for $4,500); EV of an evaluation =
 P(payout) x payout - P(no payout) x fee (10% x $2,000 - 90% x $100 =
-+$110); "the optimal profit target on his accounts was $1,800 per day";
++$110; strictly the fee is paid either way, so with a gross $2,000 payout
+the EV is +$100); "the optimal profit target on his accounts was $1,800 per day";
 about 40 accounts "where all of your accounts end the day traded" is six
 figures a month; he says he spent $550,000 on evaluations learning this.
 Variance he reports: -$21,000 over seven days inside a +$48K month with a
 $45K payout. `python -m fpt.cli evalmath` reproduces the arithmetic.
+
+**Reported second-hand from the Chart Fanatics episode** (KHEQ5g55dQ4,
+uploaded 2026-10-04; the reading of the GB10 session that holds the
+transcript, see `docs/research/chartfanatics-KHEQ5g55dQ4-notes.md`; every
+item is to be checked against the transcript before it is promoted to his
+own words): a 25-point stop and 38-point target in normal volatility;
+contracts halved when the opening range exceeds 25 points; 1:1.5 targets on
+evaluations and consistency-rule accounts but 100-point targets on funded
+accounts without a consistency rule (`--target-points`, stop pairing not yet
+known); the 50k example of a $2,000 drawdown against a $3,000 target; 45
+accounts, never broken down by firm; and cost to funded = evaluation price
+divided by pass rate.
 
 **The arithmetic the method rests on.** At the third-party-measured 52-54%
 win rate and 1.5R the expectancy is +0.3 to +0.35R per qualifying trade;
@@ -191,15 +204,22 @@ about 23%; $1,000 on a $3,000 Topstep drawdown is 33%, i.e. more than
 Kelly, which is why his operation needs many accounts rather than one.
 `python -m fpt.cli edge` reproduces these numbers; `python -m fpt.cli
 evaluation` shows the pass-probability curve versus fixed risk per trade
-(it peaks near 25-30% of the drawdown for a 54% / 1.5R edge at 1.5
-qualifying trades a day).
+under the preset's own drawdown rule. For Topstep 100k (EOD-trailing limit
+locked at the start balance, $2,000 soft daily limit) at a 54% / 1.5R edge
+and 1.5 qualifying trades a day it peaks near 20-30% of the drawdown at a
+73-75% pass probability (4,000 sims); a static-drawdown scan would say 80%,
+which is why the firm's rule matters.
 
 **Calibration warning.** Ten trades a day at 54% / 1.5R would be +3.5R per
 account per day. His own reported results imply far less: "$105,700 in 3
 weeks" across ~40 accounts is about $176 per account per trading day,
-~0.18R at $1,000 risk, which matches the third-party backtests (about one
-qualifying trade per day, Section 8). The simulators therefore default to
-1.5 qualifying trades per day.
+~0.18R of payout at $1,000 risk. At 0.35R expectancy per trade that is what
+about 0.5 R-producing trades per account per day would yield if payouts
+equalled P&L; payouts are net of splits, caps, breaches and unfunded
+accounts, and the third-party backtests log about 1.2 qualifying signals a
+day (Section 8). The simulators default to 1.5 qualifying signals per day
+per account in copy mode, an upper bound on his cadence rather than a fit
+to his payouts.
 
 ## 5. Multi-account operation
 
@@ -217,11 +237,15 @@ qualifying trade per day, Section 8). The simulators therefore default to
 accounts, each under its firm's rules, with evaluation fees, resets,
 activation fees, consistency gates, payout caps and monthly cadence. With
 45 accounts (20 Topstep 100k, 15 Tradeify Select 100k, 10 MFFU 100k),
-$1,000 risk, 54% / 1.5R and 1.5 qualifying trades a day, the six-month
-median net cash is in the $800k range (about $90k a month once accounts are
-funded) with a 5th percentile near +$60k, and about 95 account breaches per
-simulated run, i.e. roughly two breaches per account per six months. The
-firm presets are templates (`verified=False`) until Section 9 is confirmed.
+$1,000 risk, 54% / 1.5R and 1.5 qualifying trades a day (1,000 sims, seed
+0), the six-month median net cash is about $1.06M (roughly $150k a month
+once accounts are funded) with a 5th percentile near $330k and about 154
+account breaches per run, i.e. three to four per account in six months,
+each re-bought the next trading day. Treat it as the model's upper bound:
+every account receives 1.5 qualifying signals a day with no execution
+differences. Seven of the twelve presets (Topstep x3, MyFundedFutures Rapid,
+Tradeify Growth and Select, Alpha Standard) are backed by the firms' help
+centers; the rest are third-party placeholders (Section 9).
 
 **Operation details from the `accounts` angle (34 facts).** Payouts by
 firm from his $1.6M breakdown: Topstep ~$292,000; E8 $222,122 (the one
@@ -273,13 +297,18 @@ What his own material says (research angle `stop-rules`, 22 sourced facts):
 | Psychology | mini-course lesson "The Lie About Psychology: Why Trading Psychology Is Fake", yet a mentorship module "The Killer In Trading: Emotions & Overtrading" | [mini-course](https://jj.jjsimontrades.com/mini-course) **JJ** |
 | His own sample | 80 trades over 8 days, 57.5% win rate at 1.5R | [$1.6M video](https://sozai.app/transcript/strategy-behind-1-6m-prop-firm-payouts/) **JJ** |
 
-Not found in any indexed source: a dollar, R or loss-count daily stop, a
-consecutive-loss rule, news-day rules. The "stop at one third of the daily
+Not found in any indexed snippet: a dollar or R daily stop or news-day
+rules. A consecutive-loss rule (three in a row end the session) and the
+rule that the 9:30 fair price is invalid after 11:00 are reported
+second-hand from the Chart Fanatics episode (Section 4 note). The "stop at one third of the daily
 loss limit" rule that circulates online comes from generic prop-firm
 guides, not from him. The statistical reconstruction used by the code
-(`python -m fpt.cli edge`): the 5th-percentile day for his edge is about
--2R at 1.5 qualifying trades a day and -3R at 10; the median longest losing
-streak over 200 trades at 57.5% is 5 and the 99th percentile about 11.
+(`python -m fpt.cli edge --p 0.575`): the 5th-percentile running loss for
+his edge is -2R at 1.5 qualifying trades a day and -4R at 10 (the quantile of
+the day's closing P&L is -2R at both cadences); the median longest losing
+streak over 200 trades at 57.5% is 5 and the 99th percentile 10. The
+backtester's `stop_scope="session"` resets these stops at each session start
+to match the reported per-session rule.
 
 **How the pieces fit.** "One trade per account per day" plus "about 10
 trades a day" means the day's signals are routed across accounts, not
@@ -338,7 +367,11 @@ trades-a-day cadence in his videos is not what the codified rules generate.
 
 Researched in `docs/research/prop-firm-rules.md` (58 queries, official help
 centers where marked) and encoded in `fpt/propfirm.py` (`FIRM_PRESETS`,
-each with `verified` and `source`). Highlights for a 100K account:
+each with `verified` and `source`). Presets cover 8 of the 17 firms he
+names; Bulwark Prime ($55,000 of his payouts), TickTick Trader, FFF, Bulenox,
+Futures Elite, Take Profit Trader, Funding Futures, BGF, Phidias, FXIFY and
+TopOneFutures have no preset or research row yet. Highlights for a 100K
+account:
 
 | Firm / plan | Cost | Target / drawdown | Daily limit | Consistency | Payouts | Split | Funded cap |
 |---|---|---|---|---|---|---|---|
@@ -349,14 +382,17 @@ each with `verified` and `source`). Highlights for a 100K account:
 | Tradeify Select | $265 one-time | $6,000 / $3,000 EOD-trailing | none (eval) | 40% eval | daily (Select Daily) or 5-day (Flex) | 90/10 | 5 |
 | Lucid Flex | $89-$407 | $6,000 / $3,000 EOD-trailing, locks | optional | none funded | 5 profitable days, $500 min, up to $2,500, 5 payouts then live | 90/10 | 5 per household |
 | Alpha Standard | $159/mo + $149 | $6,000 / $4,000 EOD-trailing | none | 40% qualified | 5 winning days of $200+, up to 4/month, $4,000 max | 70-90% tiered | 5 |
-| Apex 4.0 Intraday | $249 one-time + $69 | n/a / $3,000 trailing, safety net +$100 | none | 50% in PA | 5 qualifying days, $500 min, weekly | 100% of first $25k then 90/10 | 20 per household |
+| Apex 4.0 Intraday | $790 one-time + $69 (third-party) | n/a / $3,000 trailing, safety net +$100 | none | 50% in PA | 5 qualifying days, $500 min, weekly | 100% of first $25k then 90/10 | 20 per household |
 
 Two facts matter most for replication. Every firm allows copying between
 accounts you own (Alpha only from an external master). And the official
 funded-account caps (Topstep 5, MyFundedFutures 3-5, Tradeify 5, Lucid 5,
-Alpha 5, Apex 20) sum to about 45, which is exactly the "45+ accounts" in
-the Chart Fanatics blurb: his account count is the sum of what the firms
-permit, not a free choice. "Funded Engineer", credited with ~$180,000 in
+Alpha 5, Apex 20) sum to about 45, matching the "45+ accounts" in the
+Chart Fanatics blurb. That match is this dossier's inference, not his
+statement: in the episode he says 45 accounts twice but never splits them by
+firm, says the firm does not matter as long as risk is tuned to its rules,
+and names only Lucid, Tradeify and (probably) Topstep himself; every Apex
+mention there is the host's sponsor read. "Funded Engineer", credited with ~$180,000 in
 his July 2026 video, was an FX prop firm that filed for bankruptcy on 15
 July 2024, before his trading career began; the transcript almost
 certainly mishears another firm's name (candidates from his own firm list:

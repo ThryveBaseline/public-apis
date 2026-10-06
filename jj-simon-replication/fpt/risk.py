@@ -69,10 +69,12 @@ def implied_daily_r(payout_dollars: float, accounts: int, trading_days: int, ris
     """Back out the per-account daily edge implied by a reported result.
 
     Example: "$105,700 in 3 weeks" across ~40 accounts at ~$1,000 risk per
-    trade -> 105,700 / (40 * 15) / 1,000 = 0.176 R per account per day,
-    which is what the public third-party backtests also imply (about
-    one to three qualifying trades a day at ~54% / 1.5R), not the 3.5 R/day
-    that "10 trades a day at 54%" would produce.
+    trade -> 105,700 / (40 * 15) / 1,000 = 0.176 R of PAYOUT per account per
+    day. At 54% / 1.5R (0.35R per trade) that is what about 0.5 qualifying
+    trades a day would produce if payouts equalled P&L; payouts are net of
+    splits, caps, evaluation-phase accounts and breaches, so gross P&L and the
+    trade count behind it are higher. It is nowhere near the 3.5 R/day that
+    "10 trades a day at 54%" would produce.
     """
     per_account_day = payout_dollars / (accounts * trading_days)
     return {
@@ -105,11 +107,13 @@ def kelly_fraction(p_win: float, rr: float) -> float:
 
 
 def expected_max_losing_streak(p_win: float, n_trades: int) -> float:
-    """Schilling approximation of the expected longest run of losses in n trades."""
+    """Schilling (1990) approximation of the expected longest run of losses in
+    n trades: log_{1/q}(n p) + gamma / ln(1/q) - 1/2."""
     q = 1.0 - p_win
-    if q <= 0 or n_trades <= 0:
+    if q <= 0 or n_trades <= 0 or n_trades * p_win <= 1:
         return 0.0
-    return math.log(n_trades * p_win) / math.log(1.0 / q) if n_trades * p_win > 1 else 0.0
+    ln_inv_q = math.log(1.0 / q)
+    return math.log(n_trades * p_win) / ln_inv_q + 0.5772156649 / ln_inv_q - 0.5
 
 
 def losing_streak_quantiles(p_win: float, n_trades: int, quantiles=(0.5, 0.9, 0.99), sims: int = 20000, seed: int = 0) -> dict[float, int]:
@@ -141,12 +145,13 @@ def daily_stop_from_stats(p_win: float, rr: float, trades_per_day: float, risk_p
     """"Knowing exactly when to stop": the daily loss at which a day has
     become statistically abnormal for an edge with these parameters.
 
-    Simulates days with Poisson(trades_per_day) trades and returns the
-    `quantile` (default 5th percentile) of daily P&L in R and dollars, the
-    expected daily P&L, and the probability a day ends negative. A day whose
-    running loss crosses the quantile is outside what the edge should
-    produce; the trader stops, because either the edge is absent today or
-    variance has already used up the day's budget.
+    Simulates days with Poisson(trades_per_day) trades. `stop_r` is the
+    `quantile` (default 5th percentile) of the day's RUNNING loss (the worst
+    point reached during the day), which is the number to use as an intraday
+    stop: a day whose running loss crosses it is outside what the edge should
+    produce, so the trader stops. `close_quantile_r` is the same quantile of
+    the day's closing P&L (less negative, since a day can recover). Also
+    returns the expected daily P&L and the probability a day ends negative.
     """
     rng = np.random.default_rng(seed)
     n = rng.poisson(trades_per_day, size=sims)
@@ -154,12 +159,16 @@ def daily_stop_from_stats(p_win: float, rr: float, trades_per_day: float, risk_p
     wins = rng.random((sims, max(maxn, 1))) < p_win
     r = np.where(wins, rr, -1.0)
     mask = np.arange(max(maxn, 1))[None, :] < n[:, None]
-    daily_r = (r * mask).sum(axis=1)
-    q_r = float(np.quantile(daily_r, quantile))
+    path = np.cumsum(r * mask, axis=1)
+    daily_r = path[:, -1]
+    run_min = np.minimum(0.0, path.min(axis=1))
+    q_r = float(np.quantile(run_min, quantile))
+    q_close = float(np.quantile(daily_r, quantile))
     return {
         "quantile": quantile,
         "stop_r": q_r,
         "stop_dollars": q_r * risk_per_trade,
+        "close_quantile_r": q_close,
         "expected_daily_r": float(daily_r.mean()),
         "expected_daily_dollars": float(daily_r.mean() * risk_per_trade),
         "p_negative_day": float((daily_r < 0).mean()),
@@ -167,21 +176,28 @@ def daily_stop_from_stats(p_win: float, rr: float, trades_per_day: float, risk_p
     }
 
 
-def optimal_fixed_risk(p_win: float, rr: float, drawdown_allowance: float, target: float, trades_per_day: float, max_days: int, candidates=None, sims: int = 4000, seed: int = 0) -> list[dict]:
-    """Scan fixed $ risk per trade and report, for each, the probability of
-    reaching `target` before losing `drawdown_allowance` within max_days.
-    This is the "optimal risk" question for a prop evaluation: the largest
-    risk that keeps the pass probability acceptable. Returns a list sorted
-    by risk."""
+def optimal_fixed_risk(p_win: float, rr: float, drawdown_allowance: float, target: float, trades_per_day: float, max_days: int, candidates=None, sims: int = 4000, seed: int = 0, drawdown_type: str = "static", lock_profit: float | None = None, daily_loss_limit: float | None = None) -> list[dict]:
+    """P(pass the evaluation) versus fixed dollar risk per trade.
+
+    drawdown_type: "static" (loss measured from the start balance),
+    "trailing_eod" (the threshold trails the end-of-day equity peak) or
+    "trailing_intraday" (it trails the intraday peak of the trade path).
+    lock_profit: the trailing threshold stops rising once the peak reaches
+    this profit (Topstep: lock_profit = drawdown, so it locks at the start).
+    daily_loss_limit: a soft daily stop; the day ends at the limit.
+    Consistency and minimum-day rules are not applied.
+    """
     rng = np.random.default_rng(seed)
     if candidates is None:
-        candidates = [drawdown_allowance * f for f in (0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.40, 0.50)]
+        candidates = [drawdown_allowance * f for f in (0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.50)]
     out = []
+    trailing = drawdown_type in ("trailing_eod", "trailing_intraday")
     for risk in candidates:
         n = rng.poisson(trades_per_day, size=(sims, max_days))
+        equity = np.zeros(sims)
+        peak = np.zeros(sims)
         passed = np.zeros(sims, dtype=bool)
         failed = np.zeros(sims, dtype=bool)
-        equity = np.zeros(sims)
         days_to_pass = np.full(sims, np.nan)
         for d in range(max_days):
             nd = n[:, d]
@@ -191,15 +207,30 @@ def optimal_fixed_risk(p_win: float, rr: float, drawdown_allowance: float, targe
             wins = rng.random((sims, maxn)) < p_win
             r = np.where(wins, rr, -1.0) * risk
             mask = np.arange(maxn)[None, :] < nd[:, None]
-            # walk trade by trade so intraday breaches count
             path = np.cumsum(r * mask, axis=1)
-            day_min = np.minimum(0.0, path.min(axis=1))
-            day_end = path[:, -1] * 0 + (r * mask).sum(axis=1)
+            if daily_loss_limit is not None:
+                hit = path <= -daily_loss_limit
+                any_hit = hit.any(axis=1)
+                first = np.where(any_hit, hit.argmax(axis=1), maxn - 1)
+                held = path[np.arange(sims), first][:, None]
+                path = np.where(np.arange(maxn)[None, :] <= first[:, None], path, held)
+                path = np.where(any_hit[:, None], np.maximum(path, -daily_loss_limit), path)  # liquidated at the limit
+            eq_path = equity[:, None] + path
             alive = ~(passed | failed)
-            breach = alive & (equity + day_min <= -drawdown_allowance)
+            if drawdown_type == "trailing_intraday":
+                run_peak = np.maximum(peak[:, None], np.maximum.accumulate(eq_path, axis=1))
+                if lock_profit is not None:
+                    run_peak = np.minimum(run_peak, lock_profit)
+                breach = alive & ((eq_path <= run_peak - drawdown_allowance).any(axis=1))
+            else:
+                ref = np.minimum(peak, lock_profit) if (trailing and lock_profit is not None) else (peak if trailing else 0.0)
+                breach = alive & (eq_path.min(axis=1) <= ref - drawdown_allowance)
             failed |= breach
             alive = ~(passed | failed)
-            equity = np.where(alive, equity + day_end, equity)
+            equity = np.where(alive, eq_path[:, -1], equity)
+            if trailing:
+                day_peak = eq_path.max(axis=1) if drawdown_type == "trailing_intraday" else equity
+                peak = np.where(alive, np.maximum(peak, day_peak), peak)
             newly = alive & (equity >= target)
             days_to_pass[newly] = d + 1
             passed |= newly
@@ -230,8 +261,11 @@ def cost_per_drawdown_dollar(eval_fee: float, drawdown: float) -> float:
 
 
 def eval_expected_value(p_payout: float, payout: float, eval_fee: float) -> float:
-    """EV of buying one evaluation: p * payout - (1 - p) * fee (his example:
-    10% x $2,000 - 90% x $100 = +$110)."""
+    """EV of buying one evaluation as JJ frames it: p * payout - (1 - p) * fee
+    (his example: 10% x $2,000 - 90% x $100 = +$110). This is only the true EV
+    when `payout` is the net result of a passing evaluation (after its fee);
+    for a gross payout the EV is p * payout - fee, which makes his example
+    +$100."""
     return p_payout * payout - (1.0 - p_payout) * eval_fee
 
 

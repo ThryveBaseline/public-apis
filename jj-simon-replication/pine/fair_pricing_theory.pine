@@ -3,18 +3,27 @@
 // Reconstructed from public descriptions; see ../docs/DOSSIER.md for sources and
 // ../docs/ASSUMPTIONS.md for the choices made where the public record is silent.
 // Apply to NQ1! on the 1-minute chart with the chart timezone set to America/New_York.
+// Parity with fpt/strategy.py: defaults match StrategyConfig (5-minute continuation,
+// 14:00-15:00 PM window, 0.5 x ATR displacement body, 25-point big-open rule, any close
+// through the latest swing consumes it). Known differences: this indicator marks EVERY
+// qualifying bar, while the backtester holds one position at a time, caps trades per day
+// and applies daily stops, so it takes only the first signal not overlapping an open trade;
+// the backtester also keeps a list of swings and uses the most recent unbroken one within
+// the lookback, whereas this script tracks only the latest swing.
 indicator("Fair Pricing Theory - NQ (replication)", overlay=true, max_lines_count=500, max_labels_count=500)
 
 // ---------------- inputs ----------------
 sessStart   = input.session("0930-1100", "Trading window (NY)")
-contEnd     = input.int(15,  "Continuation minutes after open", minval=1, maxval=60)
+contEnd     = input.int(5,   "Continuation minutes after open", minval=1, maxval=60, tooltip="ASSUMPTIONS.md row 2: JJ ~5 minutes; fxreplay 10-15")
 pmSession   = input.bool(false, "Also trade the 14:00 session")
-pmStart     = input.session("1400-1530", "PM window (NY)")
+pmStart     = input.session("1400-1500", "PM window (NY)")
+pmContEnd   = input.int(5,   "PM continuation minutes", minval=1, maxval=60)
+bigOpenPts  = input.float(25.0, "Big opening candle (points), 0 = off", tooltip="ASSUMPTIONS.md row 21: 09:30 range above this -> 50pt stop at half size")
 bandPts     = input.float(38.0, "Premium/discount band (points)")
 requireBand = input.bool(false, "Reversion only after band touch")
 atrLen      = input.int(14, "ATR length (1-min)")
 wickPct     = input.float(0.20, "Max counter-wick as fraction of open-to-extreme", step=0.05)
-minBodyATR  = input.float(1.0, "Min displacement body (x ATR)", step=0.25)
+minBodyATR  = input.float(0.5, "Min displacement body (x ATR)", step=0.25, tooltip="ASSUMPTIONS.md row 6")
 swingLen    = input.int(3, "Swing left/right bars")
 lookback    = input.int(60, "Structure lookback (bars)")
 allowGradeA = input.bool(true, "Take grade-A (displacement only) signals")
@@ -35,20 +44,26 @@ if newPM
 var int sessBars = 0
 sessBars := newAM or newPM ? 0 : (inAM or inPM ? sessBars + 1 : sessBars)
 inWindow = inAM or inPM
-isCont = inWindow and sessBars < contEnd
+isCont = inWindow and sessBars < (inPM ? pmContEnd : contEnd)
 var float dayHigh = na
 var float dayLow  = na
-if newAM
+if newAM or newPM
     dayHigh := high
     dayLow  := low
-else if inAM
+else if inAM or inPM
     dayHigh := math.max(dayHigh, high)
     dayLow  := math.min(dayLow, low)
+var float openRange = na
+if newAM
+    openRange := high - low
+bigOpen = inAM and bigOpenPts > 0 and openRange > bigOpenPts
 
 // ---------------- ATR tier ----------------
 atrV = ta.atr(atrLen)
-stopPts = atrV > tier1ATR ? 50.0 : atrV >= tier2ATR ? 25.0 : 16.5
-cts     = atrV > tier1ATR ? 1 : atrV >= tier2ATR ? 2 : 3
+tierStop = atrV > tier1ATR ? 50.0 : atrV >= tier2ATR ? 25.0 : 16.5
+tierCts  = atrV > tier1ATR ? 1 : atrV >= tier2ATR ? 2 : 3
+stopPts  = bigOpen ? 50.0 : tierStop
+cts      = bigOpen ? math.max(1, math.floor(tierCts / 2)) : tierCts
 
 // ---------------- displacement ----------------
 bullDisp = close > open and (high - open) > 0 and (high - close) <= wickPct * (high - open) and (close - open) >= minBodyATR * atrV
@@ -81,8 +96,8 @@ if bosDown
 above = close > fv
 dirWanted = isCont ? (above ? 1 : -1) : (above ? -1 : 1)
 bandOK = not requireBand or isCont or (dirWanted == -1 ? dayHigh >= fv + bandPts : dayLow <= fv - bandPts)
-longSig  = inWindow and not na(fv) and dirWanted == 1  and bullDisp and bandOK and (bosUp   or allowGradeA)
-shortSig = inWindow and not na(fv) and dirWanted == -1 and bearDisp and bandOK and (bosDown or allowGradeA)
+longSig  = inWindow and not na(fv) and close != fv and dirWanted == 1  and bullDisp and bandOK and (bosUp   or allowGradeA)
+shortSig = inWindow and not na(fv) and close != fv and dirWanted == -1 and bearDisp and bandOK and (bosDown or allowGradeA)
 gradeLong  = bosUp ? "A+" : "A"
 gradeShort = bosDown ? "A+" : "A"
 

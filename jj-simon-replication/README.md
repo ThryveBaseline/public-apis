@@ -31,7 +31,7 @@ fpt/            the library
   portfolio.py  N-account copy-trading Monte Carlo with fees, resets, breaches and payouts
   cli.py        command line
 pine/           TradingView port of the signal logic
-tests/          pytest suite (18 tests)
+tests/          pytest suite
 docs/           dossier, assumptions, replication plan, raw research
 data/           where your NQ 1-minute CSV goes (see data/README.md)
 ```
@@ -86,24 +86,30 @@ signals: fxreplay's study logged 150-158 trades, the 365-day
 custom-indicator test 289 trades in a year (about 1.2 a day), both at
 roughly 52-54% win rate and 1.5R. His own reported results agree with the
 backtests, not with the headline cadence: "$105,700 in 3 weeks" across
-about 40 accounts is 105,700 / (40 x 15) = $176 per account per day, about
-0.18R at $1,000 risk, which is what one to three 54% / 1.5R trades a day
-produce. Ten trades a day at 54% would be +3.5R (+$3,500) per account per
-day and would blow through every prop firm's payout cap within a week.
+about 40 accounts is 105,700 / (40 x 15) = $176 of payout per account per
+day, about 0.18R at $1,000 risk. At 54% / 1.5R one trade is worth 0.35R, so
+that is what about 0.5 R-producing trades per account per day would yield if
+payouts equalled P&L; payouts are net of splits, caps, breaches and
+evaluation-phase accounts, so the gross cadence is higher but nowhere near
+ten trades a day at 54%, which would be +3.5R (+$3,500) per account per day
+and would blow through every prop firm's payout cap within a week.
 
-So the simulators default to **1.5 qualifying trades per day**; the extra
-trades in his "10 a day" are lower-grade entries whose expectancy is close
-to zero. `python -m fpt.cli implied --payout 105700 --accounts 40 --days 15`
-does this arithmetic for any claim.
+The simulators default to **1.5 qualifying signals per day** (per account in
+copy mode; the total across accounts in round-robin mode, where the dossier's
+example uses 10), the cadence of the third-party backtests, which is an upper
+bound on his results rather than a fit to them. The extra trades in his "10 a
+day" are lower-grade entries whose expectancy is close to zero.
+`python -m fpt.cli implied --payout 105700 --accounts 40 --days 15` does this
+arithmetic for any claim.
 
 ## What the risk tools answer
 
-* `edge`: expectancy per trade and per day, breakeven win rate, Kelly fraction of the drawdown allowance, expected and tail losing streaks, and the **statistical daily stop**: the loss at which today's result has fallen outside the 5th percentile of what the edge produces, which is the reconstruction of "knowing exactly when to stop trading".
-* `evaluation`: for a firm preset, the probability of hitting the profit target before the drawdown as a function of fixed risk per trade: the "optimal risk" curve for passing evaluations.
+* `edge`: expectancy per trade and per day, breakeven win rate, Kelly fraction of the drawdown allowance, expected and tail losing streaks, and the **statistical daily stop**: the running loss at which today has fallen outside the 5th percentile of what the edge produces (the closing-P&L quantile is reported alongside), which is the reconstruction of "knowing exactly when to stop trading".
+* `evaluation`: for a firm preset, the probability of hitting the profit target before the drawdown as a function of fixed risk per trade, under the preset's drawdown type, lock level and soft daily loss limit (consistency and minimum-day rules are not applied): the "optimal risk" curve for passing evaluations.
 * `portfolio`: the 20-45 account operation under copy trading: evaluation fees, resets, activation fees, breaches, passes, consistency rules, payout caps and cadence, with the distribution of net cash flow per month. `--scan-risk` repeats it across risk levels.
 * `risk.risk_of_ruin`, `risk.losing_streak_quantiles`: sanity checks for a 54% / 1.5R edge at ten trades a day.
 
-Firm presets in `fpt/propfirm.py` are templates; each carries `verified` and `source`. Confirm the numbers on the firm's site before trusting a simulation.
+Firm presets in `fpt/propfirm.py` carry `verified` (True = the number comes from the firm's own help center; seven of twelve presets) and `source`; the rest are third-party placeholders. Evaluation and funded consistency rules are separate fields. Confirm every number on the firm's site before trusting a simulation.
 
 ## Reproducing his numbers
 

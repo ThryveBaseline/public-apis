@@ -5,6 +5,17 @@ number carries a `verified` flag and `source` so you can see what was
 checked against a primary source (see docs/DOSSIER.md section 9) and what
 is a placeholder you must confirm on the firm's site before trusting a
 simulation.
+
+Coverage: presets exist for 8 of the 17 firms JJ names (Topstep, E8,
+MyFundedFutures, Tradeify, Lucid, Alpha Futures, Apex, FundedNext). No preset
+or research row yet for Bulwark Prime ($55,000 of his payouts), TickTick
+Trader, FFF, Bulenox, Futures Elite, Take Profit Trader, Funding Futures, BGF,
+Phidias, FXIFY or TopOneFutures. "Funded Engineer" (~$180,000 in his July 2026
+video) went bankrupt in 2024, so that name is a mishearing of one of these.
+
+Approximation: "trailing_intraday" trails the balance after each closed trade,
+not the unrealised intraday equity high, so it is slightly more lenient than a
+real intraday-trailing limit.
 """
 from __future__ import annotations
 
@@ -27,10 +38,10 @@ class FirmRules:
     profit_target: float
     max_drawdown: float
     drawdown_type: str  # "trailing_intraday" | "trailing_eod" | "static"
-    drawdown_lock_profit: float | None  # trailing threshold stops rising once it reaches start + this (None = never locks)
+    drawdown_lock_profit: float | None  # profit (balance - start) at which the trailing threshold stops rising; it then locks at start + this - max_drawdown (Topstep: the start balance). None = never locks
     daily_loss_limit: float | None
     daily_loss_fails_account: bool
-    consistency_pct: float | None  # best day must be <= this fraction of profit at pass / payout
+    consistency_pct: float | None  # evaluation rule: best day must be <= this fraction of profit at the pass check (None = no eval rule)
     min_trading_days: int
     max_contracts: int
     payout_min_days: int  # trading days required before each payout
@@ -41,6 +52,7 @@ class FirmRules:
     verified: bool = False
     source: str = ""
     notes: str = ""
+    funded_consistency_pct: float | None = None  # funded rule: best day since the last payout must be <= this fraction of profit since then (None = no funded rule)
 
     def with_(self, **kw) -> "FirmRules":
         return replace(self, **kw)
@@ -56,15 +68,15 @@ FIRM_PRESETS: dict[str, FirmRules] = {
     "topstep_50k": FirmRules("Topstep", "50K Trading Combine -> Express Funded", 50_000, 49.0, True, 49.0, 149.0, 3_000, 2_000, "trailing_eod", 2_000, 1_000, False, 0.55, 1, 5, 5, 125.0, 2_000, 0.90, 0.0, True, "https://help.topstep.com/en/articles/8284197-trading-combine-parameters", "EOD-trailing loss limit locks at the starting balance; daily loss limit is a soft lockout; Combine consistency best day <= 55% of target; XFA payout after 5 winning days of $150+ (or 3 days with best day <= 40%); caps per request $2,000-$3,000; 90/10; max 5 XFAs, 20 purchases/month; copy trading across own accounts allowed"),
     "topstep_100k": FirmRules("Topstep", "100K Trading Combine -> Express Funded", 100_000, 99.0, True, 99.0, 149.0, 6_000, 3_000, "trailing_eod", 3_000, 2_000, False, 0.55, 1, 10, 5, 125.0, 3_000, 0.90, 0.0, True, "https://help.topstep.com/en/articles/8284215-express-funded-account-parameters", "caps per request $3,000-$4,000"),
     "topstep_150k": FirmRules("Topstep", "150K Trading Combine -> Express Funded", 150_000, 199.0, True, 199.0, 149.0, 9_000, 4_500, "trailing_eod", 4_500, 3_000, False, 0.55, 1, 15, 5, 125.0, 5_000, 0.90, 0.0, True, "https://help.topstep.com/en/articles/8284215-express-funded-account-parameters", "caps per request $5,000-$6,000"),
-    "e8_100k_signature": FirmRules("E8 Futures", "Signature 100K", 100_000, 260.0, False, 260.0, 0.0, 6_000, 3_000, "trailing_eod", 3_000, None, False, 0.35, 1, 8, 5, 0.0, 4_500, 0.80, 3_000.0, False, "https://help.e8markets.com/en/articles/13106558-all-product-overviews-e8-one-vs-e8-zero-vs-e8-pro-vs-e8-signature", "price official; 3% EOD-dynamic drawdown, no daily loss limit, funded 35% best-day rule, first payout after 14 days then every 5 profitable days, cap 4.5% then $25k, buffer equal to the drawdown (third-party restatements)"),
-    "mffu_50k_rapid": FirmRules("MyFundedFutures", "Rapid 50K", 50_000, 129.0, True, 0.0, 0.0, 3_000, 2_000, "trailing_intraday", 2_000, None, False, 0.50, 1, 5, 1, 500.0, None, 0.90, 2_100.0, True, "https://help.myfundedfutures.com/en/articles/13134709-rapid-plan-50k-a-comprehensive-look", "intraday trailing; daily payouts; 50% consistency; buffer $2,100"),
-    "mffu_100k_pro": FirmRules("MyFundedFutures", "Pro 100K", 100_000, 267.0, True, 0.0, 0.0, 6_000, 3_000, "trailing_eod", 3_000, None, False, 0.50, 1, 10, 10, 1_000.0, 100_000, 0.80, 3_100.0, False, "https://myfundedfutures.com/plans/pro", "payouts every 14 calendar days (about 10 trading days); 50% consistency per the official article (a third party says none); max 3 sim-funded accounts when any is 100K+; copy trading allowed"),
-    "tradeify_100k_growth": FirmRules("Tradeify", "Growth 100K", 100_000, 255.0, False, 169.0, 0.0, 6_000, 3_500, "trailing_eod", 3_500, 2_500, False, 0.35, 1, 8, 5, 0.0, 4_000, 0.90, 4_500.0, True, "https://help.tradeify.co/en/articles/10495915-growth-evaluation-accounts", "soft daily loss limit; funded 35% consistency; payout after 5 winning days, balance must stay above $104,500, caps $2,000-$4,000; 90/10; 5 sim-funded accounts; price is the third-party-listed one-time fee"),
-    "tradeify_100k_select": FirmRules("Tradeify", "Select 100K (Flex payouts)", 100_000, 265.0, False, 169.0, 0.0, 6_000, 3_000, "trailing_eod", 3_000, None, False, 0.40, 3, 10, 5, 0.0, None, 0.90, 0.0, True, "https://help.tradeify.co/en/articles/12853921-select-evaluation-accounts", "eval 40% consistency, 3 minimum days, no daily loss limit; funded Select Daily (daily payouts, $1,250 DLL) or Select Flex (5-day cadence, no DLL); reset fee assumed equal to Growth's"),
-    "lucid_100k_flex": FirmRules("Lucid Trading", "LucidFlex 100K", 100_000, 250.0, False, 250.0, 0.0, 6_000, 3_000, "trailing_eod", 3_000, None, False, None, 5, 10, 5, 500.0, 2_500, 0.90, 0.0, False, "https://support.lucidtrading.com/en/articles/12945796-lucidflex-payouts", "payout rules official (5 profitable days, min $500, 50% of balance up to $2,500, 90/10, 5 payouts then live); price is an estimate inside the third-party $89-$407 range; max 5 funded per household"),
-    "alpha_100k_standard": FirmRules("Alpha Futures", "Standard 100K", 100_000, 159.0, True, 159.0, 149.0, 6_000, 4_000, "trailing_eod", 4_000, None, False, 0.40, 1, 10, 5, 200.0, 4_000, 0.80, 0.0, True, "https://alpha-futures.com/posts/alpha-futures-standard-plan-is-back-rules-fees-what-s-new", "6% target, 4% EOD trailing; qualified-account 40% consistency; payouts after 5 winning days of $200+, up to 4 per month, max $4,000 per request; split tiered 70% rising to 90% (0.80 used); max 5 accounts; copy trading only from an external master into Alpha"),
-    "apex_100k_intraday": FirmRules("Apex Trader Funding", "100K Intraday (4.0)", 100_000, 249.0, False, 249.0, 69.0, 6_000, 3_000, "trailing_intraday", 3_100, None, False, 0.50, 5, 10, 5, 500.0, None, 0.90, 100.0, False, "https://support.apextraderfunding.com/hc/en-us/articles/4406804554779-How-Many-Paid-Funded-Accounts-Am-I-Allowed-to-Have", "account cap (20 per household) and copy-trading policy official; fees, 50% consistency, 5 qualifying days, $500 minimum and the safety net (drawdown + $100 for the first 3 payouts) from third parties; split is 100% of the first $25k then 90/10 (0.90 used); profit target assumed $6,000"),
-    "fundednext_50k_flex": FirmRules("FundedNext Futures", "Flex 50K", 50_000, 70.0, False, 70.0, 0.0, 3_000, 2_000, "trailing_eod", 2_000, None, False, 0.40, 1, 5, 5, 0.0, None, 0.95, 0.0, False, "https://damnpropfirms.com/futures-prop-firms/fundednext/", "third-party only; 40% consistency in the challenge, 95% split, five rewards then the account concludes; target and drawdown assumed"),
+    "e8_100k_signature": FirmRules("E8 Futures", "Signature 100K", 100_000, 260.0, False, 260.0, 0.0, 6_000, 3_000, "trailing_eod", 3_000, None, False, None, 1, 8, 5, 0.0, 4_500, 0.80, 3_000.0, False, "https://help.e8markets.com/en/articles/13106558-all-product-overviews-e8-one-vs-e8-zero-vs-e8-pro-vs-e8-signature", "price official; 3% EOD-dynamic drawdown, no daily loss limit, funded 35% best-day rule, first payout after 14 days then every 5 profitable days, cap 4.5% then $25k, buffer equal to the drawdown (third-party restatements)", funded_consistency_pct=0.35),
+    "mffu_50k_rapid": FirmRules("MyFundedFutures", "Rapid 50K", 50_000, 129.0, True, 0.0, 0.0, 3_000, 2_000, "trailing_intraday", 2_000, None, False, 0.50, 1, 5, 1, 500.0, None, 0.90, 2_100.0, True, "https://help.myfundedfutures.com/en/articles/13134709-rapid-plan-50k-a-comprehensive-look", "intraday trailing; daily payouts; 50% consistency; buffer $2,100; price $129/mo is third-party (tradecovex; others quote $109-$347); the phase of the 50% rule is not stated, applied to both", funded_consistency_pct=0.5),
+    "mffu_100k_pro": FirmRules("MyFundedFutures", "Pro 100K", 100_000, 267.0, True, 0.0, 0.0, 6_000, 3_000, "trailing_eod", 3_000, None, False, 0.50, 1, 10, 10, 1_000.0, 100_000, 0.80, 3_100.0, False, "https://myfundedfutures.com/plans/pro", "payouts every 14 calendar days (about 10 trading days); 50% consistency per the official article (a third party says none); max 3 sim-funded accounts when any is 100K+; copy trading allowed", funded_consistency_pct=0.5),
+    "tradeify_100k_growth": FirmRules("Tradeify", "Growth 100K", 100_000, 255.0, False, 169.0, 0.0, 6_000, 3_500, "trailing_eod", 3_500, 2_500, False, None, 1, 8, 5, 0.0, 4_000, 0.90, 4_500.0, True, "https://help.tradeify.co/en/articles/10495915-growth-evaluation-accounts", "soft daily loss limit; funded 35% consistency; payout after 5 winning days, balance must stay above $104,500, caps $2,000-$4,000; 90/10; 5 sim-funded accounts; price is the third-party-listed one-time fee", funded_consistency_pct=0.35),
+    "tradeify_100k_select": FirmRules("Tradeify", "Select 100K (Flex payouts)", 100_000, 265.0, False, 169.0, 0.0, 6_000, 3_000, "trailing_eod", 3_000, None, False, 0.40, 3, 8, 5, 0.0, None, 0.90, 0.0, True, "https://help.tradeify.co/en/articles/12853921-select-evaluation-accounts", "eval 40% consistency, 3 minimum days, no daily loss limit; funded Select Daily (daily payouts, $1,250 DLL) or Select Flex (5-day cadence, no DLL); reset fee assumed equal to Growth's; Flex 100K payout cap and protected balance not captured, modelled as uncapped with no buffer"),
+    "lucid_100k_flex": FirmRules("Lucid Trading", "LucidFlex 100K", 100_000, 250.0, False, 250.0, 0.0, 6_000, 3_000, "trailing_eod", 3_000, None, False, None, 1, 10, 5, 500.0, 2_500, 0.90, 0.0, False, "https://support.lucidtrading.com/en/articles/12945796-lucidflex-payouts", "payout rules official (5 profitable days, min $500, 50% of balance up to $2,500, 90/10, 5 payouts then live); price is an estimate inside the third-party $89-$407 range; max 5 funded per household; no sourced minimum trading days (1 used); max contracts 10 assumed"),
+    "alpha_100k_standard": FirmRules("Alpha Futures", "Standard 100K", 100_000, 159.0, True, 159.0, 149.0, 6_000, 4_000, "trailing_eod", 4_000, None, False, None, 1, 10, 5, 200.0, 4_000, 0.80, 0.0, True, "https://alpha-futures.com/posts/alpha-futures-standard-plan-is-back-rules-fees-what-s-new", "6% target, 4% EOD trailing; qualified-account 40% consistency; payouts after 5 winning days of $200+, up to 4 per month, max $4,000 per request; split tiered 70% rising to 90% (0.80 used); max 5 accounts; copy trading only from an external master into Alpha", funded_consistency_pct=0.4),
+    "apex_100k_intraday": FirmRules("Apex Trader Funding", "100K Intraday (4.0)", 100_000, 790.0, False, 790.0, 69.0, 6_000, 3_000, "trailing_intraday", 3_100, None, False, None, 1, 10, 5, 500.0, None, 0.90, 3_100.0, False, "https://support.apextraderfunding.com/hc/en-us/articles/4406804554779-How-Many-Paid-Funded-Accounts-Am-I-Allowed-to-Have", "account cap (20 per household) and copy-trading policy official; fees, 50% consistency, 5 qualifying days, $500 minimum and the safety net (drawdown + $100 for the first 3 payouts) from third parties; split is 100% of the first $25k then 90/10 (0.90 used); profit target assumed $6,000; price $790 one-time is third-party (damnpropfirms, March 2026); the $3,100 safety net is kept for every payout although Apex waives it from the 4th; no eval minimum days sourced; max contracts 10 assumed", funded_consistency_pct=0.5),
+    "fundednext_50k_flex": FirmRules("FundedNext Futures", "Flex 50K", 50_000, 70.0, False, 70.0, 0.0, 3_000, 1_500, "trailing_eod", 1_500, None, False, 0.40, 1, 5, 5, 0.0, None, 0.95, 0.0, False, "https://damnpropfirms.com/futures-prop-firms/fundednext/", "third-party only; 40% consistency in the challenge, 95% split, five rewards then the account concludes; target and drawdown assumed; drawdown $1,500 = bottom of the third-party $1,500-$4,000 range"),
 }
 
 
@@ -95,6 +107,7 @@ class PropAccount:
         self.breaches = np.zeros(sims, dtype=int)
         self.passes = np.zeros(sims, dtype=int)
         self.payout_count = np.zeros(sims, dtype=int)
+        self.failed_from = np.full(sims, -1, dtype=np.int8)  # phase the account was in when it breached
 
     # -- helpers ---------------------------------------------------------
     def _lock(self):
@@ -115,7 +128,19 @@ class PropAccount:
         if not mask.any():
             return
         self.breaches[mask] += 1
+        self.failed_from[mask] = self.phase[mask]
         self.phase[mask] = FAILED
+
+    def _restart_failed(self):
+        """Re-buy failed accounts: a failed evaluation is reset (reset_cost), a
+        failed funded account needs a new evaluation (eval_cost)."""
+        r = self.rules
+        failed = self.phase == FAILED
+        if not failed.any():
+            return
+        reset = failed & (self.failed_from == EVAL) & (r.reset_cost > 0)
+        self.costs_total += np.where(reset, r.reset_cost, np.where(failed, r.eval_cost, 0.0))
+        self._reset_account(failed, EVAL)
 
     def _reset_account(self, mask: np.ndarray, phase: int):
         r = self.rules
@@ -132,6 +157,8 @@ class PropAccount:
     def apply_day(self, r_matrix: np.ndarray, mask: np.ndarray) -> np.ndarray:
         """Apply a day's trades. Returns the day's realised P&L per sim."""
         rules = self.rules
+        if self.restart_failed:
+            self._restart_failed()  # an account that breached yesterday is re-bought and trades again today
         alive = (self.phase == EVAL) | (self.phase == FUNDED)
         day_pnl = np.zeros(self.sims)
         stopped = np.zeros(self.sims, dtype=bool)
@@ -142,6 +169,9 @@ class PropAccount:
                 continue
             risk = np.where(self.phase == EVAL, self.eval_risk, self.risk)
             pnl = np.where(m, r_matrix[:, k] * risk, 0.0)
+            if rules.daily_loss_limit is not None and not rules.daily_loss_fails_account:
+                over = day_pnl + pnl + rules.daily_loss_limit  # negative when this trade carries the day past the limit
+                pnl = np.where(m & (over < 0), pnl - over, pnl)  # the firm liquidates at the limit
             self.balance += pnl
             day_pnl += pnl
             traded |= m
@@ -152,7 +182,7 @@ class PropAccount:
             else:  # trailing_eod still fails intraday on the current threshold
                 breach = m & (self.balance <= self.threshold)
             if rules.daily_loss_limit is not None:
-                dll = m & (day_pnl <= -rules.daily_loss_limit)
+                dll = m & (day_pnl <= -rules.daily_loss_limit + 1e-9)
                 if rules.daily_loss_fails_account:
                     breach |= dll
                 else:
@@ -189,15 +219,13 @@ class PropAccount:
         if rules.eval_cost_is_monthly:
             ev = self.phase == EVAL
             self.costs_total[ev] += rules.eval_cost
-        failed = self.phase == FAILED
-        if self.restart_failed and failed.any():
-            self.costs_total[failed] += rules.reset_cost if rules.reset_cost > 0 else rules.eval_cost
-            self._reset_account(failed, EVAL)
+        if self.restart_failed:
+            self._restart_failed()
         funded = self.phase == FUNDED
         profit = self.balance - rules.account_size - rules.payout_buffer
         eligible = funded & (self.days_since_payout >= rules.payout_min_days) & (profit >= rules.payout_min_amount)
-        if rules.consistency_pct is not None:
-            eligible &= self.best_day <= rules.consistency_pct * np.maximum(self.profit_since_reset, 1e-9)
+        if rules.funded_consistency_pct is not None:
+            eligible &= self.best_day <= rules.funded_consistency_pct * np.maximum(self.profit_since_reset, 1e-9)
         amount = np.where(eligible, profit, 0.0)
         if rules.payout_max is not None:
             amount = np.minimum(amount, rules.payout_max)
