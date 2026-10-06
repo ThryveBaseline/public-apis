@@ -51,11 +51,13 @@ def daily_context(bars: pd.DataFrame, period: int = 14) -> pd.DataFrame:
     prev_close = d["close"].shift()
     tr = pd.concat([d["high"] - d["low"], (d["high"] - prev_close).abs(), (d["low"] - prev_close).abs()], axis=1).max(axis=1)
     d["daily_atr"] = tr.rolling(period, min_periods=period).mean().shift()  # yesterday's ATR is known at today's open
+    d["prev_close"] = prev_close
+    d["atr_pct"] = d["daily_atr"] / d["prev_close"]  # price-relative volatility, comparable across eras
     m = idx.hour * 60 + idx.minute
     sel = (m >= 570) & (m < 575)
     orng = pd.DataFrame({"high": bars["high"].to_numpy()[sel], "low": bars["low"].to_numpy()[sel]}, index=day[sel]).groupby(level=0)
     d["opening_range"] = orng["high"].max() - orng["low"].min()
-    return d[["daily_atr", "opening_range"]]
+    return d[["daily_atr", "opening_range", "prev_close", "atr_pct"]]
 
 
 def excursions(trades: pd.DataFrame, bars: pd.DataFrame, day_end: str = "16:00") -> pd.DataFrame:
@@ -153,6 +155,13 @@ def anatomy(trades: pd.DataFrame, bars: pd.DataFrame, oos_start: str, day_end: s
     t = t.join(ctx, on="day")
     reg = volatility_regime(bars, fit_through=pd.Timestamp(oos_start) - pd.Timedelta(days=1))
     t["regime"] = t["day"].map(reg).fillna("n/a")
+    # price-relative regime: terciles of daily ATR / previous close over DEVELOPMENT days, applied to every day
+    dev_days = ctx.loc[ctx.index < pd.Timestamp(oos_start), "atr_pct"].dropna()
+    if len(dev_days):
+        q1, q2 = dev_days.quantile([1 / 3, 2 / 3])
+        t["rel_regime"] = t["atr_pct"].map(lambda v: "n/a" if pd.isna(v) else ("low" if v <= q1 else ("high" if v > q2 else "mid")))
+    else:
+        t["rel_regime"] = "n/a"
     t["outcome"] = np.where(t["r"] > 0, "win", "loss")
 
     base = ["trades", "win_rate", "expectancy_r", "profit_factor", "mfe_held_med", "mae_held_med",
@@ -165,18 +174,23 @@ def anatomy(trades: pd.DataFrame, bars: pd.DataFrame, oos_start: str, day_end: s
     sections.append("Excursions are in points from the entry price: `mfe_held`/`mae_held` over the bars from entry to exit; `winners_room_*` use the MFE from entry through " + day_end + " New York regardless of the exit; `losers_mfe_*` is how far a losing trade went toward the target before stopping out; `winners_mae_*` is how close a winner came to the stop. `stop_over_daily_atr` uses the prior day's 14-day daily ATR (full Globex day); `target_over_opening_range` uses the 09:30-09:35 range.\n")
     for title, by in [("By period", ["period"]), ("By period and setup", ["period", "setup"]), ("By period and direction", ["period", "direction"]),
                       ("By period and grade", ["period", "grade"]), ("By period and entry time", ["period", "entry_bucket"]),
-                      ("By period and volatility regime (terciles fitted on development days)", ["period", "regime"]),
+                      ("By period and volatility regime in points (terciles fitted on development days; confounded with price level)", ["period", "regime"]),
+                      ("By period and price-relative regime (daily ATR / previous close, terciles fitted on development days)", ["period", "rel_regime"]),
+                      ("By period, setup and grade", ["period", "setup", "grade"]),
+                      ("By period, setup and entry time", ["period", "setup", "entry_bucket"]),
+                      ("By period, setup and price-relative regime", ["period", "setup", "rel_regime"]),
                       ("By year", ["year"]), ("By year and setup", ["year", "setup"]), ("By period, setup and exit reason", ["period", "setup", "exit_reason"])]:
         bt = bucket_table(t, by)
         sections.append(f"## {title}\n\n" + _md(bt, by + base) + "\n")
     # geometry drift by year: what 25/38 points meant each year
-    geo = t.groupby("year").agg(daily_atr_med=("daily_atr", "median"), opening_range_med=("opening_range", "median"),
+    geo = t.groupby("year").agg(daily_atr_med=("daily_atr", "median"), opening_range_med=("opening_range", "median"), price_med=("prev_close", "median"),
                                 stop_pts=("stop_points", "median"), target_pts=("target_points", "median"), trades=("r", "size"))
     geo["stop_over_atr"] = geo["stop_pts"] / geo["daily_atr_med"]
     geo["target_over_or"] = geo["target_pts"] / geo["opening_range_med"]
-    sections.append("## Bracket geometry by year\n\n| year | trades | median daily ATR (pts) | median 09:30-09:35 range (pts) | stop pts | target pts | stop / daily ATR | target / opening range |\n|---|---|---|---|---|---|---|---|")
+    geo["stop_pct_price"] = geo["stop_pts"] / geo["price_med"]
+    sections.append("## Bracket geometry by year\n\n| year | trades | median price | median daily ATR (pts) | median 09:30-09:35 range (pts) | stop pts | target pts | stop / daily ATR | target / opening range | stop as % of price |\n|---|---|---|---|---|---|---|---|---|---|")
     for y, r in geo.iterrows():
-        sections.append(f"| {y} | {int(r['trades'])} | {r['daily_atr_med']:.0f} | {r['opening_range_med']:.1f} | {r['stop_pts']:.0f} | {r['target_pts']:.0f} | {r['stop_over_atr']:.3f} | {r['target_over_or']:.2f} |")
+        sections.append(f"| {y} | {int(r['trades'])} | {r['price_med']:,.0f} | {r['daily_atr_med']:.0f} | {r['opening_range_med']:.1f} | {r['stop_pts']:.0f} | {r['target_pts']:.0f} | {r['stop_over_atr']:.3f} | {r['target_over_or']:.2f} | {r['stop_pct_price']:.3%} |")
     sections.append("")
     # excursion quantiles by outcome and period
     q = t.groupby(["period", "outcome"])[["mfe_held", "mae_held", "mfe_day"]].quantile([0.25, 0.5, 0.75]).unstack()

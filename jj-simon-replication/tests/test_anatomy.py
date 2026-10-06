@@ -76,6 +76,9 @@ def test_daily_context_and_report_sections():
     assert (per_trade["period"] == "benchmark").sum() == 4 and (per_trade["period"] == "development").sum() == 12
     assert set(per_trade["entry_bucket"]) <= {"09:30-09:35", "09:35-09:45", "09:45-10:00", "10:00-10:30", "10:30-11:00", "after 11:00"}
     assert per_trade["regime"].isin(["low", "mid", "high", "n/a"]).all()
+    assert per_trade["rel_regime"].isin(["low", "mid", "high", "n/a"]).all()
+    assert "## By period, setup and grade" in text and "stop as % of price" in text
+    assert {"prev_close", "atr_pct"} <= set(ctx.columns)
 
 
 def test_load_trades_roundtrip(tmp_path):
