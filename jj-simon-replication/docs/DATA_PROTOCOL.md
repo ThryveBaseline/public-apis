@@ -19,6 +19,8 @@ client.metadata.get_dataset_range("GLBX.MDP3")      # available date range for C
 client.metadata.get_cost(dataset="GLBX.MDP3", symbols=["NQ.n.0"], stype_in="continuous",
                          schema="ohlcv-1m", start="2010-06-06", end=END)   # USD, no purchase
 client.metadata.get_record_count(... same arguments ...)                    # rows
+client.metadata.get_cost(dataset="GLBX.MDP3", symbols=["NQ.c.0"], stype_in="continuous",
+                         schema="ohlcv-1d", start="2010-06-06", end=END)   # roll cross-check, dates only
 ```
 
 Report before any download: available range, proposed range, dataset and schema, symbol method, roll treatment, row count and approximate size, the quoted price, the development window and the untouched out-of-sample window. The user approves; only then `client.timeseries.get_range(...)` with the same arguments.
@@ -29,7 +31,7 @@ Report before any download: available range, proposed range, dataset and schema,
 |---|---|---|
 | dataset | `GLBX.MDP3` | CME Globex, the venue NQ trades on; full-depth derived bars, history from June 2010 |
 | schema | `ohlcv-1m` | the strategy is defined on 1-minute bars; `ohlcv-1s` is not needed and is 60x larger |
-| symbol | `NQ.n.0` with `stype_in="continuous"` (open-interest roll); cross-check `NQ.c.0` for the roll dates | continuous series stitched from the front contract with **no price adjustment**; every bar carries the underlying contract in `symbol`, so roll days are detectable |
+| symbol | `NQ.n.0` with `stype_in="continuous"` (open-interest roll) is the only 1-minute purchase; the roll cross-check is `NQ.c.0` at `ohlcv-1d` over the same range, dates only | continuous series stitched from the front contract with **no price adjustment**; every bar carries the underlying contract in `symbol`, so roll days are detectable; continuous symbols roll at date boundaries, so daily bars identify the calendar-roll dates at negligible cost |
 | span | all available history to the latest date, at least 2015 onward | several regimes: 2015-16 range, 2017 trend, 2018 and 2020 shocks, 2021 melt-up, 2022 bear, 2023-24 trend, 2025-26 current |
 | extras | none | the strategy uses OHLC only; volume is kept for regime analysis |
 
