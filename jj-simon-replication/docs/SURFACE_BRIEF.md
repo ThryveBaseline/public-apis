@@ -1,7 +1,8 @@
 # Brief for the Surface session (Databento step)
 
-We are ready for the real-data phase of the JJ Simon replication. The repository is `ThryveBaseline/public-apis`, branch `claude/replicate-researcher-work-lhd1rm`, folder `jj-simon-replication`; the strategy and evaluator are frozen at tag `jj-frozen-v1` (see `docs/FROZEN.md`). Follow `docs/DATA_PROTOCOL.md` exactly.
+The operating brief is `docs/MISSION.md`; read it first. We are ready for the real-data phase of the JJ Simon replication. The repository is `ThryveBaseline/public-apis`, branch `claude/replicate-researcher-work-lhd1rm`, folder `jj-simon-replication`; the strategy and evaluator are frozen at tag `jj-frozen-v1` (see `docs/FROZEN.md`). Follow `docs/DATA_PROTOCOL.md` exactly.
 
+0. Before buying anything, check whether the GB10 already holds NQ 1-minute data that passes the Phase 1 checklist in `docs/MISSION.md` (provenance, UTC timestamps, symbol identity, no adjustment, multi-year coverage). If it does, report its provenance and use it; if anything material is unknown, use Databento.
 1. Locate the local `access.txt` with the Databento access key. Use it locally only: never print, echo, log, commit, copy, transmit to another model, or otherwise expose it.
 2. **Quote only.** Using the Databento metadata API, report before any purchase or download:
    * available date range of `GLBX.MDP3`
