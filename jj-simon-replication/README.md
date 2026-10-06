@@ -102,6 +102,16 @@ day" are lower-grade entries whose expectancy is close to zero.
 `python -m fpt.cli implied --payout 105700 --accounts 40 --days 15` does this
 arithmetic for any claim.
 
+## Primary corpus (private)
+
+The 58 verbatim transcripts (296,678 words) and 20 page texts collected on the GB10 live in the private repository `ThryveBaseline/jj-simon-sources` (commit f638a1f, `jj-simon-replication/sources/`). They are not redistributed here. With that repository checked out next to this one:
+
+```
+python3 scripts/verify_extracted.py ../jj-simon-sources/jj-simon-replication/sources/youtube
+```
+
+re-checks every quote in `docs/research/extracted/*.json` against the transcripts and regenerates `docs/research/EXTRACTED.md`, the machine-verified fact list the dossier cites. `docs/research/transcript-index.md` lists every source with its word count and upload date.
+
 ## What the risk tools answer
 
 * `edge`: expectancy per trade and per day, breakeven win rate, Kelly fraction of the drawdown allowance, expected and tail losing streaks, and the **statistical daily stop**: the running loss at which today has fallen outside the 5th percentile of what the edge produces (the closing-P&L quantile is reported alongside), which is the reconstruction of "knowing exactly when to stop trading".

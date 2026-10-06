@@ -486,11 +486,15 @@ extracted); the current pricing of the third-party-sourced presets.
 
 ## 11. Sources
 
-**Primary corpus on the GB10.** Your machine's session collected 58
-verbatim transcripts (296,678 words) of his channel and the podcast
-episodes, plus the usable pages, at `~/jj-simon-sources` and committed them
-on branch `claude/jj-simon-sources` (commit f638a1f) without pushing, since
-redistributing full transcripts is a publication decision for you. Highest
+**Primary corpus.** 58 verbatim transcripts (296,678 words) of his channel
+and the podcast episodes, plus the usable pages, collected on the GB10 and
+pushed to the private repository `ThryveBaseline/jj-simon-sources` (commit
+f638a1f, `jj-simon-replication/sources/`); the two interview transcripts
+were hash-verified against the GB10's values (KHEQ5g55dQ4
+17c0041e..., aCOgfvL6lK8 8abdeeb8...). Every transcript was read in full and
+its statements extracted with verbatim, line-cited quotes into
+`docs/research/extracted/`, machine-verified by `scripts/verify_extracted.py`
+and listed in `docs/research/EXTRACTED.md`. Highest
 value items for a replicator: KHEQ5g55dQ4 (Chart Fanatics, 21,988 words),
 aCOgfvL6lK8 (Titans of Tomorrow, 16,917), MVP7X-3v8xk ("Watch Me Backtest
 My $1,500,000 Trading Strategy", 9,091), 74CRg-mID5c ("How I Made $1.8M
