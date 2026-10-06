@@ -24,6 +24,7 @@ from dataclasses import dataclass, replace
 import numpy as np
 
 EVAL, FUNDED, FAILED = 0, 1, 2
+INACTIVE = -1  # slot not yet purchased (bootstrap growth simulations)
 
 
 @dataclass(frozen=True)
@@ -103,7 +104,7 @@ class PropAccount:
         self.best_day = np.zeros(sims)
         self.profit_since_reset = np.zeros(sims)  # for consistency
         self.payouts_total = np.zeros(sims)
-        self.costs_total = np.full(sims, rules.eval_cost if start_phase == EVAL else rules.activation_fee, dtype=float)
+        self.costs_total = np.full(sims, rules.eval_cost if start_phase == EVAL else (rules.activation_fee if start_phase == FUNDED else 0.0), dtype=float)
         self.breaches = np.zeros(sims, dtype=int)
         self.passes = np.zeros(sims, dtype=int)
         self.payout_count = np.zeros(sims, dtype=int)
@@ -130,6 +131,17 @@ class PropAccount:
         self.breaches[mask] += 1
         self.failed_from[mask] = self.phase[mask]
         self.phase[mask] = FAILED
+
+    def purchase(self, mask: np.ndarray):
+        """Buy an evaluation in the sims where mask is True (slot must be INACTIVE or FAILED)."""
+        if not mask.any():
+            return
+        self.costs_total[mask] += self.rules.eval_cost
+        self._reset_account(mask, EVAL)
+
+    def release_failed(self):
+        """Bootstrap mode: a failed account frees its slot instead of being re-bought automatically."""
+        self.phase[self.phase == FAILED] = INACTIVE
 
     def _restart_failed(self):
         """Re-buy failed accounts: a failed evaluation is reset (reset_cost), a

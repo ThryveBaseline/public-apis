@@ -450,3 +450,21 @@ def test_risk_math_audit_fixes():
     static = R.optimal_fixed_risk(0.54, 1.5, 3000, 6000, 1.5, 30, candidates=[750.0], sims=1500)[0]["p_pass"]
     trailing = R.optimal_fixed_risk(0.54, 1.5, 3000, 6000, 1.5, 30, candidates=[750.0], sims=1500, drawdown_type="trailing_eod", lock_profit=3000, daily_loss_limit=2000)[0]["p_pass"]
     assert trailing < static
+
+
+def test_bootstrap_growth_buys_only_with_cash_and_frees_failed_slots():
+    from fpt.bootstrap import GrowthConfig, simulate_growth
+    from fpt.propfirm import INACTIVE
+    rules = FIRM_PRESETS["fundednext_50k_flex"]
+    acct = PropAccount(rules, sims=2, risk_per_trade=1000.0, start_phase=INACTIVE, restart_failed=False)
+    assert acct.costs_total.sum() == 0 and (acct.phase == INACTIVE).all()
+    acct.purchase(np.array([True, False]))
+    assert acct.phase[0] == EVAL and acct.phase[1] == INACTIVE and acct.costs_total[0] == rules.eval_cost
+    acct.apply_day(np.array([[-3.0], [0.0]]), np.array([[True], [False]]))  # breach the $1,500 drawdown
+    assert acct.phase[0] == FAILED
+    acct.release_failed()
+    assert acct.phase[0] == INACTIVE
+    res = simulate_growth(GrowthConfig(start_cash=60.0, months=2, sims=50, ladder=[("fundednext_50k_flex", 2)]))
+    assert res["p_bust"] == 1.0  # $60 cannot buy a $70 evaluation
+    res = simulate_growth(GrowthConfig(start_cash=5000.0, months=3, sims=100, ladder=[("fundednext_50k_flex", 2), ("topstep_50k", 2)]))
+    assert 0.0 <= res["p_bust"] < 1.0 and res["invested_total"]["mean"] > 0

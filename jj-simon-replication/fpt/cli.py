@@ -17,6 +17,7 @@ import sys
 from . import risk as R
 from .backtest import run_backtest
 from .data import load_minute_bars, synthetic_minute_bars
+from .bootstrap import DEFAULT_LADDER, GrowthConfig, growth_scan, simulate_growth
 from .portfolio import PortfolioConfig, optimal_risk_scan, simulate_portfolio
 from .propfirm import FIRM_PRESETS
 from .strategy import StrategyConfig
@@ -115,6 +116,24 @@ def main(argv=None):
     f.add_argument("--eval-risk-mode", choices=["fixed", "two_trade"], default="fixed", dest="eval_risk_mode", help="two_trade = evaluations risk target/(2*rr) per trade (JJ's max-risk eval posture)")
     f.add_argument("--scan-risk", action="store_true", help="scan several risk levels instead of one run")
     f.add_argument("--json", action="store_true")
+
+    g = sub.add_parser("growth", help="bootstrap: grow from a small bankroll by reinvesting payouts in new evaluations")
+    g.add_argument("--start-cash", type=float, default=500.0)
+    g.add_argument("--monthly-contribution", type=float, default=0.0)
+    g.add_argument("--months", type=int, default=12)
+    g.add_argument("--sims", type=int, default=1000)
+    g.add_argument("--p", type=float, default=0.54)
+    g.add_argument("--rr", type=float, default=1.5)
+    g.add_argument("--trades-per-day", type=float, default=1.5)
+    g.add_argument("--eval-risk-mode", choices=["two_trade", "fixed"], default="two_trade", dest="eval_risk_mode")
+    g.add_argument("--eval-risk", type=float, default=500.0, help="per-trade evaluation risk in fixed mode")
+    g.add_argument("--funded-risk", type=float, default=1000.0)
+    g.add_argument("--ladder", action="append", default=[], help="preset:max_accounts in purchase order, repeatable (default: his S/A-tier ladder, cheapest first)")
+    g.add_argument("--income-after-funded", type=int, default=5)
+    g.add_argument("--income-take", type=float, default=0.5)
+    g.add_argument("--max-buys-per-day", type=int, default=1)
+    g.add_argument("--scan", action="store_true", help="scan starting cash x evaluation posture")
+    g.add_argument("--json", action="store_true")
 
     sub.add_parser("firms", help="list firm presets and their verification status")
 
@@ -233,6 +252,31 @@ def main(argv=None):
         out = R.implied_daily_r(a.payout, a.accounts, a.days, a.risk)
         out["trades_per_day_needed_at_p_rr"] = R.trades_per_day_for_daily_r(out["r_per_account_day"], a.p, a.rr)
         print(json.dumps(out, indent=2))
+        return 0
+
+    if a.cmd == "growth":
+        ladder = [(k, int(n or 1)) for k, _, n in (spec.partition(":") for spec in a.ladder)] or list(DEFAULT_LADDER)
+        cfg = GrowthConfig(start_cash=a.start_cash, monthly_contribution=a.monthly_contribution, ladder=ladder, p_win=a.p, rr=a.rr, trades_per_day=a.trades_per_day,
+                           eval_risk_mode=a.eval_risk_mode, eval_risk=a.eval_risk, funded_risk=a.funded_risk, months=a.months, sims=a.sims,
+                           income_after_funded=a.income_after_funded, income_take=a.income_take, max_buys_per_day=a.max_buys_per_day)
+        if a.scan:
+            rows = growth_scan(cfg)
+            print(f"{'posture':>10} {'start $':>8} {'P(bust)':>8} {'P(5 funded)':>12} {'months to 5':>12} {'funded m'+str(a.months):>10} {'payouts p25':>12} {'payouts med':>12}")
+            for r in rows:
+                print(f"{r['eval_risk_mode']:>10} {r['start_cash']:>8,.0f} {r['p_bust']:>8.1%} {r['p_5_funded']:>12.1%} {r['months_to_5_funded_median']:>12.1f} {r['funded_last_median']:>10.0f} {r['payouts_last_p25']:>12,.0f} {r['payouts_last_median']:>12,.0f}")
+            return 0
+        res = simulate_growth(cfg)
+        res.pop("_arrays", None)
+        if a.json:
+            print(json.dumps(res, indent=2))
+        else:
+            print(f"start ${a.start_cash:,.0f}, {a.months} months, {a.sims} paths, posture {a.eval_risk_mode}, ladder {ladder}")
+            print(f"P(bust) {res['p_bust']:.1%}; first payout within 3 months {res['p_first_payout_within_3_months']:.1%}; never {res['first_payout_month']['p_never']:.1%}")
+            print("months to N funded (median | P reached): " + ", ".join(f"{k}: {v['median']:.0f} | {v['p_reached']:.0%}" for k, v in res['months_to_funded'].items()))
+            fl = res['funded_accounts_last_month']; pl = res['monthly_payouts_last_month']; it = res['income_total']
+            print(f"last month: funded accounts p25/med/p75 {fl['p25']:.0f}/{fl['median']:.0f}/{fl['p75']:.0f}; payouts {pl['p25']:,.0f}/{pl['median']:,.0f}/{pl['p75']:,.0f}; income taken so far median {it['median']:,.0f}")
+            print("funded accounts (median) by month: " + ", ".join(f"{x:.0f}" for x in res['funded_median_by_month']))
+            print("payouts (median) by month: " + ", ".join(f"{x:,.0f}" for x in res['payouts_median_by_month']))
         return 0
 
     if a.cmd == "firms":
