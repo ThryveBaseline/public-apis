@@ -19,7 +19,7 @@ client.metadata.get_dataset_range("GLBX.MDP3")      # available date range for C
 client.metadata.get_cost(dataset="GLBX.MDP3", symbols=["NQ.n.0"], stype_in="continuous",
                          schema="ohlcv-1m", start="2010-06-06", end=END)   # USD, no purchase
 client.metadata.get_record_count(... same arguments ...)                    # rows
-client.metadata.get_cost(dataset="GLBX.MDP3", symbols=["NQ.c.0"], stype_in="continuous",
+client.metadata.get_cost(dataset="GLBX.MDP3", symbols=["NQ.n.0"], stype_in="continuous",
                          schema="ohlcv-1d", start="2010-06-06", end=END)   # roll cross-check, dates only
 ```
 
@@ -31,11 +31,11 @@ Report before any download: available range, proposed range, dataset and schema,
 |---|---|---|
 | dataset | `GLBX.MDP3` | CME Globex, the venue NQ trades on; full-depth derived bars, history from June 2010 |
 | schema | `ohlcv-1m` | the strategy is defined on 1-minute bars; `ohlcv-1s` is not needed and is 60x larger |
-| symbol | `NQ.n.0` with `stype_in="continuous"` (open-interest roll) is the only 1-minute purchase; the roll cross-check is `NQ.c.0` at `ohlcv-1d` over the same range, dates only | continuous series stitched from the front contract with **no price adjustment**; every bar carries the underlying contract in `symbol`, so roll days are detectable; continuous symbols roll at date boundaries, so daily bars identify the calendar-roll dates at negligible cost |
+| symbol | `NQ.n.0` with `stype_in="continuous"` (open-interest roll) is the only 1-minute purchase; the roll cross-check is `NQ.n.0` at `ohlcv-1d` over the same range, dates only | continuous series stitched from the front contract with **no price adjustment**; every bar carries the underlying contract in `symbol`, so the roll days of the purchased series are read from the data itself; the daily series of the same symbol confirms them independently for five cents. `NQ.c.0` is the calendar roll and rolls on different dates, so it would identify the wrong days (caught in the Surface session's review of the quote, 2026-10-06) |
 | span | all available history to the latest date, at least 2015 onward | several regimes: 2015-16 range, 2017 trend, 2018 and 2020 shocks, 2021 melt-up, 2022 bear, 2023-24 trend, 2025-26 current |
 | extras | none | the strategy uses OHLC only; volume is kept for regime analysis |
 
-**Roll policy, pre-registered.** Databento's continuous symbols switch contracts without adjusting prices, so the first bars after a roll compare one contract's open with another contract's close. The evaluator excludes every roll date (the New York date on which `symbol` changes) from signal generation and reports how many trades that removed. No back-adjusted series is used anywhere: a back-adjusted price would shift the opening price that fair value is anchored to and could manufacture or erase an "unfair move". If Databento's `.n.0` and `.c.0` roll on different days, both dates are excluded.
+**Roll policy, pre-registered.** Databento's continuous symbols switch contracts without adjusting prices, so the first bars after a roll compare one contract's open with another contract's close. The evaluator excludes every roll date (the New York date on which `symbol` changes in the purchased `NQ.n.0` series) from signal generation and reports how many trades that removed. No back-adjusted series is used anywhere: a back-adjusted price would shift the opening price that fair value is anchored to and could manufacture or erase an "unfair move". Calendar-roll (`.c.0`) and volume-roll (`.v.0`) dates are not excluded: the purchased series has no discontinuity on them, and excluding expiry days would be a strategy choice, not a data-integrity one. (Earlier wording said both `.n.0` and `.c.0` dates would be excluded; corrected on 2026-10-06 before any download.)
 
 **Size.** One symbol at 1-minute resolution over the 23-hour Globex day is about 1,380 bars a day, roughly 350,000 rows a year, 25-35 MB a year as CSV. Fifteen years is on the order of 5 million rows.
 
