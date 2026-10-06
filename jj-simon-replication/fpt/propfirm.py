@@ -229,12 +229,19 @@ class PropAccount:
         """Charge subscriptions, restart failed accounts, request payouts.
         Returns cash received by the trader per sim (payouts, net of split)."""
         rules = self.rules
-        cash = np.zeros(self.sims)
         if rules.eval_cost_is_monthly:
             ev = self.phase == EVAL
             self.costs_total[ev] += rules.eval_cost
         if self.restart_failed:
             self._restart_failed()
+        return self.payout_now()
+
+    def payout_now(self) -> np.ndarray:
+        """Request a payout on every funded sim that is eligible today (enough
+        winning days, payable amount above the minimum, funded consistency
+        rule). Returns the cash received per sim. month_end calls this; a
+        walk-forward test may call it daily to measure days to payout."""
+        rules = self.rules
         funded = self.phase == FUNDED
         profit = self.balance - rules.account_size - rules.payout_buffer
         payable = np.maximum(profit, 0.0) * rules.payout_fraction
@@ -252,5 +259,4 @@ class PropAccount:
         self.days_since_payout[eligible] = 0
         self.best_day[eligible] = 0.0
         self.profit_since_reset[eligible] = 0.0
-        cash += paid
-        return cash
+        return paid

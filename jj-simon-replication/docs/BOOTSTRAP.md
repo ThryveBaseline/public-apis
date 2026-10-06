@@ -29,30 +29,52 @@ The "$30,000 a month" video (0uAQUHEB_L8, 2026-08-16) scales the same arithmetic
 
 ## 4. What the simulators say about the small-bankroll start
 
-Two independent models, both in `fpt/bootstrap.py`:
+Two models, both in `fpt/bootstrap.py`, corrected after review so that each assumption is visible:
 
-* `growth --his-stats` is his calculator turned into a bankroll path: $100 evaluations, pass rate and payout rate as inputs, $2,000 payouts, a one-month cycle, everything reinvested. The expected value per evaluation at his base case (33% / 33% / $2,000) is about +$193, so the edge is real at the account level. What the bankroll decides is whether you survive long enough to realise it.
-* `growth` (trade-level) runs the same firm rules as the portfolio simulator with his two-trade evaluation posture and the cheapest-first ladder.
+* **His calculator, exactly as stated.** `his_calculator()` is the closed form in his words: $100 per evaluation, a 33% pass rate, a 33% chance that a funded account reaches ONE payout, a $2,000 payout. $100 x 0.33 x 0.33 x $2,000 = **$217.80 back per evaluation, +$117.80 expected profit**, a 2.178x return multiple, a 10.89% chance that any one evaluation produces a payout, about $300 per funded account, and five payouts per 100 evaluations to break even. No profit split and no repeat payouts: those belong to the separate lifetime model (`--funded-mode repeat`, `--profit-split 0.9`), not to the calculator.
+* **The same inputs as a state process in trading days** (`growth --his-stats`): purchase, then a pass/fail decision after `eval_days` (4; he passes aggressively in two to four days), then a qualifying period of `qualifying_days` (10; five winning days at a 50% daily win rate), then the payout decision; every payout buys more evaluations the same day; a path is bust when nothing is live and cash cannot buy an evaluation. In the calculator's "single" mode a funded account is retired after its payout decision. There is no memoryless shortcut: a $500 start buys five evaluations on day one, and the chance that none of them ever pays is the closed form (1 - 0.1089)^5 = 56%, which the simulation reproduces (`growth --his-stats --start-cash 500`, 2,000 paths: 56% of paths never see a payout; 61% are bust by month 12 once the few survivors that paid once and then lost are counted).
 
-His calculator, 12 months, payouts reinvested, income taken only once cash exceeds $10,000 (5,000 paths; `python -m fpt.cli growth --his-stats --scan --months 12`):
+The two inputs are varied **one at a time**: each table holds the other rate at its 33% base, and every row of the CLI output labels both rates. Twelve months, 2,000 paths (the floor `growth --his-stats` applies to `--sims`; seed 0, so the figures reproduce exactly), everything reinvested, income taken only once cash exceeds $10,000. First table: `python -m fpt.cli growth --his-stats --scan`; second table: `python -m fpt.cli growth --his-stats --scan --pass-rates 0.33 --payout-rates 0.25,0.33,0.40,0.50`:
 
-| pass = payout rate | start $250 | $500 | $1,000 | $2,000 | $5,000 |
+| evaluation pass rate (payout rate held at 33%) | $250 | $500 | $1,000 | $2,000 | $5,000 |
 |---|---|---|---|---|---|
-| 25% (EV +$50 per eval) | bust 93% | bust 85% | bust 71% | bust 49% | bust 16% |
-| 33% (EV +$193) | bust 82% | bust 60% | bust 37% | bust 13%, month-12 payouts median $19.8k | bust 0.5%, median $19.8k |
-| 40% (EV +$380) | bust 70% | bust 42% | bust 17% | bust 4%, median $30.6k | bust 0%, median $30.6k |
+| 25% (EV +65 per evaluation) | 89% (closed form 84%) | 76% (closed form 65%) | 55% (closed form 42%) | 32% (closed form 18%) | 6% (closed form 1%) |
+| 33% (EV +118 per evaluation) | 83% (closed form 79%) | 61% (closed form 56%) | 38% (closed form 32%) | 14% (closed form 10%) | 1% (closed form 0%) |
+| 40% (EV +164 per evaluation) | 78% (closed form 75%) | 52% (closed form 49%) | 28% (closed form 24%) | 8% (closed form 6%) | 0% (closed form 0%) |
 
-Trade-level model, 12 months, his edge as measured by third parties (54% / 1.5R, 1.5 qualifying trades a day), two-trade evaluation posture vs a fixed $500 evaluation risk (`growth --scan`):
-
-| posture | $250 | $500 | $1,000 | $2,500 | $5,000 |
+| funded payout rate (pass rate held at 33%) | $250 | $500 | $1,000 | $2,000 | $5,000 |
 |---|---|---|---|---|---|
-| his two-trade | bust 72% | bust 57% | bust 42% | bust 23% | bust 16% |
-| fixed $500 risk | bust 65% | bust 48% | bust 33% | bust 14% | bust 9% |
+| 25% (EV +65) | 90% (closed form 84%) | 76% (closed form 65%) | 57% (closed form 42%) | 32% (closed form 18%) | 5% (closed form 1%) |
+| 33% (EV +118) | 83% (closed form 79%) | 61% (closed form 56%) | 38% (closed form 32%) | 14% (closed form 10%) | 1% (closed form 0%) |
+| 40% (EV +164) | 78% (closed form 75%) | 53% (closed form 49%) | 26% (closed form 24%) | 7% (closed form 6%) | 0% (closed form 0%) |
+| 50% (EV +230) | 72% (closed form 70%) | 43% (closed form 41%) | 18% (closed form 16%) | 3% (closed form 3%) | 0% (closed form 0%) |
 
-At a more conservative 52% / 1.0 trades a day the two-trade posture busts 84% / 72% / 63% / 45% / 33% of the time across the same bankrolls; at his own 57.5% sample with $100 a month added it busts 55% / 44% / 29% / 17% / 10%.
+Reading the tables: a better pass rate helps at every bankroll, but 33% to 40% with the payout rate held still cuts the bust rate by about a seventh at $500, a quarter at $1,000 and two-fifths at $2,000; only at $5,000, where the bust rate is under 1% either way, does the step remove more than half of it. The earlier claim that it halved the bust rate everywhere had moved both rates together. The payout rate matters at least as much as the pass rate, which is his own point ("the funded's whole goal is to generate total payout"). The closed form in brackets is the chance that the first batch of evaluations produces no payout at all, and it explains most of the bust probability: the small-bankroll problem is the number of attempts you can afford before the first payout, not the edge.
 
-Reading the tables: the compounding he describes is real in the model, and once a handful of accounts are funded the base grows fast (the medians that are not zero are the survivors). But below about $2,000 the first few evaluations decide everything, and his own "$500 becomes $13,500" is the survivor's path, not the median. Three things move the odds in your favour more than anything else: a higher measured pass rate (the 33% to 40% step halves the bust rate), a cheaper evaluation (his point about buying the cheapest challenges), and adding even $100 a month of outside money while the base is under ten accounts. The payout dollars in the survivor columns are upper bounds, as the README calibration explains; the bust probabilities and time-to-funded are the robust outputs.
+**The trade-level model and the win rate.** `growth` and `portfolio` build the same economics from per-trade win rates under the exact firm rules. The win rate is the assumption doing the most work, and it is NOT settled: the 54% / 1.5R figure comes from fxreplay's backtest of a different variant of the rules, while his own latest explicit figure is about 41% ("a realistic average win rate is about 41%", 0uAQUHEB_L8 ~18:22 L687; "42% at 1.5R" in 4IGbxmKJ4BU ~0:56 L68). At 1.5R the break-even is 40%, so 54% is seven times the expectancy of 42% (+0.35R vs +0.05R per trade). Both defaults in the code now use 42% and label 54% as third-party; until real data replaces the assumption, every result is reported as a scenario (`python -m fpt.cli scenarios` for the portfolio table; `python -m fpt.cli growth --start-cash <cash> --p <win rate> --months 12 --sims 400` for each cell of the bust table, or `scenarios --growth` for its $500 and $2,000 columns at 300 paths):
+
+Twelve-month bust probability of the trade-level growth model from each starting bankroll (two-trade evaluation posture, cheapest-first ladder; `growth --start-cash <cash> --p <win rate> --months 12 --sims 400`, seed 0, one run per cell):
+
+| win rate at 1.5R | $500 | $1,000 | $2,000 | $5,000 |
+|---|---|---|---|---|
+| 41% (his figure) | bust 100% | bust 99% | bust 96% | bust 92% |
+| 46% | bust 89% | bust 84% | bust 71% | bust 60% |
+| 50% | bust 74% | bust 64% | bust 50% | bust 36% |
+| 54% (third-party) | bust 58% | bust 44% | bust 28% | bust 17% |
+
+Six-month net cash of the cap-feasible 45-account operation (`python -m fpt.cli scenarios`: round-robin, 20 signals a day, two-trade evaluations, 500 paths, seed 0):
+
+| win rate at 1.5R | expectancy per trade | 6-month net, 5th pct | median | 95th pct | P(net > 0) | note |
+|---|---|---|---|---|---|---|
+| 40% | +0.000R | -184,965 | -144,978 | -95,478 | 0% |  |
+| 41% | +0.025R | -163,899 | -118,491 | -70,355 | 0% | his own latest explicit figure (about 41%) |
+| 42% | +0.050R | -138,286 | -93,900 | -41,010 | 0% | his own latest explicit figure (about 41%) |
+| 46% | +0.150R | -33,044 | 19,931 | 76,635 | 70% |  |
+| 50% | +0.250R | 88,850 | 152,561 | 218,494 | 100% |  |
+| 54% | +0.350R | 224,092 | 294,944 | 360,146 | 100% | third-party fxreplay variant; not transferable |
+
+The operation is strongly positive at the third-party win rate and loses money at his own stated one, with the crossover near 45-46%. That is not a verdict on the method: it says the per-trade win rate of **this implementation on real data** is the number that decides everything, and that agreement between a simulated income and his reported income at 54% is a calibration target, not evidence. The pass rate he tells people to measure, P(+$3,000 before -$2,000) under the firm's rules, is what `evaluate` measures directly from a real trade sequence, without assuming a win rate at all.
 
 ## 5. Measure before buying
 
-The cheapest possible start is the backtest he describes, which costs nothing: `python -m fpt.cli backtest --csv data/nq_1min.csv --report report.md --trades trades.csv` on real NQ 1-minute data, then `python -m fpt.cli evaluation --firm <preset>` to turn the trade distribution into a pass probability under the firm's drawdown rule, and `python -m fpt.cli growth --his-stats --pass-rate <yours> --payout-rate <yours> --start-cash <yours>`. If the measured pass rate on a 50k rule set is under about 30%, the tables above say the bankroll needs to be several thousand dollars or the edge needs work first; if it is 33% or better, a $1,000 to $2,000 start has even odds or better of surviving to the compounding stage.
+The cheapest possible start is the backtest he describes, which costs nothing. `python -m fpt.cli evaluate --csv data/nq_1min.csv --report evaluation.md` runs the implemented rules on real NQ 1-minute data and reports, in sample and on an untouched out-of-sample tail: the R distribution by year, quarter, volatility regime, session and setup; the pass probability under each firm's exact rules, measured by starting one evaluation on every trading day and following the real sequence of days (no independence assumption); the probability that a fresh funded account reaches a payout before breaching, and the days both take; and the bootstrap survival tables rebuilt from those measured inputs. The primary number is the pass probability, not the win rate: a configuration with fewer winners can pass more often because of sequencing, sizing and the drawdown geometry, and that is the number he says to optimise. If the measured pass rate on a 50k rule set is under about 30%, the tables above say the bankroll needs to be several thousand dollars or the edge needs work first; if it is 33% or better, a $1,000 to $2,000 start has even odds or better of surviving to the compounding stage.

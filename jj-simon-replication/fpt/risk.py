@@ -70,11 +70,12 @@ def implied_daily_r(payout_dollars: float, accounts: int, trading_days: int, ris
 
     Example: "$105,700 in 3 weeks" across ~40 accounts at ~$1,000 risk per
     trade -> 105,700 / (40 * 15) / 1,000 = 0.176 R of PAYOUT per account per
-    day. At 54% / 1.5R (0.35R per trade) that is what about 0.5 qualifying
-    trades a day would produce if payouts equalled P&L; payouts are net of
-    splits, caps, evaluation-phase accounts and breaches, so gross P&L and the
-    trade count behind it are higher. It is nowhere near the 3.5 R/day that
-    "10 trades a day at 54%" would produce.
+    day. A reported payout figure is a calibration target for the simulators,
+    never evidence that a win-rate assumption is right: at the third-party
+    54% / 1.5R (0.35R per trade) it is what about 0.5 qualifying trades a day
+    would produce if payouts equalled P&L; at his own 42% (0.05R per trade)
+    it would take 3.5 trades a day. Payouts are net of splits, caps,
+    evaluation-phase accounts and breaches, so gross P&L is higher still.
     """
     per_account_day = payout_dollars / (accounts * trading_days)
     return {

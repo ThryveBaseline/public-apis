@@ -8,6 +8,8 @@ index timestamp (the 09:30 row is the first regular-session bar).
 """
 from __future__ import annotations
 
+import re
+
 import numpy as np
 import pandas as pd
 
@@ -15,6 +17,17 @@ NY = "America/New_York"
 COLUMNS = ["open", "high", "low", "close", "volume"]
 
 _TIME_CANDIDATES = ["timestamp", "datetime", "date_time", "time", "date", "ts", "dt"]
+
+
+def _parse_timestamps(raw: pd.Series) -> pd.Series:
+    """Parse a timestamp column. Strings that carry a UTC offset (e.g. a CSV
+    written from a tz-aware index, which changes from -05:00 to -04:00 at the
+    March DST switch) are parsed as UTC so mixed offsets do not fail; naive
+    strings stay naive and are localised by the caller."""
+    sample = str(raw.dropna().iloc[0]).strip() if len(raw.dropna()) else ""
+    if re.search(r"([+-]\d{2}:?\d{2}|Z)$", sample):
+        return pd.to_datetime(raw, utc=True)
+    return pd.to_datetime(raw)
 
 
 def load_minute_bars(path: str, source_tz: str = NY, time_col: str | None = None) -> pd.DataFrame:
@@ -34,7 +47,7 @@ def load_minute_bars(path: str, source_tz: str = NY, time_col: str | None = None
 
     if time_col is not None:
         tcol = time_col.lower()
-        ts = pd.to_datetime(df[tcol], utc=False)
+        ts = _parse_timestamps(df[tcol])
     elif "date" in df.columns and "time" in df.columns and "timestamp" not in df.columns:
         ts = pd.to_datetime(df["date"].astype(str) + " " + df["time"].astype(str))
     else:
@@ -47,7 +60,7 @@ def load_minute_bars(path: str, source_tz: str = NY, time_col: str | None = None
         elif pd.api.types.is_numeric_dtype(raw):  # epoch s
             ts = pd.to_datetime(raw, unit="s", utc=True)
         else:
-            ts = pd.to_datetime(raw)
+            ts = _parse_timestamps(raw)
 
     if ts.dt.tz is None:
         ts = ts.dt.tz_localize(source_tz, ambiguous="infer", nonexistent="shift_forward")

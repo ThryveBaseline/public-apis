@@ -18,7 +18,7 @@ from .propfirm import EVAL, FIRM_PRESETS, FUNDED, FirmRules, PropAccount
 class PortfolioConfig:
     accounts: list[tuple[str, int]] = field(default_factory=lambda: [("topstep_100k", 10)])
     risk_per_trade: float | dict[str, float] = 1000.0
-    p_win: float = 0.54
+    p_win: float = 0.42  # his own latest explicit figure at 1.5R (4IGbxmKJ4BU ~0:56 L68: "about 41%", 2% above break-even). The 54% of the third-party fxreplay backtest belongs to a different variant of the rules and is not transferable; run `scenarios` to see 40-54%.
     rr: float = 1.5
     trades_per_day: float = 20.0  # signals per day. round_robin (his operation): the total across all accounts, "about 20 trades" a day, 10-11 in the New York morning (KHEQ5g55dQ4, l6iq0ljhxIo); copy mode: per account, where the third-party backtests log ~1.2-1.5 qualifying signals a day
     bootstrap_r: np.ndarray | None = None  # resample real trade R outcomes instead of parametric p/rr

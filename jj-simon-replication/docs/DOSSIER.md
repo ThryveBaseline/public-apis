@@ -1169,7 +1169,7 @@ Break-even at 1.5R: ("the break-even point in that would be 40%. But anything ab
 | `StrategyConfig.rr` / `PortfolioConfig.rr` (evaluation) | 1.5 | confirmed | KHEQ5g55dQ4 L328; 3L8xdh3oPm4 L446 |
 | `PortfolioConfig.eval_risk_mode` | `two_trade` (risk = target / (2 x rr) = $1,000 on 50k) | contradicted: his range is 2-4 trades, one third of drawdown on FTMO | AxP-cg50TdM L926; HlWSP7ajgpQ L160 |
 | `eval_risk_dollars` (plain; 50k) | $500-$1,000 per trade, target $1,000-$1,500 | new | wsKx7L9EJys L68 |
-| `PortfolioConfig.p_win` | 0.54 | contradicted by his own 42% (Aug 2026); 50% "statistically impossible" | 4IGbxmKJ4BU L68, L80 |
+| `PortfolioConfig.p_win` | 0.42 (default since the review; 0.54 is the third-party fxreplay figure, run only as a labelled scenario) | his own 42% (Aug 2026); 50% "statistically impossible" | 4IGbxmKJ4BU L68, L80 |
 | `FirmRules.profit_target` / `max_drawdown` (50k) | 3,000 / 2,000 | confirmed | 0Ua-ffltO0I L156 |
 | `FirmRules.consistency_pct` (eval) | 0.50, sometimes 0.40; 0.30 at one firm (TradeDay in the fact's claim; the caption does not name it) | confirmed | 0Ua-ffltO0I L156; 5RzMu2B2E_0 L489 |
 | `StrategyConfig.target_points` (evaluation) | 38 with a 25-point stop | confirmed | 7KJOh2NF-lQ L117 |
@@ -1418,23 +1418,30 @@ Kelly as he used it sizes the number of evaluations, not the trade: ("that's sor
 `fpt/portfolio.py` reproduces the economics under his own operating rules
 (defaults since the corpus integration): about 20 signals a day routed one
 per account in rotation, evaluations attacked at target / (2 x 1.5) per
-trade, funded accounts at $1,000, 22 trading days a month, payouts only
-after five winning days of $150 or more and at 50% of profit per request
-under each firm's cap. With the cap-feasible 45-account mix of Section 9
-(Topstep 5, Tradeify Growth 5, MFFU Pro 3, Lucid 5, Alpha 5, Apex 20, E8
-2) at 54% / 1.5R (1,000 sims, seed 0; `python -m fpt.cli portfolio
---account topstep_100k:5 ... --eval-risk-mode two_trade`), the six-month
-median net cash is about $292k, with a 5th percentile near $226k, every
-path positive, monthly net rising to roughly $70-86k by months four to six
-and 33-44 accounts funded; with fixed $1,000 evaluation risk the median is
-about $193k. His own reported pace ("$105,700 in 3 weeks" on about 40
-accounts, "six figures a month") sits inside this range, which is the first
-calibration in this project that lands on his numbers without special
-pleading. The earlier copy-trading runs (every account taking 1.5 signals a
-day) gave $1.0-1.2M medians and are an upper bound, not his operation.
-Seven of the twelve presets (Topstep x3, MyFundedFutures Rapid, Tradeify
-Growth and Select, Alpha Standard) are backed by the firms' help centers;
-the rest are third-party placeholders (Section 9).
+trade, funded accounts at $1,000, 22 trading days a month, and one payout
+request per account at each month end, paid only after five winning days of
+$150 or more and at 50% of profit per request under each firm's cap
+(requesting as soon as eligible instead lifts the 54% median by about a
+fifth, so the figures below are specific to the monthly cadence). The
+result depends almost entirely on the per-trade
+win rate, which is not settled: the 54% / 1.5R figure is fxreplay's
+backtest of a different variant of the rules, while his own latest explicit
+figure is about 41-42% (0uAQUHEB_L8 ~18:22 L687; 4IGbxmKJ4BU ~0:56 L68),
+and at 1.5R the break-even is 40%. For the cap-feasible 45-account mix of
+Section 9 over six months (`python -m fpt.cli scenarios`): at 54% the
+median net cash is about $295k with every path positive, at 50% about
+$153k, at 46% about $20k with 70% of paths positive, at 42% about -$94k and
+at 41% about -$118k. His reported pace ("$105,700 in 3 weeks" on about 40
+accounts, about $150k a month) is above what the model produces even at 54%
+(median gross payouts of about $370k over the six months, about $62k a
+month, and month-6 net cash of about $86k); agreement between any run of the
+model and his reported income is a calibration target for the model, not
+evidence that the rules as implemented win 54% of the time. The number that settles it is the pass probability of this
+implementation on real NQ data (`python -m fpt.cli evaluate`), measured
+under the firm's exact rules without assuming a win rate. Seven of the
+twelve presets (Topstep x3, MyFundedFutures Rapid, Tradeify Growth and
+Select, Alpha Standard) are backed by the firms' help centers; the rest are
+third-party placeholders (Section 9).
 
 **Operation details from the `accounts` angle (34 facts).** Payouts by
 firm from his $1.6M breakdown: Topstep ~$292,000; E8 $222,122 (the one
@@ -2454,7 +2461,7 @@ The monthly spend rises in his telling from ~$30k (internship month 2025, 1CEAgR
 1. Lifetime spend: "400k" (rec. 08-25) vs "517" (earlier video, restated 09-08) vs "$550,000" (09-03 onward) vs "$557,000" (09-08). The 09-22 pair is the only one where payouts / spend equals the stated 3.5x.
 2. Monthly spend: "40k, sometimes more, sometimes even 50k" (dJdBnSBJlgQ L769) vs "I don't see anyone else dropping 100 grand a month every single month and documenting it." (JJ, dJdBnSBJlgQ ~27:00, L796; medium) one minute later.
 3. Pass/payout rates: 33% / 50% (XhsbfEdJBAc) vs 30% / 30% (aCOgfvL6lK8), both June 2026.
-4. Own win rate: 41-42% at 1.5R in his own figures vs the dossier's 57.5% (80-trade sample) and `PortfolioConfig.p_win = 0.54`; he says explicitly that his own accounts run below his demonstration win rate (MVP7X-3v8xk L1302).
+4. Own win rate: 41-42% at 1.5R in his own figures vs the dossier's 57.5% (80-trade sample) and the third-party 54% (fxreplay; `PortfolioConfig.p_win` now defaults to 0.42, his own figure, and 54% is a labelled scenario); he says explicitly that his own accounts run below his demonstration win rate (MVP7X-3v8xk L1302).
 5. "earns me $100,000 a month" from a strategy that "wins close to 40% of the time and generates an expected value of 41%" (2BtwoTCxcbc L436, medium) is garbled arithmetic; the 41% is the win rate.
 6. "You can't make more than 120k a month realistically." (1CEAgRUNZ4c L812, profit) vs "130 140k a month in payouts" (1CEAgRUNZ4c L749) in the same video; consistent only if read as profit vs gross.
 7. Dossier Section 10 item 14 treats "16 months" and "18 months" as a conflict; by his dating (Feb 2025 start) they are June 2026 and August 2026.
@@ -2463,7 +2470,7 @@ The monthly spend rises in his telling from ~$30k (internship month 2025, 1CEAgR
 
 | Name | Value | Status | Citation |
 |---|---|---|---|
-| `PortfolioConfig.p_win` | 0.41-0.42 at rr 1.5 for his own max-aggression evaluation trading (default 0.54 is his demonstration sample) | contradicted | JJ, 4IGbxmKJ4BU ~0:52 L65; 2BtwoTCxcbc L20 |
+| `PortfolioConfig.p_win` | 0.41-0.42 at rr 1.5 for his own max-aggression evaluation trading (the default is now 0.42; 0.54 is the third-party fxreplay figure, not his own) | contradicted | JJ, 4IGbxmKJ4BU ~0:52 L65; 2BtwoTCxcbc L20 |
 | `PortfolioConfig.rr` / `StrategyConfig.rr` | 1.5 | confirmed | JJ, 4IGbxmKJ4BU ~0:52 L65; 2BtwoTCxcbc ~0:00 L20 |
 | `PortfolioConfig.trades_per_day` (round_robin total) | ~20 across all accounts | changed | JJ, PMGhHCjYG5c ~1:53 L106; aCOgfvL6lK8 ~10:05 L412 |
 | `PortfolioConfig.max_consecutive_losses` | must tolerate 11 in a row | new | JJ, MtBZeAkYH8Q ~2:08 L113 |
@@ -2931,7 +2938,7 @@ Contradictions found in the primary corpus (dated statements from the 58 verifie
 65. corpus: Cost per dollar of drawdown stated as cost / drawdown (AxP-cg50TdM L186) and as drawdown / cost (0Ua-ffltO0I L320); reciprocals. The dossier's fee / drawdown ($750 for $4,500) uses the fee where he uses the $750 cost to funded.
 66. corpus: Risk-of-ruin threshold below 5% (KHEQ5g55dQ4 L2427, 2026-10-04; aCOgfvL6lK8 L1366) versus below 0.5% (4BXpI-hYqe0 L289; dJdBnSBJlgQ L882); reconciled by "I started with a 5% risk of ruin, now it's 0.5%." (aCOgfvL6lK8 L1791).
 67. corpus: 0.9^10 given as about 33% (MtBZeAkYH8Q L145) and as 35% (AxP-cg50TdM L588); actual 34.9%. The Chart Fanatics captions "0.09% 09%" (KHEQ5g55dQ4 L2436) are 0.30 x 0.30 = 0.09, i.e. 9%, with 91% as complement and 0.91^10 = 38.9%.
-68. corpus: Win rate: his own 42% at 1.5R, 2% above break-even, with 50% at 1.5R "statistically impossible" (4IGbxmKJ4BU L68, L80) versus a 50% session recap (74CRg-mID5c L1116), the 57.5% sample in the dossier and the 54% used by PortfolioConfig.p_win. From the results group: Own win rate 41-42% at 1.5R (2BtwoTCxcbc L20; 4IGbxmKJ4BU L65) vs the dossier's 57.5% 80-trade sample and PortfolioConfig.p_win = 0.54. From the backtests_news group: Win rate: 57.5% over 80 trades (KN7j6NXXAio L47, 2026-07-25) vs 67% over 56 replay trades (MVP7X-3v8xk L1284, 2026-06-10) vs 41% at 1.5R (0uAQUHEB_L8 L687, 2026-08-16; 2BtwoTCxcbc L379, 2026-09-03) vs 40% Monte Carlo input (J8qXxtFFpGg L353) vs "lose about half the trades" (nvOaN6mRu-o L58, 2026-09-29) vs "My win rate is much lower than this in reality when I'm doing 1.5R trades" (BLvsYJ4sqn8 L806); the dossier and fpt.cli edge use 57.5%.
+68. corpus: Win rate: his own 42% at 1.5R, 2% above break-even, with 50% at 1.5R "statistically impossible" (4IGbxmKJ4BU L68, L80) versus a 50% session recap (74CRg-mID5c L1116), the 57.5% sample in the dossier and the third-party 54% (fxreplay; the code defaults to his own 0.42 and runs 54% only as a labelled scenario). From the results group: Own win rate 41-42% at 1.5R (2BtwoTCxcbc L20; 4IGbxmKJ4BU L65) vs the dossier's 57.5% 80-trade sample and the third-party 54% (PortfolioConfig.p_win defaults to 0.42). From the backtests_news group: Win rate: 57.5% over 80 trades (KN7j6NXXAio L47, 2026-07-25) vs 67% over 56 replay trades (MVP7X-3v8xk L1284, 2026-06-10) vs 41% at 1.5R (0uAQUHEB_L8 L687, 2026-08-16; 2BtwoTCxcbc L379, 2026-09-03) vs 40% Monte Carlo input (J8qXxtFFpGg L353) vs "lose about half the trades" (nvOaN6mRu-o L58, 2026-09-29) vs "My win rate is much lower than this in reality when I'm doing 1.5R trades" (BLvsYJ4sqn8 L806); the dossier's sample is 57.5%; fpt.cli edge defaults to his own 0.42.
 69. corpus: Fresh funded account valued at its acquisition cost, $300 / $410 / $1,000 (vJuwbKibN1E L156; sWJa8vRfPb8 L341; 2hwd27aqD30 L232) versus an expected value of exactly a $1,000 payout per funded account (dJdBnSBJlgQ L214; l6iq0ljhxIo L963) and at most half the drawdown (AxP-cg50TdM L199); cost is used for risk accounting, expected payout for return.
 70. corpus: Break-even trader lifetime withdrawal of about $3,000 (S8fSNbPFuLA L132) versus $1,000 EV per funded account (dJdBnSBJlgQ L214) versus a 3x return for a break-even trader (DEkzU8gqX-o L334); no common rule set stated.
 71. corpus: Dossier Section 4's "optimal profit target on his accounts was $1,800 per day" is a student's new-funded target (AxP-cg50TdM L324) that changes to $1,000-1,200 after the first payout (L341); his own targets are 2,400, 4,600 and 15,000 in other examples (4BXpI-hYqe0 L529; AxP-cg50TdM L446).
