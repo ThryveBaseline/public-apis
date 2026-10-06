@@ -39,6 +39,8 @@ Report before any download: available range, proposed range, dataset and schema,
 
 **Size.** One symbol at 1-minute resolution over the 23-hour Globex day is about 1,380 bars a day, roughly 350,000 rows a year, 25-35 MB a year as CSV. Fifteen years is on the order of 5 million rows.
 
+**Symbol column, corrected 2026-10-06.** For a continuous request Databento writes the requested name (`NQ.n.0`) into `symbol` on every bar; the underlying contract is identified by `instrument_id`. The evaluator's input is therefore prepared with `symbol := instrument_id` (as text), which is what the roll filter keys on; see `docs/DATA_DECISION.md`.
+
 **Timezone.** `ts_event` is UTC nanoseconds. The loader parses the `Z` suffix as UTC and converts to America/New_York; Databento fixed-point prices (1e-9 units, present when `rtype` is in the file) are rescaled automatically. Export with `df.to_csv(path)` from the client's DataFrame (`to_df()`), keeping the `symbol` column (`map_symbols=True`).
 
 ## 4. Windows, pre-registered
