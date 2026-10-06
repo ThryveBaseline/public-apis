@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from research.anatomy import anatomy, daily_context, excursions, load_trades
+from research.anatomy import anatomy, daily_context, excursions, exclude_roll_trades, load_trades
 
 NY = "America/New_York"
 
@@ -90,3 +90,78 @@ def test_load_trades_roundtrip(tmp_path):
     back = load_trades(str(p))
     assert back["entry_time"].dt.tz is not None and str(back["entry_time"].dt.tz) == NY
     assert back["direction"].iloc[0] == 1
+
+
+def _globex_bars(weeks=4, start="2025-01-05"):
+    """Sunday 18:00 through Friday 17:00 New York, one bar a minute, with a 17:00-18:00 break."""
+    sunday = pd.Timestamp(start, tz=NY)
+    parts = []
+    for w in range(weeks):
+        d = sunday + pd.Timedelta(days=7 * w)
+        parts.append(pd.date_range(d.replace(hour=18), d + pd.Timedelta(days=1), freq="1min", inclusive="left"))
+        for k in range(1, 5):
+            dd = d + pd.Timedelta(days=k)
+            parts.append(pd.date_range(dd.replace(hour=0), dd.replace(hour=17), freq="1min", inclusive="left"))
+            parts.append(pd.date_range(dd.replace(hour=18), dd + pd.Timedelta(days=1), freq="1min", inclusive="left"))
+        fri = d + pd.Timedelta(days=5)
+        parts.append(pd.date_range(fri.replace(hour=0), fri.replace(hour=17), freq="1min", inclusive="left"))
+    index = parts[0].append(parts[1:])
+    base = np.full(len(index), 20000.0)
+    df = pd.DataFrame({"open": base, "high": base + 5, "low": base - 5, "close": base}, index=index)
+    # make Sunday evenings quiet and weekdays wide so a calendar-date grouping would be visibly wrong
+    ny = df.index.tz_convert(NY)
+    wk = (ny.dayofweek < 5) & (ny.hour >= 9) & (ny.hour < 16)
+    df.loc[wk, "high"] = base[wk] + 60
+    df.loc[wk, "low"] = base[wk] - 60
+    df["symbol"] = "A"
+    return df
+
+
+def test_daily_context_uses_globex_session_not_calendar_date():
+    bars = _globex_bars(weeks=5)
+    ctx = daily_context(bars)
+    assert (ctx.index.dayofweek != 6).all()  # no Sunday rows
+    assert ctx["daily_atr"].dropna().iloc[-1] == pytest.approx(120.0)  # every session ranges 120, nothing diluted by Sunday stubs
+    monday = ctx.index[ctx.index.dayofweek == 0][0]
+    assert ctx.loc[monday, "opening_range"] == pytest.approx(120.0)
+    assert ctx["atr_pct"].dropna().iloc[-1] == pytest.approx(120.0 / 20000.0)
+
+
+def test_roll_day_trades_are_excluded_like_the_sealed_report():
+    bars = _bars(days=4)
+    days = sorted(set(bars.index.normalize()))
+    rows = [_trade(d.replace(hour=9, minute=40), d.replace(hour=9, minute=50), 1, 20000.0, 1.5) for d in days]
+    t = pd.DataFrame(rows)
+    kept, n = exclude_roll_trades(t, [days[1].date()])
+    assert n == 1 and len(kept) == 3
+    text, per_trade = anatomy(t, bars, days[3].strftime("%Y-%m-%d"), exclude_dates=[days[1].date()])
+    assert "Data hygiene: 1 trades on 1 contract-roll dates excluded" in text
+    assert len(per_trade) == 3
+
+
+def test_stop_bar_favourable_extreme_is_not_counted_and_16_00_bar_is_outside():
+    bars = _bars(days=2)
+    day = bars.index[0].normalize()
+    e = day.replace(hour=9, minute=40); x = day.replace(hour=9, minute=50)
+    i0 = bars.index.get_loc(e); i1 = bars.index.get_loc(x)
+    bars.iloc[i1, bars.columns.get_loc("high")] = 20000 + 40   # ambiguous exit bar: both stop and target inside
+    bars.iloc[i1, bars.columns.get_loc("low")] = 20000 - 30
+    bars.iloc[i0 + 2, bars.columns.get_loc("high")] = 20000 + 9
+    t = pd.DataFrame([_trade(e, x, 1, 20000.0, -1.0, reason="stop")])
+    ex = excursions(t, bars)
+    assert ex.loc[0, "mfe_held"] == pytest.approx(9)     # the stop bar's high is not a "nearly hit the target"
+    assert ex.loc[0, "mae_held"] == pytest.approx(30)    # the stop bar's low still counts against
+    # a bar opening at 16:00 must not feed mfe_day
+    bars2 = bars.copy()
+    extra = pd.DataFrame({"open": 20000.0, "high": 20000 + 500, "low": 20000.0, "close": 20000.0}, index=[day.replace(hour=16, minute=0)])
+    bars2 = pd.concat([bars2, extra]).sort_index()
+    ex2 = excursions(t, bars2)
+    assert ex2.loc[0, "mfe_day"] < 100
+
+
+def test_year_table_prints_integers():
+    bars = _bars(days=6)
+    days = sorted(set(bars.index.normalize()))
+    t = pd.DataFrame([_trade(d.replace(hour=9, minute=40), d.replace(hour=9, minute=50), 1, 20000.0, 1.5) for d in days])
+    text, _ = anatomy(t, bars, days[-1].strftime("%Y-%m-%d"))
+    assert "| 2025 | 6 |" in text and "2025.0" not in text

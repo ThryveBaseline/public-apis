@@ -8,8 +8,12 @@ reached the target before the stop, how close winners came to the stop, and the 
 geometry relative to daily ATR and the opening range. Aggregates only; the per-trade
 excursion table is written next to the report for private use.
 
+Trades entered on contract-roll dates are excluded exactly as the sealed report excludes them
+(the sealed trades.csv is written before that exclusion), so the period rows reproduce the
+sealed in-sample and out-of-sample "all" rows.
+
 usage: python research/anatomy.py --trades sealed/run1/trades.csv --csv data/nq_1min_databento.csv \
-           --source-tz UTC --oos-start 2025-10-06 --out research/run1_anatomy.md
+           --source-tz UTC --oos-start 2025-10-06 --manifest sealed/run1/manifest.json --out research/run1_anatomy.md
 """
 from __future__ import annotations
 
@@ -21,7 +25,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from fpt.data import NY, load_minute_bars  # noqa: E402
+from fpt.data import NY, load_minute_bars, roll_days  # noqa: E402
 from fpt.evaluate import volatility_regime  # noqa: E402
 from fpt.indicators import atr as atr_fn  # noqa: E402
 
@@ -43,42 +47,55 @@ def load_trades(path: str) -> pd.DataFrame:
 
 
 def daily_context(bars: pd.DataFrame, period: int = 14) -> pd.DataFrame:
-    """Per New York date: daily ATR(period) in points from the full Globex day, and the 09:30-09:35 opening range."""
+    """Per Globex trade date (18:00 ET the evening before through 17:00 ET): daily ATR(period) in points
+    from the full session, the session's last close, and the 09:30-09:35 opening range. A regular-hours
+    entry's New York date equals its Globex date, so the trade join uses the New York date."""
     idx = bars.index.tz_convert(NY)
-    day = idx.normalize().tz_localize(None)
-    g = pd.DataFrame({"high": bars["high"].to_numpy(), "low": bars["low"].to_numpy(), "close": bars["close"].to_numpy()}, index=day).groupby(level=0)
+    naive = idx.tz_localize(None)
+    sess = (naive + pd.Timedelta(hours=6)).normalize()  # 18:00 D-1 .. 17:00 D -> D; DST switches fall when Globex is closed
+    g = pd.DataFrame({"high": bars["high"].to_numpy(), "low": bars["low"].to_numpy(), "close": bars["close"].to_numpy()}, index=sess).groupby(level=0)
     d = g.agg({"high": "max", "low": "min", "close": "last"})
     prev_close = d["close"].shift()
     tr = pd.concat([d["high"] - d["low"], (d["high"] - prev_close).abs(), (d["low"] - prev_close).abs()], axis=1).max(axis=1)
-    d["daily_atr"] = tr.rolling(period, min_periods=period).mean().shift()  # yesterday's ATR is known at today's open
+    d["daily_atr"] = tr.rolling(period, min_periods=period).mean().shift()  # the previous session's ATR is known at today's open
     d["prev_close"] = prev_close
     d["atr_pct"] = d["daily_atr"] / d["prev_close"]  # price-relative volatility, comparable across eras
     m = idx.hour * 60 + idx.minute
     sel = (m >= 570) & (m < 575)
-    orng = pd.DataFrame({"high": bars["high"].to_numpy()[sel], "low": bars["low"].to_numpy()[sel]}, index=day[sel]).groupby(level=0)
+    orng = pd.DataFrame({"high": bars["high"].to_numpy()[sel], "low": bars["low"].to_numpy()[sel]}, index=naive[sel].normalize()).groupby(level=0)
     d["opening_range"] = orng["high"].max() - orng["low"].min()
     return d[["daily_atr", "opening_range", "prev_close", "atr_pct"]]
 
 
 def excursions(trades: pd.DataFrame, bars: pd.DataFrame, day_end: str = "16:00") -> pd.DataFrame:
-    """Per trade: MFE and MAE in points while held (entry bar through exit bar), MFE from entry through the
-    day's `day_end` New York time (follow-through regardless of the exit), and the first-touch order."""
+    """Per trade: MFE and MAE in points while held (entry bar through exit bar), MFE from entry through
+    the bar before `day_end` New York time or the exit bar, whichever is later, and the bars in the slice.
+
+    The ledger resolves a bar that contains both the stop and the target as a stop (stop checked first),
+    so a stop bar's favourable extreme and a target bar's adverse extreme are not counted: the exit level
+    is taken to print first in its bar. Entry bars and session-end exits count in full."""
     hi = bars["high"].to_numpy(float)
     lo = bars["low"].to_numpy(float)
     idx = bars.index
     eh, em = (int(x) for x in day_end.split(":"))
     out = np.full((len(trades), 4), np.nan)
-    for k, (et, xt, d, entry) in enumerate(zip(trades["entry_time"], trades["exit_time"], trades["direction"], trades["entry"].astype(float))):
+    reasons = trades["exit_reason"].astype(str) if "exit_reason" in trades.columns else pd.Series([""] * len(trades), index=trades.index)
+    for k, (et, xt, d, entry, reason) in enumerate(zip(trades["entry_time"], trades["exit_time"], trades["direction"], trades["entry"].astype(float), reasons)):
         i0 = idx.searchsorted(et)
         i1 = idx.searchsorted(xt, side="right")
         if i0 >= len(idx) or i1 <= i0:
             continue
         h, l = hi[i0:i1], lo[i0:i1]
-        mfe = (h.max() - entry) if d > 0 else (entry - l.min())
-        mae = (entry - l.min()) if d > 0 else (h.max() - entry)
+        j = i1 - 1 if reason in ("stop", "target") else i1
+        hf, lf = (hi[i0:j], lo[i0:j]) if j > i0 else (np.array([entry]), np.array([entry]))
+        hm, lm = (hf, lf) if reason == "stop" else (h, l)      # favourable side: drop the stop bar
+        ha, la = (hf, lf) if reason == "target" else (h, l)    # adverse side: drop the target bar
+        mfe = (hm.max() - entry) if d > 0 else (entry - lm.min())
+        mae = (entry - la.min()) if d > 0 else (ha.max() - entry)
         end = et.tz_convert(NY).replace(hour=eh, minute=em, second=0, microsecond=0)
-        i2 = idx.searchsorted(end, side="right")
-        h2, l2 = hi[i0:max(i2, i1)], lo[i0:max(i2, i1)]
+        i2 = idx.searchsorted(end, side="left")  # [entry, day_end) in bar-open time, as fpt.data.rth_mask
+        stop_at = max(i2, i1)
+        h2, l2 = hi[i0:stop_at], lo[i0:stop_at]
         mfe_day = (h2.max() - entry) if d > 0 else (entry - l2.min())
         out[k] = (mfe, mae, mfe_day, i1 - i0)
     e = pd.DataFrame(out, columns=["mfe_held", "mae_held", "mfe_day", "bars_in_slice"], index=trades.index)
@@ -123,7 +140,7 @@ def _md(df: pd.DataFrame, cols: list[str]) -> str:
     fmt = {"win_rate": "{:.1%}", "expectancy_r": "{:+.3f}", "profit_factor": "{:.2f}", "mfe_held_med": "{:.1f}", "mae_held_med": "{:.1f}",
            "stop_over_daily_atr_med": "{:.2f}", "target_over_opening_range_med": "{:.2f}"}
     lines = ["| " + " | ".join(cols) + " |", "|" + "---|" * len(cols)]
-    for _, r in df.iterrows():
+    for r in df.to_dict("records"):
         cells = []
         for c in cols:
             v = r[c]
@@ -139,8 +156,19 @@ def _md(df: pd.DataFrame, cols: list[str]) -> str:
     return "\n".join(lines)
 
 
-def anatomy(trades: pd.DataFrame, bars: pd.DataFrame, oos_start: str, day_end: str = "16:00") -> tuple[str, pd.DataFrame]:
-    t = trades.copy()
+def exclude_roll_trades(trades: pd.DataFrame, exclude_dates) -> tuple[pd.DataFrame, int]:
+    """Drop trades entered on the given New York dates, exactly as fpt.evaluate.evaluate_trades does."""
+    excl = {pd.Timestamp(d).date() for d in (exclude_dates or [])}
+    if not excl or trades.empty:
+        return trades.reset_index(drop=True), 0
+    dkey = trades["entry_time"].dt.tz_convert(NY).dt.date
+    kept = trades[~dkey.isin(excl)].reset_index(drop=True)
+    return kept, int(len(trades) - len(kept))
+
+
+def anatomy(trades: pd.DataFrame, bars: pd.DataFrame, oos_start: str, day_end: str = "16:00", exclude_dates=None) -> tuple[str, pd.DataFrame]:
+    t, n_excl = exclude_roll_trades(trades.copy(), exclude_dates)
+    n_roll_dates = len({pd.Timestamp(d).date() for d in (exclude_dates or [])})
     if "target_points" not in t.columns:
         t["target_points"] = (t["target"].astype(float) - t["entry"].astype(float)).abs()
     ex = excursions(t, bars, day_end)
@@ -170,8 +198,8 @@ def anatomy(trades: pd.DataFrame, bars: pd.DataFrame, oos_start: str, day_end: s
             "stop_over_daily_atr_med", "target_over_opening_range_med"]
     sections = []
     sections.append("# Anatomy of the sealed ledger\n")
-    sections.append(f"Trades: {len(t)}; development {int((t['period']=='development').sum())}, benchmark {int((t['period']=='benchmark').sum())} (benchmark = entries on or after {oos_start}, the inspected year; never used for selection).")
-    sections.append("Excursions are in points from the entry price: `mfe_held`/`mae_held` over the bars from entry to exit; `winners_room_*` use the MFE from entry through " + day_end + " New York regardless of the exit; `losers_mfe_*` is how far a losing trade went toward the target before stopping out; `winners_mae_*` is how close a winner came to the stop. `stop_over_daily_atr` uses the prior day's 14-day daily ATR (full Globex day); `target_over_opening_range` uses the 09:30-09:35 range.\n")
+    sections.append(f"Data hygiene: {n_excl} trades on {n_roll_dates} contract-roll dates excluded, as in the sealed report. Trades: {len(t)}; development {int((t['period']=='development').sum())}, benchmark {int((t['period']=='benchmark').sum())} (benchmark = entries on or after {oos_start}: the same window the sealed report calls out of sample, renamed because it has now been inspected; never used for selection).")
+    sections.append("Excursions are in points from the entry price: `mfe_held`/`mae_held` over the bars from entry to exit, with a stop bar's favourable extreme and a target bar's adverse extreme left out (the ledger takes the exit level to print first); `winners_room_*` use the MFE from entry through the bar before " + day_end + " New York or the exit bar, whichever is later; `losers_mfe_*` is how far a losing trade went toward the target before stopping out; `winners_mae_*` is how close a winner came to the stop. `stop_over_daily_atr` uses the previous Globex session's 14-session ATR; `target_over_opening_range` uses the 09:30-09:35 range.\n")
     for title, by in [("By period", ["period"]), ("By period and setup", ["period", "setup"]), ("By period and direction", ["period", "direction"]),
                       ("By period and grade", ["period", "grade"]), ("By period and entry time", ["period", "entry_bucket"]),
                       ("By period and volatility regime in points (terciles fitted on development days; confounded with price level)", ["period", "regime"]),
@@ -212,10 +240,25 @@ def main() -> int:
     ap.add_argument("--day-end", default="16:00")
     ap.add_argument("--out", required=True)
     ap.add_argument("--private-out", default=None, help="per-trade excursion CSV (derivative data; keep out of public repos)")
+    ap.add_argument("--manifest", default=None, help="sealed manifest.json; its data.roll_dates_excluded must equal the roll days derived from the bars")
     a = ap.parse_args()
     bars = load_minute_bars(a.csv, source_tz=a.source_tz)
     trades = load_trades(a.trades)
-    text, per_trade = anatomy(trades, bars, a.oos_start, a.day_end)
+    rolls = sorted(roll_days(bars))
+    if a.manifest:
+        import json
+        with open(a.manifest) as fh:
+            listed = sorted(pd.Timestamp(d).date() for d in json.load(fh)["data"]["roll_dates_excluded"])
+        if listed != rolls:
+            raise SystemExit(f"roll dates from bars ({len(rolls)}) differ from the manifest ({len(listed)}); refusing to report")
+    text, per_trade = anatomy(trades, bars, a.oos_start, a.day_end, exclude_dates=rolls)
+    if a.manifest:
+        with open(a.manifest) as fh:
+            m = json.load(fh)
+        expected = int(m["outputs"]["n_trades"]) - int(m["hygiene"]["trades_excluded"])
+        if len(per_trade) != expected:
+            raise SystemExit(f"analysed population {len(per_trade)} != sealed population {expected} (n_trades - trades_excluded); refusing to report")
+        text = text.replace("as in the sealed report.", f"as in the sealed report; analysed population {len(per_trade)} equals the manifest's n_trades minus trades_excluded.", 1)
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
     with open(a.out, "w") as f:
         f.write(text)
