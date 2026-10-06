@@ -1,6 +1,2 @@
-* text=auto
-
-/.github        export-ignore
-/build          export-ignore
-.travis.yml     export-ignore
-README.md       export-ignore
+jj-simon-replication/sealed/** text eol=lf
+jj-simon-replication/docs/reviews/** text eol=lf

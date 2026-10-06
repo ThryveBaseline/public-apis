@@ -2,6 +2,10 @@
 
 The order is fixed: **quote -> approve -> freeze and seal -> run once -> independent review**. Nothing in the strategy or the evaluator changes between the freeze and the sealed first result.
 
+## 0. Environment
+
+`pip install numpy 'pandas>=3' tabulate pytest` (all four are declared in `requirements.txt`; `tabulate` is easy to forget and its absence fails one test).
+
 ## 1. Credential handling (Surface)
 
 The Databento key lives in the local `access.txt`. It is read into the client at run time and is never printed, echoed, logged, copied into a notebook, committed, pasted into a chat, or sent to any other model or machine. If a command would display it, the command is wrong.

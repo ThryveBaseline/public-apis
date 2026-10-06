@@ -24,3 +24,10 @@ The operating brief is `docs/MISSION.md`; read it first. We are ready for the re
 6. After `sealed/run1` exists, give each reviewer `docs/REVIEW_PROMPT.md` plus `sealed/run1/report.md` and nothing else, collect their four answers independently, and hand them to Jev to compare.
 
 The primary measurements, in the report in this order: P(50K evaluation pass); the same on the untouched OOS window; the uncertainty of both; expectancy and the R distribution; continuation vs reversion; year, quarter and volatility-regime stability; funded-to-first-payout probability; $2,000 bootstrap survival; median trading days to first payout. The report also states how many trades hit a bar that contained both stop and target; those are resolved as stops, never in our favour.
+
+## Operational notes (2026-10-06)
+
+* Environment for the evaluator on the GB10: `python3 -m venv ~/jj-venv && ~/jj-venv/bin/pip install -q numpy 'pandas>=3' tabulate pytest` (tabulate is a declared dependency used by `fpt/backtest.py`; without it one test fails).
+* The GB10 holds no GitHub credentials; commits made there are pushed from the Surface with Chris's existing login. The GB10 clone of this branch lives at `~/public-apis`; the raw Databento files at `~/databento-nq-raw` (read-only).
+* `sealed/**` is pinned to LF line endings in `.gitattributes` so a Windows checkout with `core.autocrlf=true` does not change the file hashes that the seal records.
+
