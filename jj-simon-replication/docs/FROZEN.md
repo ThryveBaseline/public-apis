@@ -1,6 +1,6 @@
 # Frozen implementation
 
-The canonical strategy rules (`fpt/strategy.py`, `fpt/structure.py`, `fpt/fair_value.py`, `fpt/indicators.py`, `fpt/risk.py`) and the evaluator (`fpt/evaluate.py`, `fpt/propfirm.py`, `fpt/bootstrap.py`, `fpt/portfolio.py`, `fpt/data.py`, `scripts/seal_run.py`) are frozen at git tag **`jj-frozen-v1`** for the first real-data run.
+The canonical strategy rules (`fpt/strategy.py`, `fpt/structure.py`, `fpt/fair_value.py`, `fpt/indicators.py`, `fpt/risk.py`) and the evaluator (`fpt/evaluate.py`, `fpt/propfirm.py`, `fpt/bootstrap.py`, `fpt/portfolio.py`, `fpt/data.py`, `scripts/seal_run.py`) are frozen at git tag **`jj-frozen-v1`**, which is commit **`f585bfb`** on branch `claude/replicate-researcher-work-lhd1rm`, for the first real-data run. The commit hash is the authoritative identifier (the hosting proxy may not list tags); `scripts/seal_run.py` records it in every manifest.
 
 Rules of the freeze:
 
