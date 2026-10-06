@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from research.bracket_replay import COMMISSION_RT, POINT_VALUE, SLIPPAGE, grid, r_of, replay, replay_one, stop_points_for
+from research.bracket_replay import COMMISSION_RT, POINT_VALUE, SLIPPAGE, grid, r_of, replay, replay_one, report, stop_points_for
 from tests.test_anatomy import _bars, _trade
 
 NY = "America/New_York"
@@ -30,8 +30,8 @@ def test_short_side_and_flat_at_close():
 
 
 def test_replay_on_bars_respects_16_00_and_late_entry():
-    bars = _bars(days=3)
-    day = bars.index[0].normalize()
+    bars = _bars(days=40)
+    day = sorted(set(bars.index.normalize()))[30]
     e = day.replace(hour=9, minute=40)
     i0 = bars.index.get_loc(e)
     # no touch all day; a +500 spike at 16:00 (outside the window) must not count; the 15:59 close is the exit
@@ -59,4 +59,36 @@ def test_scaled_stops_use_prior_session_context_and_tick_rounding():
     assert np.isnan(stop_points_for(v_or, 123.4, float("nan"), 20000.0))
     assert stop_points_for(v_atr, 1.0, 10.0, 20000.0) == 2.0  # floor
     names = [v["name"] for v in grid()]
-    assert names[0] == "fixed_25_38" and len(names) == 1 + 7 * 3 + 6 + 5 and len(set(names)) == len(names)
+    assert names[:2] == ["ledger_bracket", "fixed_25_38"] and len(names) == 2 + 7 * 3 + 6 + 5 and len(set(names)) == len(names)
+
+
+def test_common_population_and_reproduction_check():
+    bars = _bars(days=40)
+    days = sorted(set(bars.index.normalize()))
+    rows = []
+    # A: too early for a previous-session ATR -> dropped for every variant
+    e0 = days[2].replace(hour=9, minute=40)
+    rows.append(_trade(e0, e0 + pd.Timedelta(minutes=5), 1, 20000.25, 1.0))
+    # B: sealed wide-open bracket 50/75 reaching its target
+    eB = days[20].replace(hour=9, minute=40); iB = bars.index.get_loc(eB)
+    bars.iloc[iB + 3, bars.columns.get_loc("high")] = 20000.25 + 80
+    tB = _trade(eB, bars.index[iB + 3], 1, 20000.25, 0.0, stop=50.0, target=75.0, reason="target")
+    tB["r"] = (75 * POINT_VALUE - COMMISSION_RT) / (50 * POINT_VALUE); rows.append(tB)
+    # C: 25/38 short stopped out
+    eC = days[22].replace(hour=10, minute=0); iC = bars.index.get_loc(eC)
+    bars.iloc[iC + 2, bars.columns.get_loc("high")] = 20000.25 + 30
+    tC = _trade(eC, bars.index[iC + 2], -1, 20000.25, 0.0, reason="stop")
+    tC["r"] = (-25.25 * POINT_VALUE - COMMISSION_RT) / (25 * POINT_VALUE); rows.append(tC)
+    # D: a ledger session_end exit
+    eD = days[25].replace(hour=10, minute=30)
+    rows.append(_trade(eD, days[25].replace(hour=15, minute=59), 1, 20000.25, 0.0, reason="session_end"))
+    t = pd.DataFrame(rows)
+    t["entry_time"] = pd.to_datetime(t["entry_time"]); t["exit_time"] = pd.to_datetime(t["exit_time"])
+    rep = replay(t, bars, grid())
+    assert rep.attrs["n_no_context"] == 1
+    per_variant = rep.groupby("variant")["trade"].nunique()
+    assert per_variant.nunique() == 1 and per_variant.iloc[0] == 3
+    text = report(t, rep, days[30].strftime("%Y-%m-%d"), 0, 0, 0, rep.attrs["n_no_context"])
+    assert "reaches the same exit reason on 100.00% and the largest absolute R difference is 0.0000" in text
+    assert "1 ledger `session_end` trades" in text and "1 sealed wide-open trades that carried 50/75" in text
+    assert "1 entries dropped for every variant" in text
