@@ -266,7 +266,7 @@ class EvaluationReport:
     text: str
 
 
-def evaluate_trades(trades: pd.DataFrame, bars: pd.DataFrame | None = None, firms: tuple[str, ...] = ("topstep_50k", "fundednext_50k_flex", "topstep_100k", "tradeify_100k_growth"),
+def evaluate_trades(trades: pd.DataFrame, bars: pd.DataFrame | None = None, exclude_dates=None, firms: tuple[str, ...] = ("topstep_50k", "fundednext_50k_flex", "topstep_100k", "tradeify_100k_growth"),
                     eval_risk_mode: str = "two_trade", eval_risk: float = 500.0, funded_risk: float = 500.0, oos_months: int = 3, max_eval_days: int = 30, max_funded_days: int = 60,
                     start_cash=(500.0, 1000.0, 2000.0, 5000.0)) -> EvaluationReport:
     """The pipeline: R distribution -> pass probability per firm rule -> funded payout probability -> bootstrap survival, in-sample and out-of-sample.
@@ -279,6 +279,18 @@ def evaluate_trades(trades: pd.DataFrame, bars: pd.DataFrame | None = None, firm
     lines = ["# Evaluation of the implemented rules on this data", ""]
     if trades.empty:
         return EvaluationReport(tables, "no trades")
+    # pre-registered data hygiene: contract-roll days are excluded (their session open is a different contract's
+    # price), and same-bar stop/target ambiguity is counted, never resolved in the strategy's favour
+    n_before = len(trades)
+    excl = {pd.Timestamp(d).date() for d in (exclude_dates or [])}
+    if excl:
+        dkey = trades["entry_time"].dt.tz_convert("America/New_York").dt.date if trades["entry_time"].dt.tz is not None else trades["entry_time"].dt.date
+        trades = trades[~dkey.isin(excl)].copy()
+    n_amb = int(trades["ambiguous_bar"].sum()) if "ambiguous_bar" in trades.columns else 0
+    lines += [f"Data hygiene: {n_before - len(trades)} trades on {len(excl)} contract-roll dates excluded; {n_amb} of {len(trades)} trades ({n_amb / max(1, len(trades)):.1%}) exited on a bar that contained both the stop and the target, each resolved as a STOP (worst case), never in the strategy's favour.", ""]
+    tables["hygiene"] = {"trades_before_exclusion": n_before, "roll_dates_excluded": sorted(str(d) for d in excl), "trades_excluded": n_before - len(trades), "ambiguous_bar_trades": n_amb, "ambiguous_bar_share": n_amb / max(1, len(trades))}
+    if trades.empty:
+        return EvaluationReport(tables, "\n".join(lines) + "no trades after exclusions")
     day = _ny_naive(trades["entry_time"]).dt.normalize()
     last = day.max()
     cut = (last - pd.DateOffset(months=oos_months)).normalize()

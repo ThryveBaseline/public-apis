@@ -1,3 +1,5 @@
 docs/research/transcripts/
 docs/research/extracted/
 docs/research/EXTRACTED.md
+data/*.csv
+data/*.dbn*

@@ -37,7 +37,7 @@ TRADE_COLUMNS = [
     "signal_time", "entry_time", "exit_time", "session", "setup", "grade", "direction",
     "fair_value", "atr", "tier", "stop_points", "contracts", "entry", "stop", "target",
     "exit", "exit_reason", "pnl_points", "pnl_dollars", "risk_dollars", "r", "bars_held",
-    "distance_from_fv",
+    "distance_from_fv", "ambiguous_bar",
 ]
 
 
@@ -159,6 +159,9 @@ def generate_trades(df: pd.DataFrame, cfg: StrategyConfig | None = None) -> pd.D
                 d = position["direction"]
                 exit_price = None
                 reason = None
+                # same-bar ambiguity: both the stop and the target lie inside this bar's range. The 1-minute
+                # data cannot say which printed first; it is resolved as a STOP (worst case) and flagged.
+                both = (l[t] <= position["stop"] and h[t] >= position["target"]) if d > 0 else (h[t] >= position["stop"] and l[t] <= position["target"])
                 if cfg.flat_at_window_end and mod[t] >= position["window_end"]:
                     # flatten at this bar's open: nothing that happens later in the bar counts
                     exit_price, reason = o[t] - d * cfg.slippage_points, "window_end"
@@ -176,6 +179,7 @@ def generate_trades(df: pd.DataFrame, cfg: StrategyConfig | None = None) -> pd.D
                     exit_price, reason = c[t] - d * cfg.slippage_points, "session_end"
                 if exit_price is not None:
                     rec = _close(position, exit_price, reason, times[t], t, cfg)
+                    rec["ambiguous_bar"] = bool(both) and reason in ("stop", "target")
                     trades.append(rec)
                     daily_r += rec["r"]
                     consec_losses = consec_losses + 1 if rec["pnl_dollars"] < 0 else 0
@@ -404,4 +408,5 @@ def _close(position: dict, exit_price: float, reason: str, exit_time, exit_index
         "r": pnl_dollars / risk_dollars if risk_dollars else 0.0,
         "bars_held": exit_index - position["entry_index"] + 1,
         "distance_from_fv": position["distance_from_fv"],
+        "ambiguous_bar": False,
     }

@@ -16,7 +16,7 @@ import sys
 
 from . import risk as R
 from .backtest import run_backtest
-from .data import load_minute_bars, synthetic_minute_bars
+from .data import load_minute_bars, roll_days, synthetic_minute_bars
 from .bootstrap import DEFAULT_LADDER, GrowthConfig, HisStatsConfig, growth_scan, his_calculator, his_stats_scan, simulate_growth, simulate_his_stats
 from .evaluate import evaluate_trades
 from .portfolio import PortfolioConfig, optimal_risk_scan, simulate_portfolio
@@ -377,7 +377,7 @@ def main(argv=None):
         trades = generate_trades(df, cfg)
         if a.trades:
             trades.to_csv(a.trades, index=False)
-        rep = evaluate_trades(trades, df, firms=tuple(x for x in a.firms.split(",") if x), eval_risk_mode=a.eval_risk_mode, eval_risk=a.eval_risk, funded_risk=a.funded_risk, oos_months=a.oos_months, max_eval_days=a.max_eval_days)
+        rep = evaluate_trades(trades, df, exclude_dates=roll_days(df), firms=tuple(x for x in a.firms.split(",") if x), eval_risk_mode=a.eval_risk_mode, eval_risk=a.eval_risk, funded_risk=a.funded_risk, oos_months=a.oos_months, max_eval_days=a.max_eval_days)
         if a.report:
             open(a.report, "w").write(rep.text)
         print(rep.text)

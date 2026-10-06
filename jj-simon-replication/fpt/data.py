@@ -16,7 +16,7 @@ import pandas as pd
 NY = "America/New_York"
 COLUMNS = ["open", "high", "low", "close", "volume"]
 
-_TIME_CANDIDATES = ["timestamp", "datetime", "date_time", "time", "date", "ts", "dt"]
+_TIME_CANDIDATES = ["timestamp", "ts_event", "ts_recv", "datetime", "date_time", "time", "date", "ts", "dt"]
 
 
 def _parse_timestamps(raw: pd.Series) -> pd.Series:
@@ -72,8 +72,27 @@ def load_minute_bars(path: str, source_tz: str = NY, time_col: str | None = None
             raise ValueError(f"missing column {c!r}")
         out[c] = df[c].astype(float).values
     out["volume"] = df["volume"].astype(float).values if "volume" in df.columns else 0.0
+    if "symbol" in df.columns:  # Databento continuous contracts carry the underlying contract per bar
+        out["symbol"] = df["symbol"].astype(str).values
+    if "rtype" in df.columns and out["close"].abs().max() > 1e7:  # Databento fixed-point prices (1e-9 units)
+        for c in ["open", "high", "low", "close"]:
+            out[c] = out[c] / 1e9
     out = out[~out.index.duplicated(keep="last")].sort_index()
     return out
+
+
+def roll_days(df: pd.DataFrame) -> list:
+    """New York dates on which the underlying contract changed from the previous
+    bar (needs a `symbol` column, as Databento continuous data provides). A
+    roll day's open is a different contract's price from the previous close,
+    so its 'unfair move' is an artefact; the evaluator excludes these dates."""
+    if "symbol" not in df.columns or df.empty:
+        return []
+    sym = df["symbol"].astype(str)
+    changed = sym.ne(sym.shift()).to_numpy().copy()
+    changed[0] = False
+    days = df.index[changed].tz_convert(NY).normalize().unique() if df.index.tz is not None else df.index[changed].normalize().unique()
+    return sorted({d.date() for d in days})
 
 
 def rth_mask(index: pd.DatetimeIndex, start: str = "09:30", end: str = "16:00") -> np.ndarray:

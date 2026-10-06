@@ -964,3 +964,37 @@ def test_csv_roundtrip_across_the_dst_change(tmp_path):
     back = load_minute_bars(str(path))
     assert len(back) == len(bars)
     assert (back.index == bars.index).all()
+
+
+def test_databento_layout_fixed_point_prices_symbols_and_roll_days(tmp_path):
+    from fpt.data import roll_days
+    idx = pd.date_range("2025-03-17 13:30", periods=6, freq="1min", tz="UTC")
+    df = pd.DataFrame({"ts_event": idx.strftime("%Y-%m-%dT%H:%M:%S.%fZ"), "rtype": 32, "publisher_id": 1, "instrument_id": 1,
+                       "open": [20000e9] * 6, "high": [20010e9] * 6, "low": [19990e9] * 6, "close": [20005e9] * 6, "volume": [100] * 6,
+                       "symbol": ["NQH5", "NQH5", "NQH5", "NQM5", "NQM5", "NQM5"]})
+    path = tmp_path / "db.csv"
+    df.to_csv(path, index=False)
+    back = load_minute_bars(str(path))
+    assert back["close"].iloc[0] == pytest.approx(20005.0)
+    assert str(back.index.tz) == "America/New_York" and back.index[0].hour == 9 and back.index[0].minute == 30
+    assert "symbol" in back.columns
+    assert roll_days(back) == [pd.Timestamp("2025-03-17").date()]
+
+
+def test_same_bar_ambiguity_is_flagged_and_resolved_as_a_stop():
+    day = _day_frame("2026-01-06", {
+        "09:30": (100.0, 100.5, 99.5, 100.0),
+        "09:39": (59.8, 60.1, 59.5, 59.9),
+        "09:40": (59.9, 61.5, 59.8, 61.4),              # his displacement -> long reversion, entry at the 09:41 open
+        "09:42": (61.6, 120.0, 30.0, 61.6),             # a bar that contains both the stop and the target
+    }, default=(60.0, 60.0, 60.0, 60.0))
+    t = generate_trades(pd.concat([_seed_day(), day]), StrategyConfig(rolling_fair_value=False))
+    assert len(t) == 1 and t.iloc[0]["exit_reason"] == "stop" and bool(t.iloc[0]["ambiguous_bar"])
+
+
+def test_evaluate_excludes_roll_dates_and_reports_hygiene(bars):
+    from fpt.evaluate import evaluate_trades
+    trades = generate_trades(bars, StrategyConfig())
+    first = trades["entry_time"].dt.tz_convert("America/New_York").dt.date.iloc[0]
+    rep = evaluate_trades(trades, bars, exclude_dates=[first], firms=("topstep_50k",), oos_months=0)
+    assert rep.tables["hygiene"]["trades_excluded"] >= 1 and "contract-roll dates excluded" in rep.text
