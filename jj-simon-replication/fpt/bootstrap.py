@@ -178,3 +178,119 @@ def growth_scan(cfg: GrowthConfig, start_cash=(250.0, 500.0, 1000.0, 2500.0, 500
                 "payouts_last_median": r["monthly_payouts_last_month"]["median"], "income_median": r["income_total"]["median"],
             })
     return rows
+
+
+# ---------------------------------------------------------------------------
+# His own account-level arithmetic (the "calculator" he describes), simulated
+# as a bankroll path instead of a trade-level model.
+# ---------------------------------------------------------------------------
+
+@dataclass
+class HisStatsConfig:
+    """Inputs exactly as he frames them: an evaluation costs `eval_cost`,
+    passes with probability `pass_rate` (reach +target before -drawdown),
+    a funded account reaches a payout with probability `payout_rate` per
+    cycle of `cycle_months` and pays `payout_size`; otherwise it is lost.
+    A funded account that paid out keeps going (another cycle) until it is
+    lost. Everything is reinvested in new evaluations up to `max_accounts`
+    live at once, with at most `buys_per_month`."""
+    start_cash: float = 500.0
+    eval_cost: float = 100.0
+    pass_rate: float = 0.33
+    payout_rate: float = 0.33
+    payout_size: float = 2000.0
+    cycle_months: float = 1.0  # he quotes 1.0 for a normal trader and 0.75 for himself
+    eval_months: float = 0.5  # time from purchase to pass/fail
+    profit_split: float = 0.90
+    max_accounts: int = 100
+    buys_per_month: int = 100
+    months: int = 12
+    sims: int = 5000
+    seed: int = 0
+    income_after_cash: float = 10_000.0  # once cash exceeds this, take income_take of each month's payouts
+    income_take: float = 0.5
+    steps_per_month: int = 4
+
+
+def simulate_his_stats(cfg: HisStatsConfig) -> dict:
+    rng = np.random.default_rng(cfg.seed)
+    n = cfg.sims
+    cash = np.full(n, float(cfg.start_cash))
+    evals = np.zeros(n, dtype=int)  # evaluations in progress
+    funded = np.zeros(n, dtype=int)
+    income = np.zeros(n)
+    invested = np.zeros(n)
+    payouts_total = np.zeros(n)
+    bust = np.zeros(n, dtype=bool)
+    first_payout = np.full(n, np.nan)
+    steps = cfg.months * cfg.steps_per_month
+    dt = 1.0 / cfg.steps_per_month
+    p_eval_resolve = min(1.0, dt / cfg.eval_months)
+    p_cycle = min(1.0, dt / cfg.cycle_months)
+    funded_by_month = np.zeros((n, cfg.months))
+    payouts_by_month = np.zeros((n, cfg.months))
+    cash_by_month = np.zeros((n, cfg.months))
+    month_pay = np.zeros(n)
+    for t in range(steps):
+        m = t // cfg.steps_per_month
+        # buy evaluations
+        room = np.maximum(0, cfg.max_accounts - evals - funded)
+        afford = np.floor(np.maximum(cash, 0) / cfg.eval_cost).astype(int)
+        buy = np.minimum(np.minimum(room, afford), cfg.buys_per_month if t % cfg.steps_per_month == 0 else 0)
+        buy = np.where(bust, 0, buy)
+        cash -= buy * cfg.eval_cost
+        invested += buy * cfg.eval_cost
+        evals += buy
+        # evaluations resolve
+        resolving = rng.binomial(evals, p_eval_resolve)
+        passed = rng.binomial(resolving, cfg.pass_rate)
+        evals -= resolving
+        funded += passed
+        # funded cycles resolve
+        cycling = rng.binomial(funded, p_cycle)
+        paid = rng.binomial(cycling, cfg.payout_rate)
+        lost = cycling - paid
+        funded -= lost
+        gross = paid * cfg.payout_size * cfg.profit_split
+        payouts_total += gross
+        month_pay += gross
+        take = np.where(cash > cfg.income_after_cash, cfg.income_take, 0.0) * gross
+        cash += gross - take
+        income += take
+        newly = np.isnan(first_payout) & (paid > 0)
+        first_payout[newly] = m + 1
+        if (t + 1) % cfg.steps_per_month == 0:
+            bust |= (evals == 0) & (funded == 0) & (cash < cfg.eval_cost)
+            funded_by_month[:, m] = funded
+            payouts_by_month[:, m] = month_pay
+            cash_by_month[:, m] = cash
+            month_pay = np.zeros(n)
+    pct = lambda x, q: float(np.nanpercentile(x, q))
+    last = cfg.months - 1
+    ev_per_eval = cfg.pass_rate * cfg.payout_rate * cfg.payout_size * cfg.profit_split / max(1e-9, 1 - cfg.payout_rate) - cfg.eval_cost
+    return {
+        "inputs": {k: getattr(cfg, k) for k in ("start_cash", "eval_cost", "pass_rate", "payout_rate", "payout_size", "cycle_months", "profit_split", "max_accounts")},
+        "ev_per_evaluation_dollars": ev_per_eval,
+        "p_bust": float(bust.mean()),
+        "first_payout_month": {"median": pct(first_payout, 50), "p_never": float(np.isnan(first_payout).mean())},
+        "funded_last_month": {"p25": pct(funded_by_month[:, last], 25), "median": pct(funded_by_month[:, last], 50), "p75": pct(funded_by_month[:, last], 75)},
+        "payouts_last_month": {"p25": pct(payouts_by_month[:, last], 25), "median": pct(payouts_by_month[:, last], 50), "p75": pct(payouts_by_month[:, last], 75)},
+        "cash_last_month": {"p5": pct(cash_by_month[:, last], 5), "median": pct(cash_by_month[:, last], 50)},
+        "income_total": {"median": pct(income, 50), "p75": pct(income, 75)},
+        "invested_total": {"median": pct(invested, 50)},
+        "funded_median_by_month": [pct(funded_by_month[:, i], 50) for i in range(cfg.months)],
+        "payouts_median_by_month": [pct(payouts_by_month[:, i], 50) for i in range(cfg.months)],
+    }
+
+
+def his_stats_scan(cfg: HisStatsConfig, start_cash=(250.0, 500.0, 1000.0, 2000.0, 5000.0), pass_rates=(0.25, 0.33, 0.40)) -> list[dict]:
+    from dataclasses import replace
+    rows = []
+    for pr in pass_rates:
+        for c in start_cash:
+            r = simulate_his_stats(replace(cfg, start_cash=c, pass_rate=pr, payout_rate=pr))
+            rows.append({"pass_rate": pr, "start_cash": c, "p_bust": r["p_bust"], "ev_per_eval": r["ev_per_evaluation_dollars"],
+                         "first_payout_median": r["first_payout_month"]["median"], "funded_last_median": r["funded_last_month"]["median"],
+                         "payouts_last_p25": r["payouts_last_month"]["p25"], "payouts_last_median": r["payouts_last_month"]["median"],
+                         "income_median": r["income_total"]["median"]})
+    return rows

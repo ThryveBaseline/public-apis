@@ -17,7 +17,7 @@ import sys
 from . import risk as R
 from .backtest import run_backtest
 from .data import load_minute_bars, synthetic_minute_bars
-from .bootstrap import DEFAULT_LADDER, GrowthConfig, growth_scan, simulate_growth
+from .bootstrap import DEFAULT_LADDER, GrowthConfig, HisStatsConfig, growth_scan, his_stats_scan, simulate_growth, simulate_his_stats
 from .portfolio import PortfolioConfig, optimal_risk_scan, simulate_portfolio
 from .propfirm import FIRM_PRESETS
 from .strategy import StrategyConfig
@@ -134,6 +134,13 @@ def main(argv=None):
     g.add_argument("--max-buys-per-day", type=int, default=1)
     g.add_argument("--scan", action="store_true", help="scan starting cash x evaluation posture")
     g.add_argument("--json", action="store_true")
+    g.add_argument("--his-stats", action="store_true", dest="his_stats", help="use his account-level calculator (pass rate, payout rate, payout size, cycle time) instead of the trade-level model")
+    g.add_argument("--eval-cost", type=float, default=100.0)
+    g.add_argument("--pass-rate", type=float, default=0.33)
+    g.add_argument("--payout-rate", type=float, default=0.33)
+    g.add_argument("--payout-size", type=float, default=2000.0)
+    g.add_argument("--cycle-months", type=float, default=1.0, help="months from funded to payout decision (he quotes 1.0 for most traders, 0.75 for himself)")
+    g.add_argument("--max-accounts", type=int, default=100)
 
     sub.add_parser("firms", help="list firm presets and their verification status")
 
@@ -252,6 +259,27 @@ def main(argv=None):
         out = R.implied_daily_r(a.payout, a.accounts, a.days, a.risk)
         out["trades_per_day_needed_at_p_rr"] = R.trades_per_day_for_daily_r(out["r_per_account_day"], a.p, a.rr)
         print(json.dumps(out, indent=2))
+        return 0
+
+    if a.cmd == "growth" and a.his_stats:
+        hcfg = HisStatsConfig(start_cash=a.start_cash, eval_cost=a.eval_cost, pass_rate=a.pass_rate, payout_rate=a.payout_rate, payout_size=a.payout_size,
+                              cycle_months=a.cycle_months, max_accounts=a.max_accounts, months=a.months, sims=max(a.sims, 2000))
+        if a.scan:
+            rows = his_stats_scan(hcfg)
+            print(f"{'pass=payout':>11} {'start $':>8} {'EV/eval':>8} {'P(bust)':>8} {'1st payout':>10} {'funded m'+str(a.months):>10} {'payouts p25':>12} {'payouts med':>12} {'income med':>11}")
+            for r in rows:
+                print(f"{r['pass_rate']:>11.0%} {r['start_cash']:>8,.0f} {r['ev_per_eval']:>8,.0f} {r['p_bust']:>8.1%} {r['first_payout_median']:>10.1f} {r['funded_last_median']:>10.0f} {r['payouts_last_p25']:>12,.0f} {r['payouts_last_median']:>12,.0f} {r['income_median']:>11,.0f}")
+            return 0
+        res = simulate_his_stats(hcfg)
+        if a.json:
+            print(json.dumps(res, indent=2))
+        else:
+            print(f"his calculator: start ${a.start_cash:,.0f}, eval ${a.eval_cost:,.0f}, pass {a.pass_rate:.0%}, payout rate {a.payout_rate:.0%} of ${a.payout_size:,.0f} per {a.cycle_months} month cycle, {a.months} months, {hcfg.sims} paths")
+            print(f"EV per evaluation bought: ${res['ev_per_evaluation_dollars']:,.0f}; P(bust) {res['p_bust']:.1%}; first payout month median {res['first_payout_month']['median']:.1f} (never {res['first_payout_month']['p_never']:.1%})")
+            fl, pl = res['funded_last_month'], res['payouts_last_month']
+            print(f"last month: funded p25/med/p75 {fl['p25']:.0f}/{fl['median']:.0f}/{fl['p75']:.0f}; payouts {pl['p25']:,.0f}/{pl['median']:,.0f}/{pl['p75']:,.0f}; income taken median {res['income_total']['median']:,.0f}; invested median {res['invested_total']['median']:,.0f}")
+            print("funded (median) by month: " + ", ".join(f"{x:.0f}" for x in res['funded_median_by_month']))
+            print("payouts (median) by month: " + ", ".join(f"{x:,.0f}" for x in res['payouts_median_by_month']))
         return 0
 
     if a.cmd == "growth":

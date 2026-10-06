@@ -468,3 +468,14 @@ def test_bootstrap_growth_buys_only_with_cash_and_frees_failed_slots():
     assert res["p_bust"] == 1.0  # $60 cannot buy a $70 evaluation
     res = simulate_growth(GrowthConfig(start_cash=5000.0, months=3, sims=100, ladder=[("fundednext_50k_flex", 2), ("topstep_50k", 2)]))
     assert 0.0 <= res["p_bust"] < 1.0 and res["invested_total"]["mean"] > 0
+
+
+def test_his_stats_calculator_matches_his_arithmetic():
+    from fpt.bootstrap import HisStatsConfig, simulate_his_stats
+    # his base case: $100 eval, 33% pass, 33% payout rate, $2,000 payout -> positive EV per evaluation
+    r = simulate_his_stats(HisStatsConfig(start_cash=1000.0, months=3, sims=500))
+    assert r["ev_per_evaluation_dollars"] > 0
+    assert 0.0 < r["p_bust"] < 1.0
+    # no edge at all: 10% pass and payout -> negative EV and a bankroll that mostly dies
+    r0 = simulate_his_stats(HisStatsConfig(start_cash=1000.0, pass_rate=0.10, payout_rate=0.10, months=6, sims=500))
+    assert r0["ev_per_evaluation_dollars"] < 0 and r0["p_bust"] > 0.5
