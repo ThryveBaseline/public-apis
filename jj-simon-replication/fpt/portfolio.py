@@ -20,14 +20,14 @@ class PortfolioConfig:
     risk_per_trade: float | dict[str, float] = 1000.0
     p_win: float = 0.54
     rr: float = 1.5
-    trades_per_day: float = 1.5  # qualifying signals/day (copy mode: per account; round_robin: total across accounts). The third-party backtests log ~1.2/day; his payout arithmetic implies ~0.5 R-producing trades/day per account (see README calibration)
+    trades_per_day: float = 20.0  # signals per day. round_robin (his operation): the total across all accounts, "about 20 trades" a day, 10-11 in the New York morning (KHEQ5g55dQ4, l6iq0ljhxIo); copy mode: per account, where the third-party backtests log ~1.2-1.5 qualifying signals a day
     bootstrap_r: np.ndarray | None = None  # resample real trade R outcomes instead of parametric p/rr
     months: int = 6
-    trading_days_per_month: int = 21
+    trading_days_per_month: int = 22  # JJ: "A month has 22 trading days" (0uAQUHEB_L8 ~13:50 L525)
     sims: int = 2000
     seed: int = 0
     copy_trading: bool = True
-    routing: str = "copy"  # "copy": every account takes every signal | "round_robin": each signal goes to the next account, at most one trade per account per day (JJ: "one account at a time, one trade per account per day")
+    routing: str = "round_robin"  # "round_robin" (his operation): each signal goes to the next live account, at most one trade per account per day ("If I have 30 accounts and I take 30 trades per day, that's one trade on every single account", XhsbfEdJBAc ~5:23 L216) | "copy": every account takes every signal
     eval_risk_mode: str = "fixed"  # "fixed": evaluations risk risk_per_trade | "two_trade": evaluations risk profit_target / (2 * rr) so two wins clear the target (JJ's "max risk, exactly two trades" eval posture)
     restart_failed: bool = True
     start_funded: bool = False

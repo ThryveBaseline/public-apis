@@ -142,7 +142,8 @@ def test_strategy_generates_trades(bars):
     short = trades[trades["direction"] == "short"]
     assert (long["stop"] < long["entry"]).all() and (long["target"] > long["entry"]).all()
     assert (short["stop"] > short["entry"]).all() and (short["target"] < short["entry"]).all()
-    np.testing.assert_allclose((long["target"] - long["entry"]).to_numpy(), 1.5 * long["stop_points"].to_numpy())
+    expected = np.where(long["tier"].to_numpy() == "big_open", 1.5 * long["stop_points"].to_numpy(), 38.0)  # his 25 / 38 bracket; 50 / 75 on a wide open
+    np.testing.assert_allclose((long["target"] - long["entry"]).to_numpy(), expected)
     # one position at a time
     t = trades.sort_values("entry_time")
     assert (t["entry_time"].to_numpy()[1:] >= t["exit_time"].to_numpy()[:-1]).all()
@@ -150,8 +151,9 @@ def test_strategy_generates_trades(bars):
     stops = trades[trades["exit_reason"] == "stop"]
     if len(stops):
         assert (stops["pnl_dollars"] < -stops["risk_dollars"]).all()
-    # flat by window end
-    assert (trades["exit_time"].dt.hour * 60 + trades["exit_time"].dt.minute <= 11 * 60).all()
+    # his default lets a position run past 11:00; with flat_at_window_end the exits stop at 11:00
+    flat = generate_trades(bars, StrategyConfig(flat_at_window_end=True))
+    assert (flat["exit_time"].dt.hour * 60 + flat["exit_time"].dt.minute <= 11 * 60).all()
 
 
 def test_daily_stop_rules(bars):
@@ -198,12 +200,20 @@ def test_prop_account_trailing_eod_pass_and_fail():
 
 
 def test_prop_account_payout():
-    rules = FIRM_PRESETS["topstep_100k"].with_(payout_min_days=1, consistency_pct=None, payout_max=None)
+    rules = FIRM_PRESETS["topstep_100k"].with_(payout_min_days=1, consistency_pct=None, payout_max=None, payout_fraction=1.0)
     acct = PropAccount(rules, sims=1, risk_per_trade=1000.0, start_phase=FUNDED)
     acct.apply_day(np.array([[1.5, 1.5]]), np.array([[True, True]]))
     cash = acct.month_end()
     assert cash[0] == pytest.approx(3000 * rules.payout_split)
     assert acct.balance[0] == pytest.approx(100_000)
+    # his default: 50% of profit per request, and only days of $150+ count toward the payout
+    half = FIRM_PRESETS["topstep_100k"].with_(payout_min_days=1, consistency_pct=None, payout_max=None)
+    acct = PropAccount(half, sims=1, risk_per_trade=1000.0, start_phase=FUNDED)
+    acct.apply_day(np.array([[1.5, 1.5]]), np.array([[True, True]]))
+    assert acct.month_end()[0] == pytest.approx(1500 * half.payout_split)
+    acct = PropAccount(half, sims=1, risk_per_trade=50.0, start_phase=FUNDED)
+    acct.apply_day(np.array([[1.5]]), np.array([[True]]))  # +$75: not a winning day
+    assert acct.days_since_payout[0] == 0
 
 
 def test_portfolio_runs():
@@ -275,7 +285,7 @@ def test_time_filters_and_big_open_candle(bars):
     rev = t[t["setup"] == "reversion"]
     assert (m[cont.index] >= 9 * 60 + 33).all()
     assert (m[rev.index] < 10 * 60).all()
-    big = generate_trades(bars, StrategyConfig(big_open_candle_points=0.0))  # every opening candle counts as big
+    big = generate_trades(bars, StrategyConfig(big_open_candle_points=0.0, big_open_scope="session"))  # every opening candle counts as big
     assert (big["stop_points"] == 50.0).all()
     assert (big["contracts"] == 1).all()
     none = generate_trades(bars, StrategyConfig(big_open_candle_points=None))
@@ -304,6 +314,13 @@ def test_extra_sessions_and_rolling_fair_value(bars):
 # Audit fixes (2026-10-06): hand-built bar sequences for the rule edge cases
 # ---------------------------------------------------------------------------
 
+# the fxreplay-style mechanics the hand-built sequences below were written for
+LEGACY = dict(displacement_mode="wick", swing_left=3, swing_right=3, continuation_direction="side_of_fv", continuation_stall_candles=None,
+              stop_mode="atr_tier", size_mode="tier", risk_dollars=1000.0, target_points=None, max_target_overshoot_pct=None,
+              max_consecutive_losses=None, stop_scope="day", flat_at_window_end=True, max_trades_per_day=10, rolling_fair_value=False,
+              big_open_measure="range", big_open_scope="am")
+
+
 def _day_frame(day: str, bars: dict, start="09:30", end="11:05", default=(99.5, 100.0, 99.0, 99.4)):
     """One NY-session day of 1-minute dojis (no displacement) with overrides {"HH:MM": (o, h, l, c)}."""
     idx = pd.date_range(f"{day} {start}", f"{day} {end}", freq="1min", tz="America/New_York")
@@ -331,7 +348,7 @@ def test_structure_already_broken_by_a_plain_close_is_not_a_plus():
         "09:41": (99.3, 99.95, 99.25, 99.95),
     })
     df = pd.concat([_seed_day(), day])
-    trades = generate_trades(df, StrategyConfig())
+    trades = generate_trades(df, StrategyConfig(**LEGACY))
     assert len(trades) >= 1
     first = trades.iloc[0]
     assert first["signal_time"].strftime("%H:%M") == "09:41"
@@ -347,7 +364,7 @@ def test_first_close_through_a_live_swing_is_a_plus():
         "09:37": (99.3, 99.5, 99.0, 99.35), "09:38": (99.3, 99.4, 99.0, 99.35), "09:39": (99.3, 99.3, 99.0, 99.25),
         "09:41": (99.3, 99.95, 99.25, 99.95),
     })
-    trades = generate_trades(pd.concat([_seed_day(), day]), StrategyConfig())
+    trades = generate_trades(pd.concat([_seed_day(), day]), StrategyConfig(**LEGACY))
     assert trades.iloc[0]["grade"] == "A+"
 
 
@@ -358,7 +375,7 @@ def test_window_end_flattens_at_the_open_before_the_bar_range_counts():
         "10:59": (95.8, 96.0, 95.5, 95.9),       # fill bar
         "11:00": (95.6, 125.0, 95.5, 120.0),     # would hit the target after the open
     }, default=(95.5, 95.9, 95.1, 95.4))
-    trades = generate_trades(pd.concat([_seed_day(), day]), StrategyConfig())
+    trades = generate_trades(pd.concat([_seed_day(), day]), StrategyConfig(**LEGACY))
     assert len(trades) == 1
     t = trades.iloc[0]
     assert t["entry_time"].strftime("%H:%M") == "10:59"
@@ -372,12 +389,12 @@ def test_signal_whose_fill_would_be_flattened_is_skipped():
         "10:59": (95.0, 95.7, 94.95, 95.7),      # displacement on the last bar of the window
         "11:00": (95.8, 125.0, 95.5, 120.0),
     }, default=(95.5, 95.9, 95.1, 95.4))
-    trades = generate_trades(pd.concat([_seed_day(), day]), StrategyConfig())
+    trades = generate_trades(pd.concat([_seed_day(), day]), StrategyConfig(**LEGACY))
     assert len(trades) == 0
 
 
 def test_big_open_rule_reads_the_0930_candle_even_with_an_0830_session():
-    cfg = StrategyConfig(extra_sessions=(("08:30", "08:35", "09:29"),))
+    cfg = StrategyConfig(**{**LEGACY, "big_open_scope": "session"}, extra_sessions=(("08:30", "08:35", "09:29"),))
     base = {"09:30": (100.0, 101.0, 99.0, 100.0), "09:41": (94.3, 95.95, 94.25, 95.95)}  # body large enough for the post-spike ATR
     small_open = _day_frame("2026-01-06", {**base, "08:30": (100.0, 115.0, 85.0, 100.0)}, start="08:30", default=(95.5, 95.9, 95.1, 95.4))
     t = generate_trades(pd.concat([_seed_day(), small_open]), cfg)
@@ -391,7 +408,7 @@ def test_big_open_rule_reads_the_0930_candle_even_with_an_0830_session():
 
 def test_fixed_target_points_override():
     day = _day_frame("2026-01-06", {"09:30": (100.0, 100.5, 99.5, 100.0), "09:41": (95.3, 95.95, 95.25, 95.95)}, default=(95.5, 95.9, 95.1, 95.4))
-    t = generate_trades(pd.concat([_seed_day(), day]), StrategyConfig(target_points=100.0)).iloc[0]
+    t = generate_trades(pd.concat([_seed_day(), day]), StrategyConfig(**{**LEGACY, "target_points": 100.0})).iloc[0]
     assert t["target"] - t["entry"] == pytest.approx(100.0)
 
 
@@ -479,3 +496,58 @@ def test_his_stats_calculator_matches_his_arithmetic():
     # no edge at all: 10% pass and payout -> negative EV and a bankroll that mostly dies
     r0 = simulate_his_stats(HisStatsConfig(start_cash=1000.0, pass_rate=0.10, payout_rate=0.10, months=6, sims=500))
     assert r0["ev_per_evaluation_dollars"] < 0 and r0["p_bust"] > 0.5
+
+
+
+# ---------------------------------------------------------------------------
+# His own rules from the primary corpus (defaults since the corpus integration)
+# ---------------------------------------------------------------------------
+
+def test_jj_displacement_definition():
+    from fpt.structure import is_displacement_jj
+    # body larger than the previous candle's body and a close beyond the previous candle
+    assert is_displacement_jj(100.0, 101.5, 99.9, 101.4, 100.2, 100.8, 99.8, 100.6, +1)
+    assert not is_displacement_jj(100.0, 101.5, 99.9, 100.7, 100.2, 100.8, 99.8, 100.6, +1)  # closes inside the previous candle
+    assert not is_displacement_jj(100.0, 100.3, 99.9, 100.2, 99.0, 100.1, 98.0, 100.0, +1)  # smaller body than the previous candle
+    assert is_displacement_jj(100.5, 100.55, 99.4, 99.5, 100.6, 100.8, 100.4, 100.5, -1)
+
+
+def test_continuation_follows_the_opening_candle_colour():
+    day = _day_frame("2026-01-06", {
+        "09:30": (100.0, 100.7, 99.9, 100.6),      # bullish opening candle -> continuation direction long
+        "09:31": (100.6, 100.8, 100.4, 100.5),
+        "09:32": (100.5, 100.55, 99.4, 99.5),      # bearish displacement closing below fair value
+    })
+    df = pd.concat([_seed_day(), day])
+    jj = generate_trades(df, StrategyConfig())
+    assert not ((jj["setup"] == "continuation") & (jj["direction"] == "short")).any()
+    legacy_dir = generate_trades(df, StrategyConfig(continuation_direction="side_of_fv", continuation_stall_candles=None))
+    assert ((legacy_dir["setup"] == "continuation") & (legacy_dir["direction"] == "short")).any()
+
+
+def test_reversion_room_rule_and_fixed_bracket():
+    def day_at(level):
+        return _day_frame("2026-01-06", {
+            "09:30": (100.0, 100.5, 99.5, 100.0),
+            "09:39": (level - 0.2, level + 0.1, level - 0.5, level - 0.1),
+            "09:40": (level - 0.1, level + 1.5, level - 0.2, level + 1.4),   # his displacement: bigger body, close above the previous high
+        }, default=(level, level, level, level))
+    cfg = StrategyConfig(rolling_fair_value=False)  # keep the 09:30 anchor so the room rule is tested on its own
+    near = generate_trades(pd.concat([_seed_day(), day_at(80.0)]), cfg)   # 18.6 points of room < 0.8 x 38
+    assert len(near) == 0
+    far = generate_trades(pd.concat([_seed_day(), day_at(60.0)]), cfg)    # 38.6 points of room
+    assert len(far) == 1
+    t = far.iloc[0]
+    assert t["setup"] == "reversion" and t["direction"] == "long"
+    assert t["stop_points"] == 25.0 and t["target"] - t["entry"] == pytest.approx(38.0) and t["contracts"] == 1
+
+
+def test_three_losses_end_the_session(bars):
+    trades = generate_trades(bars, StrategyConfig())
+    for _, day in trades.groupby(trades["signal_time"].dt.date):
+        losses = 0
+        for i, r in enumerate(day["r"].to_numpy()):
+            losses = losses + 1 if r < 0 else 0
+            if losses >= 3:
+                assert i == len(day) - 1, "a fourth attempt after three consecutive losses"
+                break

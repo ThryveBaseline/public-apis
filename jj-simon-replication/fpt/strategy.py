@@ -12,10 +12,13 @@ Reconstructed rules (sources in docs/DOSSIER.md):
     market structure break (MSB, against the prior swing) CONFIRMED by a
     displacement candle (counter-wick < 20% of open-to-extreme). Grades:
     A+ = structure break + displacement, A = displacement alone, B = skip.
-  * Stop by 1-minute ATR tier (>20 -> 50 pts / 1 ct, 7-20 -> 25 pts / 2 ct,
-    <7 -> 16.5 pts / 3 ct, about $1,000 risk). Target fixed 1.5R. No
-    management, no partials.
-  * About 10 trades per day; one position at a time (assumption).
+  * His bracket: 25-point stop, 38-point target ("3825"), one NQ contract per
+    $500 of risk; 50 / 75 on a wide opening candle or a 150k account. The
+    fxreplay ATR ladder (50/25/16.5 with 1/2/3 contracts) is kept as
+    stop_mode="atr_tier". No management, no partials; break-even only at a
+    new session open or before scheduled news.
+  * No maximum trades when winning; three losing attempts end the session.
+    One position at a time (he layers accounts, the backtester trades one).
 """
 from __future__ import annotations
 
@@ -28,7 +31,7 @@ from .fair_value import FairValueConfig, day_keys, fair_value_series, hhmm, minu
 from .indicators import atr as atr_fn
 from .indicators import swing_points
 from .risk import DEFAULT_ATR_TIERS, NQ_POINT_VALUE, atr_tier, contracts_for_risk
-from .structure import is_displacement
+from .structure import is_displacement, is_displacement_jj
 
 TRADE_COLUMNS = [
     "signal_time", "entry_time", "exit_time", "session", "setup", "grade", "direction",
@@ -47,12 +50,14 @@ class StrategyConfig:
     skip_first_minutes: int = 0  # fxreplay's filtered test skips the first 3 minutes for continuations
     reversion_end: str | None = None  # fxreplay's filtered test: reversions only until ~10:00; None = window_end
     big_open_candle_points: float | None = 25.0  # JJ: if the opening candle is larger than this, cut size in half and use the 50-point stop
+    big_open_measure: str = "body"  # "body": open-to-close of the opening candle (his wording: "The candle body is 33 points") | "range": high-low
+    big_open_scope: str = "continuation"  # "continuation": the continuation trade off each session's own opening candle (his use) | "session": every trade of that session | "am": every 09:30 session trade (legacy)
     pm_session: bool = False
     pm_start: str = "14:00"
     pm_continuation_end: str = "14:05"
     pm_end: str = "15:00"  # JJ's earlier videos: 14:00-15:00 afternoon session
     extra_sessions: tuple = ()  # more (start, continuation_end, end) windows anchored at their start bar's open, e.g. (("08:30", "08:35", "09:29"), ("18:00", "18:05", "19:30"), ("20:00", "20:05", "21:30")) for his 8:30 news, 6 PM and 8 PM sessions
-    rolling_fair_value: bool = False  # JJ: "if there's consolidation and then more breakouts, I'll just treat the most recent consolidation as a fair price"
+    rolling_fair_value: bool = True  # JJ (standing rule, Apr-Oct 2026): "I change fair price throughout the day based on most recent consolidation"
     consolidation_bars: int = 8  # a consolidation = the last N bars' range below consolidation_atr_mult x ATR
     consolidation_atr_mult: float = 1.5
     # fair value
@@ -62,27 +67,33 @@ class StrategyConfig:
     min_distance_from_fv: float = 0.0  # reversion only when at least this far from fair value
     # entry mechanics
     atr_period: int = 14
-    wick_pct: float = 0.20
-    min_body_atr: float = 0.5  # displacement body must be >= this x ATR; the codifications call candle size a discretionary, optional filter (see docs/ASSUMPTIONS.md)
-    swing_left: int = 3
-    swing_right: int = 3
+    displacement_mode: str = "jj"  # "jj": his definition (body larger than the previous candle's body and close beyond it) | "wick": fxreplay's 20% counter-wick test plus min_body_atr
+    wick_pct: float = 0.20  # "wick" mode only
+    min_body_atr: float = 0.5  # "wick" mode only: displacement body must be >= this x ATR
+    swing_left: int = 1  # JJ: structure is a wick lower/higher than the one candle before and the one after (KHEQ5g55dQ4 ~6:54 L283); fxreplay-style pivots: 3/3
+    swing_right: int = 1
+    continuation_direction: str = "open_candle"  # "open_candle": colour of the session's opening 1-minute candle (3L8xdh3oPm4 L412, PN1UKQMPb5M L51) | "side_of_fv": sign(close - fair value)
+    continuation_stall_candles: int | None = 2  # continuation phase also ends once this many consecutive candles close against the opening direction (the unfair move stalled)
     structure_lookback: int = 60  # bars; a swing older than this is not "recent structure"
     allow_grade_a: bool = True  # take displacement-only (grade A) entries
     # risk
-    atr_tiers: tuple = DEFAULT_ATR_TIERS
-    size_mode: str = "tier"  # "tier" (1/2/3 contracts by ATR tier) | "risk" (contracts from risk_dollars)
-    risk_dollars: float = 1000.0
+    stop_mode: str = "fixed"  # "fixed": his bracket, stop_points / target_points (25 / 38, "3825") | "atr_tier": fxreplay's ATR ladder
+    stop_points: float = 25.0  # his New York floor: "never less than 25 points"; 50 on a 150k account or a wide open
+    atr_tiers: tuple = DEFAULT_ATR_TIERS  # "atr_tier" mode only
+    size_mode: str = "risk"  # "risk" (contracts from risk_dollars) | "tier" (1/2/3 contracts by ATR tier, "atr_tier" mode)
+    risk_dollars: float = 500.0  # his evaluation demonstrations: one NQ contract on the 25-point stop = $500 (KHEQ5g55dQ4 ~1:07:52 L2147)
     point_value: float = NQ_POINT_VALUE
     max_contracts: int = 3
     rr: float = 1.5
     # daily discipline
-    max_trades_per_day: int = 10
+    max_trades_per_day: int = 100  # JJ: "no maximum" when winning; the stops below count losing attempts (KN7j6NXXAio ~1:45 L101)
     daily_loss_stop_r: float | None = None
     daily_profit_stop_r: float | None = None
-    max_consecutive_losses: int | None = None
-    stop_scope: str = "day"  # "day" | "session": whether the daily-R / consecutive-loss stops reset at each session start (Chart Fanatics episode, second-hand: three losses in a row end that session)
-    flat_at_window_end: bool = True
-    target_points: float | None = None  # fixed target in points instead of rr x stop (reported for funded accounts without a consistency rule: 100-point targets; stop pairing unverified)
+    max_consecutive_losses: int | None = 3  # JJ: "if I'm trying to trade reversion and I lose three in a row, then I'm done" (KHEQ5g55dQ4 ~34:24 L1124)
+    stop_scope: str = "session"  # the three-loss stop is per session (KHEQ5g55dQ4 ~34:24 L1124, ~1:10:50 L2238); "day" = once per day
+    flat_at_window_end: bool = False  # JJ: "After 11:00 a.m., I am done trading as well, but I'll let a position play out if I'm still in one" (UVKVSWKFlvo ~7:49 L288); True = flatten at the window end
+    target_points: float | None = 38.0  # his bracket "3825": 38-point target on the 25-point stop; None = rr x stop; funded accounts without a consistency rule: 100
+    max_target_overshoot_pct: float | None = 0.2  # reversion room rule: at most 20% of the target may lie beyond fair value, i.e. distance to fair value >= 0.8 x target (KhooqEQK9bA ~11:04 L471, KHEQ5g55dQ4 ~1:22:33 L2596)
     # costs (per contract per side)
     commission_per_contract_side: float = 2.50
     slippage_points: float = 0.25
@@ -139,7 +150,8 @@ def generate_trades(df: pd.DataFrame, cfg: StrategyConfig | None = None) -> pd.D
         piv_high: list[list] = []  # [index, price, broken, broken_at_bar]
         piv_low: list[list] = []
         first = np.where(mod[pos] == am_start)[0]  # the 09:30 candle, whatever other sessions are enabled
-        open_range = float(h[pos[first[0]]] - l[pos[first[0]]]) if len(first) else 0.0
+        open_range = float(h[pos[first[0]]] - l[pos[first[0]]]) if len(first) else 0.0  # legacy "range" / "am" measure
+        sess_open: dict[str, dict] = {}  # per session: opening candle direction, size, stall counter, stall flag
 
         for t in day_bars:
             # ---- manage an open position on this bar ----
@@ -199,6 +211,20 @@ def generate_trades(df: pd.DataFrame, cfg: StrategyConfig | None = None) -> pd.D
                 if not p[2] and c[t] < p[1]:
                     p[2], p[3] = True, t
 
+            win_now = _window_for(mod[t], windows)
+            if win_now is not None:
+                sname = win_now[0]
+                if sname not in sess_open:  # first bar of this session = its opening candle
+                    body = abs(c[t] - o[t])
+                    size = body if cfg.big_open_measure == "body" else (h[t] - l[t])
+                    sess_open[sname] = {"dir": int(np.sign(c[t] - o[t])), "size": float(size), "against": 0, "stalled": False}
+                else:
+                    so = sess_open[sname]
+                    if cfg.continuation_stall_candles is not None and so["dir"] != 0:
+                        so["against"] = so["against"] + 1 if np.sign(c[t] - o[t]) == -so["dir"] else 0
+                        if so["against"] >= cfg.continuation_stall_candles:
+                            so["stalled"] = True
+
             if position is not None or stopped or trades_today >= cfg.max_trades_per_day:
                 continue
             if t == last_bar or t + 1 > last_bar:
@@ -224,7 +250,8 @@ def generate_trades(df: pd.DataFrame, cfg: StrategyConfig | None = None) -> pd.D
                         rolling_fv = float(c[j0 : t + 1].mean())
                 if not np.isnan(rolling_fv):
                     fvt = rolling_fv
-            setup = "continuation" if mod[t] < w_cont_end else "reversion"
+            so = sess_open.get(session, {"dir": 0, "size": 0.0, "stalled": False})
+            setup = "continuation" if (mod[t] < w_cont_end and not so["stalled"]) else "reversion"
             if setup == "continuation" and mod[t] < w_start + cfg.skip_first_minutes:
                 continue
             if setup == "reversion" and rev_end_min is not None and mod[t] >= rev_end_min:
@@ -232,8 +259,24 @@ def generate_trades(df: pd.DataFrame, cfg: StrategyConfig | None = None) -> pd.D
             if c[t] == fvt:
                 continue
             above = c[t] > fvt
+            # the bracket for this trade (needed by the reversion room rule)
+            if cfg.stop_mode == "atr_tier":
+                tier = atr_tier(a[t], cfg.atr_tiers)
+                stop_pts = tier.stop_points
+                tier_name = tier.name
+                tier_contracts = tier.contracts
+            else:
+                stop_pts = cfg.stop_points
+                tier_name = f"fixed{cfg.stop_points:g}"
+                tier_contracts = max(1, int(cfg.risk_dollars // (stop_pts * cfg.point_value)))
+            target_pts = cfg.target_points if cfg.target_points is not None else cfg.rr * stop_pts
             if setup == "continuation":
-                direction = 1 if above else -1
+                if cfg.continuation_direction == "open_candle":
+                    if so["dir"] == 0:
+                        continue
+                    direction = so["dir"]
+                else:
+                    direction = 1 if above else -1
             else:
                 direction = -1 if above else 1
                 if cfg.require_band_touch:
@@ -243,8 +286,15 @@ def generate_trades(df: pd.DataFrame, cfg: StrategyConfig | None = None) -> pd.D
                         continue
                 if abs(c[t] - fvt) < cfg.min_distance_from_fv:
                     continue
+                if cfg.max_target_overshoot_pct is not None and abs(c[t] - fvt) < (1.0 - cfg.max_target_overshoot_pct) * target_pts:
+                    continue  # not enough room: more than the allowed share of the target would lie beyond fair value
 
-            if not is_displacement(o[t], h[t], l[t], c[t], direction, cfg.wick_pct, cfg.min_body_atr * a[t]):
+            if cfg.displacement_mode == "jj":
+                if t - 1 < day_bars[0]:
+                    continue
+                if not is_displacement_jj(o[t], h[t], l[t], c[t], o[t - 1], h[t - 1], l[t - 1], c[t - 1], direction):
+                    continue
+            elif not is_displacement(o[t], h[t], l[t], c[t], direction, cfg.wick_pct, cfg.min_body_atr * a[t]):
                 continue
 
             # structure break against the most recent unbroken swing in the trade direction
@@ -264,17 +314,23 @@ def generate_trades(df: pd.DataFrame, cfg: StrategyConfig | None = None) -> pd.D
             else:
                 continue
 
-            tier = atr_tier(a[t], cfg.atr_tiers)
-            stop_pts = tier.stop_points
             if cfg.size_mode == "tier":
-                contracts = min(tier.contracts, cfg.max_contracts)
+                contracts = min(tier_contracts, cfg.max_contracts)
             else:
                 contracts = contracts_for_risk(cfg.risk_dollars, stop_pts, cfg.point_value, cfg.max_contracts)
-            if cfg.big_open_candle_points is not None and open_range > cfg.big_open_candle_points and session == "am":
-                wide = max(cfg.atr_tiers, key=lambda x: x[1])  # the widest stop tier (50 points)
-                stop_pts = wide[1]
-                contracts = max(1, contracts // 2)
-                tier = tier.__class__(name="big_open", min_atr=wide[0], stop_points=stop_pts, contracts=contracts)
+            if cfg.big_open_candle_points is not None:
+                if cfg.big_open_scope == "am":
+                    big = open_range > cfg.big_open_candle_points and session == "am"
+                elif cfg.big_open_scope == "session":
+                    big = so["size"] > cfg.big_open_candle_points
+                else:  # "continuation": the trade off this session's own opening candle
+                    big = so["size"] > cfg.big_open_candle_points and setup == "continuation"
+                if big:
+                    wide = max(cfg.atr_tiers, key=lambda x: x[1])  # the wide stop (50 points)
+                    stop_pts = wide[1]
+                    target_pts = cfg.rr * stop_pts  # 50 / 75 (he quotes 50 / 76)
+                    contracts = max(1, contracts // 2)
+                    tier_name = "big_open"
             if contracts <= 0:
                 continue
 
@@ -290,12 +346,12 @@ def generate_trades(df: pd.DataFrame, cfg: StrategyConfig | None = None) -> pd.D
                 "direction": direction,
                 "fair_value": fvt,
                 "atr": a[t],
-                "tier": tier.name,
+                "tier": tier_name,
                 "stop_points": stop_pts,
                 "contracts": contracts,
                 "entry": entry,
                 "stop": entry - direction * stop_pts,
-                "target": entry + direction * (cfg.target_points if cfg.target_points is not None else cfg.rr * stop_pts),
+                "target": entry + direction * target_pts,
                 "window_end": w_end,
                 "distance_from_fv": c[t] - fvt,
             }

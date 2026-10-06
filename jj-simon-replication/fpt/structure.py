@@ -30,6 +30,20 @@ def is_displacement(o: float, h: float, l: float, c: float, direction: int, wick
         return (c - l) <= wick_pct * span and (o - c) >= min_body
 
 
+def is_displacement_jj(o: float, h: float, l: float, c: float, prev_o: float, prev_h: float, prev_l: float, prev_c: float, direction: int) -> bool:
+    """JJ Simon's own displacement definition (primary corpus, e.g. KN7j6NXXAio
+    ~6:35 L275, KHEQ5g55dQ4 ~5:22 L236, 0uAQUHEB_L8 ~17:32 L657): the candle's
+    body is larger than the previous candle's body and it closes beyond the
+    previous candle (above its high for a bullish displacement, below its low
+    for a bearish one). No wick-percentage test."""
+    body = c - o if direction > 0 else o - c
+    if body <= 0:
+        return False
+    if body <= abs(prev_c - prev_o):
+        return False
+    return c > prev_h if direction > 0 else c < prev_l
+
+
 def breaks_level(close: float, level: float, direction: int) -> bool:
     """Close beyond a swing level in the trade direction (BOS when with the
     trend, MSB/CHoCH when against it: same mechanical test)."""

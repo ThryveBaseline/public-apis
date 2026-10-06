@@ -1,4 +1,4 @@
-# JJ Simon replication: Fair Pricing Theory, ATR-tier risk, multi-account prop firm operation
+# JJ Simon replication: Fair Pricing Theory, fixed-bracket risk, multi-account prop firm operation
 
 A from-scratch, testable reconstruction of the method JJ Simon (YouTube
 `@itsjjsimon`) says produced his prop-firm payouts: mean reversion to the
@@ -24,7 +24,7 @@ fpt/            the library
   fair_value.py 09:30 / 14:00 fair-value anchors and bands
   indicators.py ATR (Wilder), confirmed pivot highs/lows
   structure.py  displacement-candle and structure-break tests
-  strategy.py   the rules: windows, continuation vs reversion, A+/A grades, ATR tiers, 1.5R, daily limits
+  strategy.py   the rules: windows, continuation vs reversion, his displacement and swing definitions, A+/A grades, the 25/38 bracket, the room rule, session stops
   backtest.py   bar-by-bar backtest with slippage and commission; statistics tables
   risk.py       expectancy, Kelly, losing-streak quantiles, risk of ruin, statistical daily stop, optimal fixed risk
   propfirm.py   firm rule presets and a vectorised evaluation/funded/payout account simulator
@@ -70,9 +70,11 @@ python -m fpt.cli portfolio --account topstep_100k:10 --months 3 --scan-risk
 | Window | 09:30-11:00 | JJ |
 | Continuation phase | first 5 minutes (JJ's own words; fxreplay says 10-15): trade away from fair value in the direction of the opening push | JJ / fxreplay |
 | Reversion phase | rest of the window: trade back toward fair value | JJ |
-| Trigger | break of structure (with the move) or market structure break (against the prior swing) confirmed by a displacement candle: counter-wick under 20% of open-to-extreme; grade A+ = structure break + displacement, A = displacement only, B = skip | JJ / fxreplay |
-| Stop | 1-minute ATR above 20: 50 points, 1 contract; 7-20: 25 points, 2 contracts; below 7: 16.5 points, 3 contracts (about $1,000 risk) | fxreplay codification of JJ |
-| Target | 1.5R, fixed, no management, no partials | JJ / fxreplay |
+| Trigger | break of structure (with the move) or market structure break (against the prior swing) confirmed by a displacement candle: body larger than the previous candle's and a close beyond it (his definition; fxreplay's counter-wick-under-20% test is `displacement_mode="wick"`); grade A+ = structure break + displacement, A = displacement only, B = skip | JJ / fxreplay |
+| Stop and size | 25-point stop, one NQ contract per $500 of risk; 50 points at half size on a wide opening candle; 50 / 75 on 150k accounts (fxreplay's ATR ladder 50 / 25 / 16.5 with 1 / 2 / 3 contracts is `stop_mode="atr_tier"`) | JJ (primary corpus) |
+| Target | 38 points on the 25-point stop ("3825"), fixed, no management, no partials; break-even only at a new session open or before scheduled news; 100-point targets on funded accounts without a consistency rule | JJ (primary corpus) |
+| Reversion room | only when fair value is at least 0.8 x the target away (at most 20% of the target beyond fair value) | JJ (primary corpus) |
+| Stop trading | three consecutive losses end the session; no maximum when winning; an open position after 11:00 runs to its stop or target | JJ (primary corpus) |
 | Cadence | up to 10 trades per day, one position at a time, flat at 11:00 | JJ (10/day); assumption (one at a time) |
 | Costs | 0.25-point slippage per side, $2.50 per contract per side | assumption |
 
@@ -94,11 +96,15 @@ evaluation-phase accounts, so the gross cadence is higher but nowhere near
 ten trades a day at 54%, which would be +3.5R (+$3,500) per account per day
 and would blow through every prop firm's payout cap within a week.
 
-The simulators default to **1.5 qualifying signals per day** (per account in
-copy mode; the total across accounts in round-robin mode, where the dossier's
-example uses 10), the cadence of the third-party backtests, which is an upper
-bound on his results rather than a fit to them. The extra trades in his "10 a
-day" are lower-grade entries whose expectancy is close to zero.
+The portfolio simulator defaults to **his operation**: round-robin routing of
+about 20 signals a day across all accounts, one trade per account per day,
+22 trading days a month, payouts after five winning days at 50% of profit.
+At 54% / 1.5R that gives each of 45 accounts about 0.15R a day, which is
+the 0.18R of payout per account per day his own figures imply, and the
+45-account run lands on his reported pace (dossier Section 5). Copy mode
+(`--routing copy`, about 1.5 signals per account per day) is the cadence of
+the third-party backtests and an upper bound on his results. The extra trades in his "20 a
+day" are spread across accounts, not stacked on each one.
 `python -m fpt.cli implied --payout 105700 --accounts 40 --days 15` does this
 arithmetic for any claim.
 

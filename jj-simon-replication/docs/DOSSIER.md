@@ -1415,21 +1415,26 @@ Kelly as he used it sizes the number of evaluations, not the trade: ("that's sor
 | Execution stack | Accounts held on Tradovate ("Let me just go to Tradeovate. This is where I have my accounts.", 2026-04-09, RnwOqmEF6Rk L60; "10 trade of eight tabs", KHEQ5g55dQ4 L1975), two computers (PN1UKQMPb5M L66), a self-built dashboard that "prints out the statistically optimal decision for the accounts moving forward" (dJdBnSBJlgQ L679). On 2026-07-30 he says "This is my copier if I ever use one, which I don't yet." (AxP-cg50TdM L1105); no copier product, TopstepX, Rithmic or Replikanto is named in any transcript. | **JJ** (transcripts); copier product unknown |
 | Routing | "one account at a time and one trade per account per day"; evaluations: aggressive, "two to four operations to pass it" (AxP-cg50TdM ~27:09, L926; "Two operations" at L626); funded: risk reduced as the balance grows ("I hope you understand why I would reduce my risk as my funded accounts increase their balance.", 0uAQUHEB_L8 ~11:54, L456) | **JJ** ([$1.6M video](https://sozai.app/transcript/strategy-behind-1-6m-prop-firm-payouts/), [jjwebinar.com](https://jjwebinar.com/)) |
 
-`fpt/portfolio.py` reproduces the economics: identical signals copied to N
-accounts, each under its firm's rules, with evaluation fees, resets,
-activation fees, consistency gates, payout caps and a monthly payout cadence (a simplification: he describes one payout per five winning days of at least $150, about every 10 trading days for a coin-flip trader, at most weekly at most firms and daily at FundedNext, Vest Markets and Tradeify Select Daily: 0Ua-ffltO0I L267, 0uAQUHEB_L8 L345, 5RzMu2B2E_0 L146). With
-the cap-feasible 45-account mix of Section 9 (Topstep 5, Tradeify Growth 5,
-MFFU Pro 3, Lucid 5, Alpha 5, Apex 20, E8 2; his Apex accounts are the end-of-day type ("the end of day accounts are a bit hard to get the payout on just because there's a daily loss limit, and there's a buffer, and there's consistency, but they're super cheap. And you can have 20 of them", 5RzMu2B2E_0 L118), not the intraday preset the command uses, and he says of intraday trailing "Do not buy accounts with dynamic scaling" (PMGhHCjYG5c L570); E8 2 is inside his "you can only have three funded" (l6iq0ljhxIo L847)), $1,000 risk, 54% / 1.5R and
-1.5 qualifying trades a day (1,000 sims, seed 0), the six-month median net
-cash is about $1.17M (roughly $230-260k a month once accounts are funded)
-with a 5th percentile near $240k and about 112 account breaches per run,
-each re-bought the next trading day (a cap-ignoring 20 Topstep / 15 Tradeify
-Select / 10 MFFU run gives a $1.06M median, $330k 5th percentile and 154
-breaches). Treat these as the model's upper bound:
-every account receives 1.5 qualifying signals a day, which is the copy trading he argues against ("copying a sequence to 10 accounts is not actually 10 accounts. It's just a huge account, 10 times bigger", 2BtwoTCxcbc L261); his own cadence is one trade per account per day routed by points available (KN7j6NXXAio L381), so the round-robin runs in Section 6 are the closer model, and the copy-mode figures assume no execution
-differences. Seven of the twelve presets (Topstep x3, MyFundedFutures Rapid,
-Tradeify Growth and Select, Alpha Standard) are backed by the firms' help
-centers; the rest are third-party placeholders (Section 9).
+`fpt/portfolio.py` reproduces the economics under his own operating rules
+(defaults since the corpus integration): about 20 signals a day routed one
+per account in rotation, evaluations attacked at target / (2 x 1.5) per
+trade, funded accounts at $1,000, 22 trading days a month, payouts only
+after five winning days of $150 or more and at 50% of profit per request
+under each firm's cap. With the cap-feasible 45-account mix of Section 9
+(Topstep 5, Tradeify Growth 5, MFFU Pro 3, Lucid 5, Alpha 5, Apex 20, E8
+2) at 54% / 1.5R (1,000 sims, seed 0; `python -m fpt.cli portfolio
+--account topstep_100k:5 ... --eval-risk-mode two_trade`), the six-month
+median net cash is about $292k, with a 5th percentile near $226k, every
+path positive, monthly net rising to roughly $70-86k by months four to six
+and 33-44 accounts funded; with fixed $1,000 evaluation risk the median is
+about $193k. His own reported pace ("$105,700 in 3 weeks" on about 40
+accounts, "six figures a month") sits inside this range, which is the first
+calibration in this project that lands on his numbers without special
+pleading. The earlier copy-trading runs (every account taking 1.5 signals a
+day) gave $1.0-1.2M medians and are an upper bound, not his operation.
+Seven of the twelve presets (Topstep x3, MyFundedFutures Rapid, Tradeify
+Growth and Select, Alpha Standard) are backed by the firms' help centers;
+the rest are third-party placeholders (Section 9).
 
 **Operation details from the `accounts` angle (34 facts).** Payouts by
 firm from his $1.6M breakdown: Topstep ~$292,000; E8 $222,122 (the one
