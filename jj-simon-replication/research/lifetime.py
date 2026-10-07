@@ -192,7 +192,7 @@ def report(rows: list[dict], gate_note: str) -> str:
          "EV per evaluation = P(pass) x expected lifetime payout by H (net of the split) - fees per evaluation (monthly billing and the activation fee). "
          "EV first payout only: B3's net EV (median-priced), and the policy's own first payout within 60 days priced at its mean (under the first policy that payout is B3's; under the second it comes later and is larger). "
          "Fractional sizing; the risk per trade stays at the budget after a payout. The benchmark year is reported beside and never used to choose.\n",
-         "Not modelled, and worth more once later payouts count: Topstep typically moves an Express Funded trader to a live account after about 30 winning days, so the longest horizons overstate what one Express Funded account pays; "
+         "Not modelled, and worth more once later payouts count: Topstep calls an Express Funded trader up to a Live account at its discretion, typically between the trader's 3rd and 5th payout, and closes every Express Funded account when it does, so the longest horizons overstate what one Express Funded account pays; "
          "after a payout under the first policy the cushion is often less than one stop-out, where an account that books realised R only (a winning trade's dip toward the limit is not modelled) is most optimistic.\n"]
     df = pd.DataFrame(rows)
     for (firm, size), g in df.groupby(["firm", "size"], sort=False):

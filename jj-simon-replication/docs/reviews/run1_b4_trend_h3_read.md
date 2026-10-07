@@ -25,7 +25,11 @@ How much of each stream's EV is the structure and how much the edge is now measu
 
 What this rests on:
 - **Topstep's rules being modelled right.** Checked against 2026 sources: on the Standard path a 50K Express Funded account pays 50% of profit up to $2,000 a request, after five winning days of at least $150, at a 90/10 split, with the loss limit reset to the starting balance after a payout. Topstep lowered some caps in April 2026, so the rules can move against this.
-- **The move to a live account.** Topstep moves Express Funded traders to a live account after about 30 winning days. That is not modelled, so long horizons overstate.
+- **The call-up to a Live account.** Corrected after this read was first written: the call-up is not tied to 30 winning days. That is when a Live account unlocks daily payouts. B4's report repeats the wrong figure, and the tool's caveat is fixed for later runs.
+  - Topstep's risk team calls an Express Funded trader up at its discretion, typically between the trader's 3rd and 5th payout, and closes every Express Funded account when it does.
+  - The combined balances move to the Live account: 20% available, at least $10,000, and 80% in a reserve.
+  - None of this is modelled in B4. An account's own payouts are about 1 to 1.5 by H 250, but in a multi-account operation the trader's payouts accumulate across accounts.
+  - B5 therefore adds a call-up at the 3rd payout as a lower bound (registration amendment eb01d37).
 - **Payout policy.** Waiting for the loss limit to reach the starting balance (Topstep's advice) beats asking at once in development for every stream at H 250.
 
 ## 2. The trend exit fails its registered test
