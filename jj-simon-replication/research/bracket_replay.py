@@ -19,7 +19,13 @@ Grid (pre-registered, see docs/RESEARCH_PLAN.md):
   ATR family: stop = k x previous Globex session's 14-session daily ATR, k in {0.03, 0.05, 0.075, 0.10, 0.15, 0.20, 0.30},
               reward-to-risk in {1.0, 1.52, 2.0};
   opening-range family: stop = k x the PREVIOUS session's 09:30-09:35 range (known at entry), k in {0.25, 0.5, 0.75, 1.0, 1.5, 2.0}, RR 1.52;
-  price family: stop = y x entry price, y in {0.05%, 0.10%, 0.15%, 0.20%, 0.30%}, RR 1.52.
+  price family: stop = y x entry price, y in {0.05%, 0.10%, 0.15%, 0.20%, 0.30%}, RR 1.52;
+  room family (B2f, reversions only; continuation keeps its ledger bracket): stop 25 and a target chosen from the room,
+    measured at the signal as |signal close - fair value| (the ledger's distance_from_fv, the same quantity the frozen
+    room rule admits trades on): room_menu = the largest of 38/50/75/100 with room >= 0.8 x target (else 38),
+    room_exact = min(room, 100), room_half = room / 2 when room >= 76 else room_menu,
+    room_menu_e = room_menu with a 50-point stop when room > 100 (B2e, his heavy-volume widening, room trigger only);
+  wide_open_switch (B2d, every trade of the session): 50/76 when the 09:30 one-minute bar's body exceeds 25 points, else 25/38.
 Stops are rounded to the 0.25 tick and floored at 2 points.
 
 usage: python research/bracket_replay.py --trades sealed/run1/trades.csv --csv data/nq_1min_databento.csv \
@@ -63,7 +69,36 @@ def grid() -> list[dict]:
         g.append({"name": f"or_{k:g}_rr{RR_FIXED:.2f}", "family": "or_prev", "k": k, "rr": RR_FIXED})
     for y in PRICE_Y:
         g.append({"name": f"px_{y * 100:.2f}pct_rr{RR_FIXED:.2f}", "family": "price", "k": y, "rr": RR_FIXED})
+    for mode in ("menu", "exact", "half", "menu_e"):
+        g.append({"name": f"room_{mode}", "family": "room", "k": mode, "rr": None})
+    g.append({"name": "wide_open_switch", "family": "wide_open", "k": None, "rr": None})
     return g
+
+
+ROOM_MENU = (38.0, 50.0, 75.0, 100.0)
+ROOM_MIN = 0.8 * FIXED_TARGET  # 30.4: the sealed room rule
+WIDE_BODY, WIDE_STOP, WIDE_TARGET = 25.0, 50.0, 76.0
+E_ROOM = 100.0  # B2e: "If it's over 100, then I would probably give in and place the stop at 50 points" (CzxSgYujDxs L319-326)
+
+
+def room_target(mode: str, room: float) -> float:
+    """Target in points for a reversion with `room` points to fair value (stop stays 25)."""
+    menu = max([t for t in ROOM_MENU if room >= 0.8 * t], default=FIXED_TARGET)
+    if mode in ("menu", "menu_e"):
+        return menu
+    if mode == "exact":
+        return _round_tick(min(max(room, ROOM_MIN), 100.0))
+    if mode == "half":
+        return _round_tick(room / 2.0) if room >= 76.0 else menu
+    raise ValueError(mode)
+
+
+def opening_bodies(bars: pd.DataFrame) -> pd.Series:
+    """|close - open| of the 09:30 one-minute bar, keyed by New York date (naive)."""
+    idx = bars.index.tz_convert(NY)
+    sel = (idx.hour == 9) & (idx.minute == 30)
+    body = (bars["close"].to_numpy(float)[sel] - bars["open"].to_numpy(float)[sel])
+    return pd.Series(np.abs(body), index=idx[sel].normalize().tz_localize(None))
 
 
 def _round_tick(x: float) -> float:
@@ -74,8 +109,8 @@ def stop_points_for(variant: dict, daily_atr: float, or_prev: float, entry: floa
     f = variant["family"]
     if f == "fixed":
         return FIXED_STOP
-    if f == "ledger":
-        raise ValueError("ledger bracket is resolved per trade in replay()")
+    if f in ("ledger", "room", "wide_open"):
+        raise ValueError(f"{f} brackets are resolved per trade in replay()")
     if f == "atr":
         base = daily_atr
     elif f == "or_prev":
@@ -130,6 +165,14 @@ def replay(trades: pd.DataFrame, bars: pd.DataFrame, variants: list[dict], day_e
     ok = np.isfinite(atr) & np.isfinite(orp)
     led_stop = trades["stop_points"].astype(float).to_numpy() if "stop_points" in trades.columns else np.full(len(trades), FIXED_STOP)
     led_tgt = (trades["target"].astype(float) - trades["entry"].astype(float)).abs().to_numpy() if "target" in trades.columns else led_stop * RR_FIXED
+    is_rev = (trades["setup"].astype(str) == "reversion").to_numpy() if "setup" in trades.columns else np.zeros(len(trades), dtype=bool)
+    if "distance_from_fv" in trades.columns:
+        room = trades["distance_from_fv"].astype(float).abs().to_numpy()  # decision-time room, as the frozen room rule
+    elif "fair_value" in trades.columns:
+        room = (trades["fair_value"].astype(float) - trades["entry"].astype(float)).abs().to_numpy()
+    else:
+        room = np.full(len(trades), np.nan)
+    body = day.map(opening_bodies(bars)).to_numpy(float)
     n_no_context = 0
     rows = []
     for k, (et, d, entry) in enumerate(zip(trades["entry_time"], trades["direction"].astype(int), trades["entry"].astype(float))):
@@ -147,6 +190,15 @@ def replay(trades: pd.DataFrame, bars: pd.DataFrame, variants: list[dict], day_e
         for v in variants:
             if v["family"] == "ledger":
                 sp, tp = float(led_stop[k]), float(led_tgt[k])
+            elif v["family"] == "room":
+                if is_rev[k] and np.isfinite(room[k]):
+                    sp = WIDE_STOP if (v["k"] == "menu_e" and room[k] > E_ROOM) else FIXED_STOP
+                    tp = room_target(v["k"], float(room[k]))
+                else:
+                    sp, tp = float(led_stop[k]), float(led_tgt[k])  # continuation keeps its sealed bracket
+            elif v["family"] == "wide_open":
+                wide = np.isfinite(body[k]) and body[k] > WIDE_BODY
+                sp, tp = (WIDE_STOP, WIDE_TARGET) if wide else (FIXED_STOP, FIXED_TARGET)
             else:
                 sp = stop_points_for(v, atr[k], orp[k], entry)
                 tp = _round_tick(sp * v["rr"])
@@ -257,7 +309,8 @@ def report(trades: pd.DataFrame, rep: pd.DataFrame, oos_start: str, n_excl: int,
             s.append(f"## {setup}, {per}\n\n" + _fmt_table(t, cols) + "\n")
     years = sorted(int(y) for y in meta.loc[meta["period"] == "development", "year"].unique())
     fams = {"all": [v["name"] for v in grid()], "atr": [v["name"] for v in grid() if v["family"] == "atr"],
-            "or_prev": [v["name"] for v in grid() if v["family"] == "or_prev"], "price": [v["name"] for v in grid() if v["family"] == "price"]}
+            "or_prev": [v["name"] for v in grid() if v["family"] == "or_prev"], "price": [v["name"] for v in grid() if v["family"] == "price"],
+            "room_and_wide_open": [v["name"] for v in grid() if v["family"] in ("room", "wide_open")]}
     for setup_label, sel in [("all setups", meta.index), ("continuation", meta.index[meta["setup"] == "continuation"]), ("reversion", meta.index[meta["setup"] == "reversion"])]:
         piv, lines = walk_forward(rep[rep["trade"].isin(sel)], meta, years, fams)
         s.append(f"## Development years, {setup_label}: expectancy R by year and variant\n")

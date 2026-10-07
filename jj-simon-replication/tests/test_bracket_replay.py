@@ -59,7 +59,7 @@ def test_scaled_stops_use_prior_session_context_and_tick_rounding():
     assert np.isnan(stop_points_for(v_or, 123.4, float("nan"), 20000.0))
     assert stop_points_for(v_atr, 1.0, 10.0, 20000.0) == 2.0  # floor
     names = [v["name"] for v in grid()]
-    assert names[:2] == ["ledger_bracket", "fixed_25_38"] and len(names) == 2 + 7 * 3 + 6 + 5 and len(set(names)) == len(names)
+    assert names[:2] == ["ledger_bracket", "fixed_25_38"] and len(names) == 2 + 7 * 3 + 6 + 5 + 4 + 1 and len(set(names)) == len(names)
 
 
 def test_common_population_and_reproduction_check():
@@ -124,3 +124,40 @@ def test_report_end_to_end_formats_walk_forward_rows():
     assert "| sealed bracket in year |" in text
     assert "Trade-weighted out-of-year expectancy of the chain" in text
     assert "Reproduction check, ledger bracket" in text
+
+
+def test_room_targets_and_wide_open_switch():
+    from research.bracket_replay import room_target, opening_bodies
+    assert room_target("menu", 62.0) == 75.0 and room_target("menu", 31.0) == 38.0 and room_target("menu", 200.0) == 100.0
+    assert room_target("exact", 62.0) == 62.0 and room_target("exact", 10.0) == 30.5 and room_target("exact", 400.0) == 100.0
+    assert room_target("half", 62.0) == 75.0 and room_target("half", 90.0) == 45.0
+    bars = _bars(days=40)
+    days = sorted(set(bars.index.normalize()))
+    dW, dN = days[20], days[22]
+    iW = bars.index.get_loc(dW.replace(hour=9, minute=30)); bars.iloc[iW, bars.columns.get_loc("close")] = 20000 + 30  # wide opening body
+    bodies = opening_bodies(bars)
+    assert bodies.loc[dW.tz_localize(None)] == pytest.approx(30.0) and bodies.loc[dN.tz_localize(None)] == pytest.approx(0.0)
+    rows = []
+    tr = _trade(dW.replace(hour=9, minute=40), dW.replace(hour=9, minute=50), -1, 20000.25, 0.0, setup="reversion", reason="stop"); tr["fair_value"] = 20000.25 - 62.0; tr["distance_from_fv"] = 62.0; rows.append(tr)
+    tc = _trade(dN.replace(hour=9, minute=32), dN.replace(hour=9, minute=40), 1, 20000.25, 0.0, setup="continuation", reason="stop"); tc["fair_value"] = 20000.25; rows.append(tc)
+    t = pd.DataFrame(rows); t["entry_time"] = pd.to_datetime(t["entry_time"]); t["exit_time"] = pd.to_datetime(t["exit_time"])
+    rep = replay(t, bars, [v for v in grid() if v["family"] in ("room", "wide_open", "ledger")])
+    r = rep.set_index(["trade", "variant"])
+    assert r.loc[(0, "room_menu"), "target_pts"] == 75.0 and r.loc[(0, "room_menu"), "stop_pts"] == 25.0
+    assert r.loc[(0, "room_exact"), "target_pts"] == 62.0
+    assert r.loc[(0, "room_menu_e"), "stop_pts"] == 25.0 and r.loc[(0, "room_menu_e"), "target_pts"] == 75.0  # room 62 <= 100: no widening
+    assert r.loc[(0, "wide_open_switch"), "stop_pts"] == 50.0 and r.loc[(0, "wide_open_switch"), "target_pts"] == 76.0
+    assert r.loc[(1, "room_menu"), "stop_pts"] == 25.0 and r.loc[(1, "room_menu"), "target_pts"] == 38.0  # continuation unchanged
+    assert r.loc[(1, "wide_open_switch"), "stop_pts"] == 25.0
+
+
+def test_room_menu_e_widens_only_above_100_points_of_room():
+    bars = _bars(days=40)
+    days = sorted(set(bars.index.normalize()))
+    d = days[24]
+    tr = _trade(d.replace(hour=9, minute=45), d.replace(hour=9, minute=55), -1, 20000.25, 0.0, setup="reversion", reason="stop")
+    tr["fair_value"] = 20000.25 - 140.0; tr["distance_from_fv"] = 140.0
+    t = pd.DataFrame([tr]); t["entry_time"] = pd.to_datetime(t["entry_time"]); t["exit_time"] = pd.to_datetime(t["exit_time"])
+    rep = replay(t, bars, [v for v in grid() if v["name"] in ("room_menu", "room_menu_e")]).set_index("variant")
+    assert rep.loc["room_menu", "stop_pts"] == 25.0 and rep.loc["room_menu", "target_pts"] == 100.0
+    assert rep.loc["room_menu_e", "stop_pts"] == 50.0 and rep.loc["room_menu_e", "target_pts"] == 100.0
