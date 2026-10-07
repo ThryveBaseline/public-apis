@@ -33,17 +33,15 @@ import pandas as pd
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from fpt.data import NY  # noqa: E402
 from research.bracket_replay import dropped_rows, replay  # noqa: E402
-from research.candidates import (add_gate_args, build_streams, ev_net, gated_inputs, mean_se, ny_day, pooled_choices, score_sized,  # noqa: E402
-                                 score_whole, sha256, variant_frame)
+from research.candidates import add_gate_args, build_streams, gated_inputs, mean_se, ny_day, pooled_choices, sha256, variant_frame  # noqa: E402
 from research.conditions import one_sided_p  # noqa: E402
-from research.ledger_filters import apply_filter, build_gates, sequential_pass  # noqa: E402
-from research.lifetime import HORIZONS, lifetime_rows  # noqa: E402
+from research.ledger_filters import apply_filter, build_gates  # noqa: E402
+from research.stream_report import scoring_sections  # noqa: E402
 
 REGISTRATION_SHA256 = "77816edcad0a40a265f095eba02202ae20f89b1c969cebda9839db60f1963e12"  # the file as registered in 66a400a
 TREND_K = (0.2, 0.3, 0.4, 0.5, 0.7, 1.0)
 TREND_NAMES = [f"trend_{k:g}" for k in TREND_K]
 ALPHA, CONSISTENCY = 0.05, 0.60
-FIRM, SIZE = "topstep_50k_x", 0.95
 
 
 def trend_variants() -> list[dict]:
@@ -105,22 +103,25 @@ def r_by_direction(trades: pd.DataFrame, frames: dict, cut: pd.Timestamp) -> lis
     return s
 
 
-def stream_rows(name: str, stream: pd.DataFrame, pre: pd.DataFrame, cal: pd.DatetimeIndex, cut: pd.Timestamp) -> list[str]:
-    """One stream through B3's firm scoring at TopstepX 0.95 and in whole micros, and B4's lifetime EV."""
-    sized = score_sized(stream, cal, cut, SIZE, FIRM)
-    whole = score_whole(pre, cal, cut, FIRM)
-    life = {(r["period"], r["horizon"]): r["ev"] for r in lifetime_rows(stream, cal, cut, FIRM, SIZE)}
-    day = ny_day(stream)
-    out = []
-    for per, m in (("development", day <= cut), ("benchmark", day > cut)):
-        x = sized[per]
-        if x is None:
+def check_against_b2(trend_rep: pd.DataFrame, b2_replay: pd.DataFrame) -> int:
+    """Where B2's ATR bracket with a 2:1 target never filled its target, the same-k trend exit is the same trade: same
+    stop, same R, same exit time. Refuse otherwise. Returns how many entries were compared."""
+    t = trend_rep[trend_rep["variant"] != "_dropped"].set_index(["trade", "variant"])
+    b = b2_replay[b2_replay["variant"] != "_dropped"].set_index(["trade", "variant"])
+    n = 0
+    for k, name in zip(TREND_K, TREND_NAMES):
+        atr = f"atr_{k:g}_rr2.00"
+        if atr not in set(b.index.get_level_values(1)):
             continue
-        w = whole[per]["firms"]
-        ew = ev_net(w.iloc[0].to_dict()) if not w.empty else float("nan")
-        out.append(f"| {name} | {per} | {int(m.sum())} | {stream.loc[m, 'r'].astype(float).mean():+.3f} | {x['pass_rate']:.1%} | {x['payout_rate']:.1%} | "
-                   f"{ev_net({**x, 'firm': FIRM}):+,.0f} | {ew:+,.0f} | " + " | ".join(f"{life.get((per, h), float('nan')):+,.0f}" for h in HORIZONS) + " |")
-    return out
+        bb = b.xs(atr, level=1)
+        tt = t.xs(name, level=1).loc[bb.index]
+        same = bb["exit_reason"] != "target"
+        ok = (np.allclose(tt.loc[same, "r"].astype(float), bb.loc[same, "r"].astype(float))
+              and (pd.to_datetime(tt.loc[same, "exit_time"], utc=True) == pd.to_datetime(bb.loc[same, "exit_time"], utc=True)).all())
+        if not ok:
+            raise ValueError(f"the trend replay's {name} differs from B2's {atr} where B2's target never filled")
+        n += int(same.sum())
+    return n
 
 
 def main() -> int:
@@ -136,6 +137,7 @@ def main() -> int:
     trades, bars, b2, cut, cal = g["trades"], g["bars"], g["replay"], g["cut"], g["cal"]
     try:
         trend_rep = replay_trend(trades, bars, b2)
+        n_same = check_against_b2(trend_rep, b2)
         pre, streams, s3_chain, s3_choice = build_streams(trades, bars, b2, cut)
         t = trades.loc[s3_choice.index]
         cont = t["setup"].astype(str) == "continuation"
@@ -145,35 +147,30 @@ def main() -> int:
         chain = pooled_choices(trend_rep, t, "continuation", TREND_NAMES, dev_years, cut)
         if not any(k != "benchmark" for k in chain):
             raise ValueError("the trend chain has no year: the walk-forward needs four development years")
+        first = min(k for k in chain if k != "benchmark")
+        if first != dev_years[3]:
+            raise ValueError(f"the chain starts in {first}, not the fourth development year {dev_years[3]}")
+        if min((k for k in s3_chain if k != "benchmark"), default=None) != first:
+            raise ValueError(f"S3's chain does not start in {first}: the paired test needs both chains on the same years")
         tchoice = trend_choice(t[cont], chain, cut)
         test = paired_test(t, trend_rep, b2, s3_choice, tchoice, cut)
-        first = min(k for k in chain if k != "benchmark")
         took = tchoice.dropna()
         trend_frame = variant_frame(t, trend_rep, took)
         s3_frame = variant_frame(t, b2, s3_choice.loc[took.index])
         s1_frame = variant_frame(t, b2, pd.Series("ledger_bracket", index=took.index))
-        # streams from the chain's first year: S5 (trend), S6 (S5 + reversion A+); comparators S3 and S4 on the same span
-        gates = build_gates(trades, bars)
-        rev = t.index[~cont.to_numpy()]
-        span = ((year >= first) | (day > cut)).to_numpy()
-        rev_span = pd.Index([k for k in rev if span[t.index.get_loc(k)]])
-        rev_frame = variant_frame(t, b2, pd.Series("ledger_bracket", index=rev_span))
-        s5_pre = trend_frame
-        s6_pre = apply_filter(pd.concat([trend_frame, rev_frame]).sort_values("entry_time", kind="stable"), "B2a", gates)
-        s3_pre = s3_frame
-        s4_pre = apply_filter(pd.concat([s3_frame, rev_frame]).sort_values("entry_time", kind="stable"), "B2a", gates)
-        rows = []
-        for name, p in (("S3 from the chain's first year", s3_pre), ("S5 continuation, walk-forward trend exit", s5_pre),
-                        ("S4 from the chain's first year", s4_pre), ("S6 S5 + A+ reversion, sealed bracket", s6_pre)):
-            rows += stream_rows(name, sequential_pass(p), p, cal, cut)
     except ValueError as e:
         raise SystemExit(f"refusing to report: {e}")
-    stops = (trend_rep.set_index(["trade", "variant"]).loc[pd.MultiIndex.from_arrays([took.index.astype(int), took.to_numpy()]), "exit_reason"] == "stop").mean()
+    start = pd.Timestamp(first, 1, 1)
+    exits = trend_rep.set_index(["trade", "variant"]).loc[pd.MultiIndex.from_arrays([took.index.astype(int), took.to_numpy()]), "exit_reason"].to_numpy()
+    tday = ny_day(t.loc[took.index]).to_numpy()
+    mix = {per: float((exits[m] == "stop").mean()) if m.any() else float("nan") for per, m in (("development", tday <= cut), ("benchmark", tday > cut))}
     s = ["# Trend exit for continuation: the pre-registered test\n", g["note"], "",
          f"Implements docs/research/preregistration_trend_exit.md as registered in commit 66a400a (sha256 of the file read: {reg_sha}, the pinned value). "
          f"Development: New York days through {cut.date()}; benchmark from {(cut + pd.Timedelta(days=1)).date()}. "
-         f"Family: stop k x the previous session's daily ATR, k in {{{', '.join(f'{k:g}' for k in TREND_K)}}}, no target, flat at 16:00; replayed on the {trend_rep.loc[trend_rep['variant'] != '_dropped', 'trade'].nunique()} entries the B2 replay covers.\n",
-         "Walk-forward k, chosen on earlier development years only: " + "; ".join(f"{k}: {v}" for k, v in chain.items()) + f"; before {first}, no trend trade. S3's chain for comparison: "
+         f"Family: stop k x the previous session's daily ATR, k in {{{', '.join(f'{k:g}' for k in TREND_K)}}}, no target, flat at 16:00; replayed on the {trend_rep.loc[trend_rep['variant'] != '_dropped', 'trade'].nunique()} entries the B2 replay covers "
+         f"(consistency: on the {n_same} entry-variant pairs where B2's same-k bracket with a 2:1 target, k in 0.2 to 0.7, never filled its target, the two replays agree in R and exit time; "
+         "k = 1.0 has no B2 counterpart).\n",
+         "Walk-forward k, chosen on earlier development years only: " + "; ".join(f"{k}: {v}" for k, v in chain.items()) + f"; before {first} (the fourth development year), no trend trade. S3's chain for comparison: "
          + "; ".join(f"{k}: {v}" for k, v in s3_chain.items()) + ".\n",
          "## The test\n",
          f"Paired difference per development continuation entry from {first}, trend-exit R minus S3's R: {test['delta']:+.4f} (standard error {test['se']:.4f}, clustered by day), "
@@ -181,16 +178,23 @@ def main() -> int:
          f"**{'Passes' if test['passes'] else 'Fails'}** (registered rule: p < {ALPHA} and positive in at least {CONSISTENCY:.0%} of chain years).\n",
          "| year | mean difference |\n|---|---|"]
     s += [f"| {y} | {v:+.4f} |" for y, v in test["by_year"].items()]
-    s += ["", "## R per trade by direction, same entries (from the chain's first year)\n"]
+    s += ["", f"## R per trade by direction, same entries (from {first})\n"]
     s += r_by_direction(t, {"trend exit (chain)": trend_frame, "S3 (chain)": s3_frame, "S1 (sealed bracket)": s1_frame}, cut)
-    s += ["", f"Exit mix of the trend exit: {stops:.1%} stopped, {1 - stops:.1%} flat at 16:00.\n",
-          f"## Streams under the firm rules ({FIRM} at {SIZE:.2f} of the budget, B3 and B4)\n",
-          ("Per the registration these are the next step for a passing exit; " if test["passes"] else "The exit failed its test; per the registration these are reported once for the record and dropped. ")
-          + "EV net is JJ's calculator with every fee (first payout only); whole micros as B3; lifetime EV as B4 (every payout, Topstep's Express Funded rule) at H walk-forward days.\n",
-          "| stream | period | trades | R/trade | P(pass) | P(payout) | EV net, first payout | EV net, whole micros | " + " | ".join(f"lifetime EV, H {h}" for h in HORIZONS) + " |",
-          "|---|---|---|---|---|---|---|---|" + "---|" * len(HORIZONS)]
-    s += rows
-    s.append("")
+    s += ["", "Exit mix of the trend exit: " + "; ".join(f"{per} {v:.1%} stopped, {1 - v:.1%} flat at 16:00" for per, v in mix.items()) + ".\n",
+          "## Streams under the firm rules (B3 and B4), each on its own span\n",
+          ("Per the registration these are the next step for a passing exit. " if test["passes"] else "The exit failed its test; per the registration these are reported once for the record and dropped. ")
+          + f"Every stream takes its first trade in {first}, so each is scored on a calendar from {start.date()} (research/stream_report: on a wider calendar, evaluations started more than a horizon earlier see no trade and count as failures, and the later early ones replay the first days on a shortened window). "
+          + "S4 and S6 keep the reversion A+ entries of the same span.\n"]
+    try:
+        gates = build_gates(trades, bars)
+        rev = t.index[~cont.to_numpy()]
+        rev_frame = variant_frame(t, b2, pd.Series("ledger_bracket", index=rev))
+        s6_pre = apply_filter(pd.concat([trend_frame, rev_frame]).sort_values("entry_time", kind="stable"), "B2a", gates)
+        s4_pre = apply_filter(pd.concat([s3_frame, rev_frame]).sort_values("entry_time", kind="stable"), "B2a", gates)
+        s += scoring_sections([(f"S3 from {first}", s3_frame, start), ("S5 continuation, walk-forward trend exit", trend_frame, start),
+                               (f"S4 from {first}", s4_pre, start), (f"S6 S5 + A+ reversion, from {first}", s6_pre, start)], cal, cut)
+    except ValueError as e:
+        s.append(f"The firm scoring of the streams stopped: {e}. The test above stands.\n")
     text = "\n".join(s)
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
     with open(a.out, "w") as f:

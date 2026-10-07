@@ -28,7 +28,12 @@ def test_cli_runs_and_pins_its_registration_and_cut(sealed_4y, tmp_path, monkeyp
     monkeypatch.setattr("sys.argv", ["h3_filter.py", *args, "--allow-other-cut"])
     assert h3_filter.main() == 0
     text = (tmp_path / "h3.md").read_text()
-    assert "NOT THE REGISTERED RUN" in text and "| S4 on H3's favoured side | development |" in text and "| S1 where H3 is defined | benchmark |" in text
+    assert "NOT THE REGISTERED RUN" in text and "H3 is first defined in 2020, so both sides of every pair are scored on a calendar from 2020-01-01" in text
+    for head in ("### B3 summary", "### Size sensitivity", "### Whole micro contracts", "### Lifetime (B4)"):
+        assert head in text
+    for short, _ in STREAMS:  # both sides of every pair on the same span
+        for side in ("where H3 is defined", "on H3's favoured side"):
+            assert f"| {short} {side} | development | 2020-01-01 |" in text and f"| {short} {side} | benchmark | 2020-01-01 |" in text
     fake = tmp_path / "reg.md"
     fake.write_text("edited")
     monkeypatch.setattr("sys.argv", ["h3_filter.py", *[str(fake) if x == reg else x for x in args], "--allow-other-cut"])

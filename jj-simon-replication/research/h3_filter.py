@@ -6,9 +6,11 @@ H3 favours continuation entries whose opening candle's body over the daily ATR i
 The flag is taken exactly as research/conditions.trade_frame computes it, with that registration pinned and at its
 registered cut. For S1, S3 and S4 the comparator keeps every continuation entry where H3 is defined (it is not in the
 first development year), the candidate only its favoured side; S4's reversion A+ entries are the same in both, and the
-filter is applied before the sequential pass. Both go through B3's firm scoring (TopstepX at 0.95, whole micros) and
-B4's lifetime EV. The benchmark year is reported beside and never used. Re-simulation on the research engine follows
-for a filter that improves the streams here.
+filter is applied before the sequential pass. H3 has no threshold before its second year, so both sides of every pair
+are scored on a calendar from the first year in which H3 is defined (a wider calendar would add evaluations the
+streams could not have run; research/stream_report). Scoring: every table of B3 and B4
+(research/stream_report.scoring_sections). The benchmark year is reported beside and never used. Re-simulation on the
+research engine follows for a filter that improves the streams here.
 
 usage: python research/h3_filter.py <B3's arguments> --registration docs/research/preregistration_conditional_edge.md \
            --out research/staging/run1_h3.md
@@ -22,11 +24,10 @@ import sys
 import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from fpt.data import NY  # noqa: E402
 from research import conditions  # noqa: E402
 from research.candidates import add_gate_args, build_streams, gated_inputs, sha256  # noqa: E402
-from research.ledger_filters import sequential_pass  # noqa: E402
-from research.lifetime import HORIZONS  # noqa: E402
-from research.trend_exit import FIRM, SIZE, stream_rows  # noqa: E402
+from research.stream_report import scoring_sections  # noqa: E402
 
 STREAMS = (("S1", "S1 continuation only, sealed bracket"), ("S3", "S3 continuation only, walk-forward ATR bracket"),
            ("S4", "S4 S3 + A+ reversion, sealed bracket"))
@@ -59,27 +60,30 @@ def main() -> int:
     if not registered_cut and not a.allow_other_cut:
         raise SystemExit(f"refusing to report: H3 is registered at --oos-start {conditions.REGISTERED_OOS_START}")
     g = gated_inputs(a)
+    cut = g["cut"]
     try:
-        f = conditions.trade_frame(g["trades"], g["bars"], g["replay"], g["cut"])
-        pre, _, _, _ = build_streams(g["trades"], g["bars"], g["replay"], g["cut"])
-        rows = []
-        for name, p in h3_frames(pre, f["H3"]):
-            rows += stream_rows(name, sequential_pass(p), p, g["cal"], g["cut"])
+        f = conditions.trade_frame(g["trades"], g["bars"], g["replay"], cut)
+        pre, _, _, _ = build_streams(g["trades"], g["bars"], g["replay"], cut)
+        defined = f["H3"].dropna().index
+        if not len(defined):
+            raise ValueError("H3 is defined on no entry")
+        first = int(g["trades"].loc[defined, "entry_time"].dt.tz_convert(NY).dt.year.min())
+        frames = h3_frames(pre, f["H3"])
     except ValueError as e:
         raise SystemExit(f"refusing to report: {e}")
-    cut = g["cut"]
+    start = pd.Timestamp(first, 1, 1)
     s = ["# H3 through firm scoring: continuation after a large opening candle\n"]
     if not registered_cut:
         s.append("**NOT THE REGISTERED RUN: the cut differs from the registered one (a test-only flag).**\n")
     s += [g["note"], "",
-         f"H3 as registered in commit c0c7a15 and clarified in 26cb07a (sha256 of the file read: {reg_sha}, the pinned value), at the registered cut: development through {cut.date()}, benchmark from {(cut + pd.Timedelta(days=1)).date()}. "
-         "It passed its test (Holm p 0.047, 11 of 15 years; research/run1_conditions.md) with the benchmark pointing the other way under the bracket. "
-         "Each stream is shown on the continuation entries where H3 is defined (the comparator) and on H3's favoured side only; S4's reversion A+ entries are the same in both, and the filter is applied before the sequential pass. "
-         f"Firm scoring as B3 and B4, at {FIRM} and {SIZE:.2f} of the budget: EV net is JJ's calculator with every fee (first payout only); whole micros as B3; lifetime EV as B4 at H walk-forward days.\n",
-         "| stream | period | trades | R/trade | P(pass) | P(payout) | EV net, first payout | EV net, whole micros | " + " | ".join(f"lifetime EV, H {h}" for h in HORIZONS) + " |",
-         "|---|---|---|---|---|---|---|---|" + "---|" * len(HORIZONS)]
-    s += rows
-    s.append("")
+          f"H3 as registered in commit c0c7a15 and clarified in 26cb07a (sha256 of the file read: {reg_sha}, the pinned value), at the registered cut: development through {cut.date()}, benchmark from {(cut + pd.Timedelta(days=1)).date()}. "
+          "It passed its test (Holm p 0.047, 11 of 15 years; research/run1_conditions.md) with the benchmark pointing the other way under the bracket. "
+          "Each stream is shown on the continuation entries where H3 is defined (the comparator) and on H3's favoured side only; S4's reversion A+ entries are the same in both, and the filter is applied before the sequential pass. "
+          f"H3 is first defined in {first}, so both sides of every pair are scored on a calendar from {start.date()}.\n"]
+    try:
+        s += scoring_sections([(name, p, start) for name, p in frames], g["cal"], cut)
+    except ValueError as e:
+        s.append(f"The firm scoring stopped: {e}.\n")
     text = "\n".join(s)
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
     with open(a.out, "w") as fh:
