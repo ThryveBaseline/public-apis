@@ -147,3 +147,11 @@ This is a change to the registration, not a clarification. It was made after B4 
     - its 25th percentile at least $1,000.
 
     One that qualifies only without the call-up is reported as depending on the Live account's value, and is not carried forward on this evidence.
+
+## Clarification, 2026-10-07 (third), before any B5 number
+
+12. **What the call-up version bounds.** Amendment 10 called it a lower bound. It is one only on what a called-up path is worth: the Live account is counted as nothing, though it can pay and its losses are the firm's. It is not a lower bound on B5's own numbers.
+    - The call-up also stops the purchases that, at cap 5, often ruin a path.
+    - So with the call-up, P(ruin) can only fall, and cash percentiles can rise.
+    - The rule in amendment 11 needs both versions to qualify at one cap, which implies the original rule. Nothing qualifies that would not have qualified before.
+    - The report says so. When the two versions qualify only at different caps, the verdict says that instead of "only without the call-up".
