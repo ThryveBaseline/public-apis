@@ -1,4 +1,3 @@
-import json
 import os
 
 import numpy as np
@@ -79,39 +78,12 @@ def test_paired_test_statistic_and_rule():
     assert paired_test(t, trend_rep, b2, s3, tchoice, pd.Timestamp("2017-12-31"))["n"] == 160
 
 
-def test_cli_end_to_end_on_four_years(tmp_path, monkeypatch):
+def test_cli_end_to_end_on_four_years(sealed_4y, tmp_path, monkeypatch):
     """Four years of synthetic bars (the walk-forward needs four development years), a roll, the real pipeline, the
     pinned registration; and the refusal of any other registration text."""
-    from fpt.data import load_minute_bars, roll_days
-    from fpt.evaluate import evaluate_trades
-    from research import bracket_replay, candidates, trend_exit
-    from research.anatomy import exclude_roll_trades
-    bars = synthetic_minute_bars(days=1080, seed=5, start="2019-01-07")
-    bars["symbol"] = np.where(bars.index < bars.index[len(bars) // 2], 1000, 1001)
-    out = bars.copy()
-    out.index = out.index.tz_convert("UTC")
-    out.index.name = "ts_event"
-    csv = tmp_path / "bars.csv"
-    out.to_csv(csv)
-    loaded = load_minute_bars(str(csv), source_tz="UTC")
-    rolls = sorted(roll_days(loaded))
-    led = tmp_path / "trades.csv"
-    generate_trades(loaded, StrategyConfig()).to_csv(led, index=False)
-    trades = load_trades(str(led))
-    rep = evaluate_trades(trades, loaded, exclude_dates=rolls, oos_months=3)
-    (tmp_path / "report.md").write_text(rep.text)
-    kept, n_excl = exclude_roll_trades(trades, rolls)
-    man = {"data": {"roll_dates_excluded": [str(d) for d in rolls], "sha256": candidates.sha256(str(csv))},
-           "outputs": {"n_trades": len(trades), "trades_sha256": candidates.sha256(str(led)), "report_sha256": candidates.sha256(str(tmp_path / "report.md"))},
-           "hygiene": {"trades_excluded": n_excl}}
-    (tmp_path / "manifest.json").write_text(json.dumps(man))
-    day = kept["entry_time"].dt.tz_convert(NY).dt.normalize().dt.tz_localize(None)
-    oos = ((day.max() - pd.DateOffset(months=3)).normalize() + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
-    common = ["--trades", str(led), "--csv", str(csv), "--source-tz", "UTC", "--oos-start", oos, "--manifest", str(tmp_path / "manifest.json")]
-    monkeypatch.setattr("sys.argv", ["bracket_replay.py", *common, "--out", str(tmp_path / "b1.md"), "--private-out", str(tmp_path / "replay.csv")])
-    assert bracket_replay.main() in (0, None)
+    from research import trend_exit
     reg = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "docs", "research", "preregistration_trend_exit.md")
-    args = [*common, "--report", str(tmp_path / "report.md"), "--replay-csv", str(tmp_path / "replay.csv"), "--registration", reg, "--out", str(tmp_path / "te.md")]
+    args = [*sealed_4y["b3"], "--registration", reg, "--out", str(tmp_path / "te.md")]
     monkeypatch.setattr("sys.argv", ["trend_exit.py", *args])
     assert trend_exit.main() == 0
     text = (tmp_path / "te.md").read_text()
