@@ -114,3 +114,15 @@ These were written while building the tool on synthetic data, before B5 had touc
 2. **A pass that cash cannot activate.** If cash is below $149 at a pass, the account is not activated and the pass is lost. It is counted and reported as a lost pass. Cash never goes below zero.
 3. **The end of a path.** On the path's last day, accounts still live are cut off: their balances are not cash and count for nothing. Payouts already earned but not yet credited count in the final cash. Cut-off accounts are left out of the gates.
 4. **Days.** The payout delay and the 30-day limit on an evaluation count the stream's own trading days (New York dates with bars, as every walk-forward here). The monthly fee and the path's 365 days count calendar days.
+
+## Clarifications, 2026-10-07 (second), before any B5 number
+
+Prompted by the independent review of the tool on synthetic data. B5 has still not touched real data. Nothing else changes.
+
+5. **Whole micros run on TopstepX only.** The frozen `topstep_50k` preset's soft daily loss limit is not usable below the sealed sizing (`docs/ASSUMPTIONS.md` row 39). It cuts a loss that carries the day past the limit to the room left, but credits a win in full. Whole micros size below 1.00, so on that preset they would carry the artifact into the decisive reading. On synthetic data it turned failing configurations into qualifying ones. New Combines are also TopstepX only.
+   - For every stream and payout policy with a selected configuration on any preset, the whole-micro runs are on `topstep_50k_x`, and the reading uses those.
+   - A selected `topstep_50k` configuration runs at its B4 size only. It is reported for the record and decides nothing.
+6. **H3's streams** run when H3 passes its registered test on the inputs. It did on the registered run (Holm p 0.047).
+7. **Not modelled: Topstep's limit of 20 account purchases a month.** See `docs/research/prop-firm-rules.md`. At cap 5 it binds on part of the paths. In the review's probe on synthetic data, enforcing it moved P(ruin) by under one point and left the cash percentiles unchanged. The report states it as a caveat.
+8. **The frozen bootstrap beside each row** is computed on that period's own B3 row: development beside development, benchmark beside benchmark. The full row is printed: P(bust), the median days to the first payout, and the funded accounts at month 12.
+9. **A period in which no trade fits one phase's budget** still runs. That phase's account then never trades: an evaluation stays open, and an Express Funded account pays nothing. The gates compare with that phase's walk-forward on an empty stream, where every start with the full horizon is open. Both phases share one calendar.
