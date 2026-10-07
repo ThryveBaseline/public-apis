@@ -1,23 +1,26 @@
-"""The zero-edge control for task 15: how much of S3's and S4's realistic result (research/realistic_economics.py,
-TopstepX's $1.22 micro fee, dips counted) the same trades would earn with no edge at all.
+"""The zero-edge control for task 15: how much of S3's and S4's realistic result (research/realistic_economics.py)
+the same trades would earn with no edge at all.
 
 A Topstep account caps a trader's loss at the loss limit while half of every upswing can be withdrawn, so a stream
 with no edge can be paid (docs/reviews/topstep_economics_audit.md; research/run1_structure.md for B4's accounting).
-Here the two nulls of research/structure_control.py are rebuilt from the trades themselves and run through the
-identical realistic paths, so "net per evaluation" splits into what the structure pays and what the edge adds:
+Two nulls, modelled on research/structure_control.py, are applied inside the identical paths to each phase's stream
+as the account trades it: after whole-micro sizing at the variant's own fee and the sequential pass, on the
+period's calendar. So each null keeps exactly the actual stream's trades, entries, timing and sizes, and its mean
+dollar result per trade is zero in each phase:
 
-  shift     every trade's R per micro, net of the real fee, moves by the period's mean, so the period's mean is
-            exactly zero (outcome sizes move with it)
-  re-label  winners take, in a seeded random order, the lower-median loss of the period's own losers until the
-            period's mean is as close to zero as one more trade can bring it (outcome sizes stay the stream's own);
-            ten orders, averaged, with their range
+  shift     every trade is charged the same amount per dollar of stop risk (micros x stop x $2), so the phase's
+            dollars sum to zero; the charge is taken at entry, so the worst excursion moves with it. Outcome sizes
+            move, so a stop-out can lose more than its stop.
+  re-label  winners take, in a seeded random order, the lower-median loss of the phase's own losers until the
+            phase's mean is as close to zero as one more trade can bring it (feasible outcomes; read it first);
+            ten orders, averaged, with their range.
 
-Each period's own mean is removed (development, in-sample; development from 2021; the benchmark path). A trade's
-worst excursion is never less than its new loss. Descriptive: nothing is chosen on it.
+Each variant (TopstepX fee with dips counted; B5's $0.50 with dips ignored) zeroes its own stream, net of its own
+fee. The spread between the two nulls is part of the uncertainty. Descriptive: nothing is chosen on it.
 
 usage:
   python research/realistic_control.py --csv data/nq_1min_databento.csv --source-tz UTC --manifest sealed/run1/manifest.json \\
-      --out research/s3s4_zero_edge_control.md
+      --out research/staging/s3s4_zero_edge_control.md
 """
 from __future__ import annotations
 
@@ -37,57 +40,54 @@ from research.forward import CANDIDATES, DEV_END, FIRST_UNSEEN, candidate_trades
 from research.realistic_economics import CHAIN_FROM, FEES, POLICIES, mae_points, run_variant  # noqa: E402
 from research.structure_control import relabelled  # noqa: E402
 
-FEE = FEES["TopstepX"]
-VARIANTS = (("TopstepX fee, dips counted", FEES["TopstepX"], True), ("B5: $0.50 fee, dips ignored", FEES["B5"], False))
 SEEDS = tuple(range(10))
-FAR = pd.Timestamp("2100-01-01")  # every trade passed in counts as the period whose mean is removed
+VARIANTS = (("TopstepX fee, dips counted", FEES["TopstepX"], True), ("B5: $0.50 fee, dips ignored", FEES["B5"], False))
+FAR = pd.Timestamp("2100-01-01")  # every trade passed in counts as the stream whose mean is removed
 
 
-def net_r(pre: pd.DataFrame, fee: float = FEE) -> np.ndarray:
-    """R per micro, net of the round-trip fee, on the trade's own stop."""
-    stop = pre["stop_points"].astype(float).to_numpy()
-    return (pre["pnl_points"].astype(float).to_numpy() * MNQ_POINT_VALUE - fee) / (stop * MNQ_POINT_VALUE)
-
-
-def with_net_r(pre: pd.DataFrame, r: np.ndarray, fee: float = FEE) -> pd.DataFrame:
-    """The trades with new net R per micro: points moved to match, and the worst excursion at least the new loss."""
-    out = pre.copy()
-    stop = out["stop_points"].astype(float).to_numpy()
-    pnl = (np.asarray(r, dtype=float) * stop * MNQ_POINT_VALUE + fee) / MNQ_POINT_VALUE
-    out["pnl_points"] = pnl
-    out["mae_points"] = np.maximum(out["mae_points"].astype(float).to_numpy(), -pnl)
+def shift_null(st: pd.DataFrame, budget: float) -> pd.DataFrame:
+    """The phase's dollars brought to exactly zero by one charge per dollar of stop risk, taken at entry."""
+    risk = st["micros"].astype(float).to_numpy() * st["stop_points"].astype(float).to_numpy() * MNQ_POINT_VALUE
+    dollars = st["r"].astype(float).to_numpy() * budget
+    charge = dollars.sum() / risk.sum() * risk / budget
+    out = st.copy()
+    out["r"] = st["r"].astype(float).to_numpy() - charge
+    out["w"] = np.minimum(st["w"].astype(float).to_numpy() - charge, out["r"].to_numpy())
     return out
 
 
-def shift_null(pre: pd.DataFrame) -> tuple[pd.DataFrame, float]:
-    r = net_r(pre)
-    m = float(r.mean())
-    return with_net_r(pre, r - m), m
-
-
-def relabel_null(pre: pd.DataFrame, seed: int) -> tuple[pd.DataFrame, float]:
-    st, share = relabelled(pre.assign(r=net_r(pre)), FAR, seed)
-    return with_net_r(pre, st["r"].to_numpy()), share
+def relabel_null(seed: int):
+    def null(st: pd.DataFrame, budget: float) -> pd.DataFrame:
+        flipped, share = relabelled(st, FAR, seed)
+        if not np.isfinite(share):
+            raise ValueError("the re-label null is not defined for this stream (no trade on the other side)")
+        out = st.copy()
+        r0, w0 = st["r"].astype(float).to_numpy(), st["w"].astype(float).to_numpy()
+        r = flipped["r"].astype(float).to_numpy()
+        moved = r != r0
+        w = w0.copy()
+        if moved.any():  # a re-labelled trade takes the outcome, and so the worst excursion, of the trade it borrows from
+            target = r[moved][0]
+            donor = np.flatnonzero(~moved & (r0 == target))[0]
+            w[moved] = min(w0[donor], target)
+        out["r"], out["w"] = r, w
+        return out
+    return null
 
 
 def control_rows(name: str, pre: pd.DataFrame, cal: pd.DatetimeIndex, last: pd.Timestamp | None, period: str,
                  variant: tuple = VARIANTS[0]) -> list[dict]:
-    """The stream and its two nulls through the same paths, under one variant (label, fee, dips). The nulls remove the
-    mean net of the real fee in both variants, so they are the same trades in each."""
+    """The stream and its two nulls through the same paths, under one variant (label, fee, dips)."""
     label, fee, dips = variant
-    day = pd.DatetimeIndex(pre["entry_time"]).tz_convert("America/New_York").tz_localize(None).normalize()
-    part = pre[(day >= cal[0]) & (day <= cal[-1])]
-    zero, m = shift_null(part)
-    flips = [relabel_null(part, s) for s in SEEDS]
     rows = []
     for policy in POLICIES:
         for callup in (None, CALLUP):
-            act = run_variant(part, cal, last, policy, callup, fee, dips=dips)
-            sh = run_variant(zero, cal, last, policy, callup, fee, dips=dips)
-            rl = [run_variant(f, cal, last, policy, callup, fee, dips=dips) for f, _ in flips]
-            rows.append({"candidate": name, "period": period, "variant": label, "policy": policy, "callup": callup, "trades": int(len(part)), "mean_net_r": m,
-                         "relabel_share": float(np.mean([s for _, s in flips])), "actual": act, "shift": sh,
-                         "relabel": {k: float(np.mean([x[k] for x in rl])) for k in ("net_per_eval", "cash_p50", "cash_mean", "p_ruin", "p_above_2000")},
+            act = run_variant(pre, cal, last, policy, callup, fee, dips)
+            sh = run_variant(pre, cal, last, policy, callup, fee, dips, null=shift_null)
+            rl = [run_variant(pre, cal, last, policy, callup, fee, dips, null=relabel_null(s)) for s in SEEDS]
+            keys = ("net_per_eval", "cash_p50", "cash_mean", "p_ruin", "p_above_2000", "eval_dollars_per_trade", "funded_dollars_per_trade")
+            rows.append({"candidate": name, "period": period, "variant": label, "policy": policy, "callup": callup, "actual": act, "shift": sh,
+                         "relabel": {k: float(np.mean([x[k] for x in rl])) for k in keys},
                          "relabel_range": (float(min(x["net_per_eval"] for x in rl)), float(max(x["net_per_eval"] for x in rl)))})
             print(name, period, label, policy, callup, f"actual {act['net_per_eval']:+.0f} shift {sh['net_per_eval']:+.0f} "
                   f"relabel {rows[-1]['relabel']['net_per_eval']:+.0f}", flush=True)
@@ -97,22 +97,25 @@ def control_rows(name: str, pre: pd.DataFrame, cal: pd.DatetimeIndex, last: pd.T
 def report(rows: list[dict], bars_sha: str) -> str:
     s = ["# S3 and S4, realistic: what the structure pays a zero-edge stream, and what the edge adds\n",
          f"Sealed bars sha256 {bars_sha}. The paths of research/realistic_economics.py (from ${START_CASH:,.0f}, one Topstep 50K TopstepX account at "
-         f"a time, whole micros sized with the fee, 365 days), both with TopstepX's ${FEE:.2f} micro fee and dips counted and with B5's conventions "
-         "($0.50, dips ignored), for the forward protocol's frozen "
-         "S3 and S4 and for two zero-edge copies of the same trades (same entries, timing, stops and sizes): shift (every trade's net R per micro moved "
-         "by the period's mean) and re-label (winners given the period's lower-median loss until the mean is zero; ten seeded orders averaged, "
-         "range shown). Each period's own mean is removed. The edge's part is the stream's net per evaluation less the null's.\n",
+         "a time, whole micros sized with the fee, 365 days), with TopstepX's $1.22 micro fee and dips counted and with B5's conventions ($0.50, dips "
+         "ignored), for the forward protocol's frozen S3 and S4 and for two zero-edge copies of exactly the trades each phase's account takes (same "
+         "entries, timing, stops and sizes): shift (one charge per dollar of stop risk, taken at entry) and re-label (winners given the phase's "
+         "lower-median loss until its mean is zero; ten seeded orders averaged, range shown). Each null's dollars per trade, shown for each phase, "
+         "are zero (re-label: within one trade). The edge's part is the stream's net per evaluation less the null's; read re-label first (its "
+         "outcomes are feasible trades) and the gap between the nulls as uncertainty.\n",
          "Which rows to read: 'development, in-sample' flatters the candidates (the bracket was chosen on those years); 'development from 2021' is out "
          "of sample for the bracket; the benchmark is a single path.\n",
-         "| candidate | period | fee and dips | policy | call-up | trades | mean net R | actual: net per eval / median / ruin | shift null: net / median / ruin | "
-         "re-label null: net (range) / median / ruin | edge's part (vs shift / vs re-label) |",
+         "| candidate | period | fee and dips | policy | call-up | trades: eval / funded | $ per trade, actual: eval / funded | actual: net per eval / median / ruin | "
+         "shift null: $ per trade / net / median / ruin | re-label null: $ per trade / net (range) / median / ruin | edge's part (vs re-label / vs shift) |",
          "|---|---|---|---|---|---|---|---|---|---|---|"]
     for x in rows:
         a, sh, rl, lo_hi = x["actual"], x["shift"], x["relabel"], x["relabel_range"]
-        s.append(f"| {x['candidate']} | {x['period']} | {x['variant']} | {x['policy']} | {'3rd payout' if x['callup'] else 'none'} | {x['trades']} | {x['mean_net_r']:+.3f} | "
-                 f"{a['net_per_eval']:+,.0f} / {a['cash_p50']:,.0f} / {a['p_ruin']:.1%} | {sh['net_per_eval']:+,.0f} / {sh['cash_p50']:,.0f} / {sh['p_ruin']:.1%} | "
-                 f"{rl['net_per_eval']:+,.0f} ({lo_hi[0]:+,.0f} to {lo_hi[1]:+,.0f}) / {rl['cash_p50']:,.0f} / {rl['p_ruin']:.1%} | "
-                 f"{a['net_per_eval'] - sh['net_per_eval']:+,.0f} / {a['net_per_eval'] - rl['net_per_eval']:+,.0f} |")
+        s.append(f"| {x['candidate']} | {x['period']} | {x['variant']} | {x['policy']} | {'3rd payout' if x['callup'] else 'none'} | "
+                 f"{a['eval_trades']} / {a['funded_trades']} | {a['eval_dollars_per_trade']:+.1f} / {a['funded_dollars_per_trade']:+.1f} | "
+                 f"{a['net_per_eval']:+,.0f} / {a['cash_p50']:,.0f} / {a['p_ruin']:.1%} | "
+                 f"{sh['eval_dollars_per_trade']:+.1f}, {sh['funded_dollars_per_trade']:+.1f} / {sh['net_per_eval']:+,.0f} / {sh['cash_p50']:,.0f} / {sh['p_ruin']:.1%} | "
+                 f"{rl['eval_dollars_per_trade']:+.1f}, {rl['funded_dollars_per_trade']:+.1f} / {rl['net_per_eval']:+,.0f} ({lo_hi[0]:+,.0f} to {lo_hi[1]:+,.0f}) / "
+                 f"{rl['cash_p50']:,.0f} / {rl['p_ruin']:.1%} | {a['net_per_eval'] - rl['net_per_eval']:+,.0f} / {a['net_per_eval'] - sh['net_per_eval']:+,.0f} |")
     return "\n".join(s) + "\n"
 
 

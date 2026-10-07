@@ -98,7 +98,11 @@ def split_rows(st: pd.DataFrame, dates: pd.DatetimeIndex, dips: bool) -> list[np
     return out
 
 
-def run_variant(pre: pd.DataFrame, cal: pd.DatetimeIndex, last: pd.Timestamp | None, policy: str, callup: int | None, fee: float, dips: bool) -> dict:
+def run_variant(pre: pd.DataFrame, cal: pd.DatetimeIndex, last: pd.Timestamp | None, policy: str, callup: int | None, fee: float, dips: bool,
+                null=None) -> dict:
+    """One configuration's paths. `null`, if given, is applied to each phase's sized, sequential-passed stream on the
+    period's calendar as null(stream, budget) -> stream (research/realistic_control.py), so a zero-edge copy trades
+    exactly the actual stream's trades."""
     rules = PRESETS[TOPSTEPX]
     if rules.daily_loss_limit is not None or rules.drawdown_type != "trailing_eod":
         raise ValueError("the dip split is exact only without a daily loss limit and with end-of-day trailing")
@@ -107,7 +111,8 @@ def run_variant(pre: pd.DataFrame, cal: pd.DatetimeIndex, last: pd.Timestamp | N
     for budget in (eval_risk(TOPSTEPX), FUNDED_RISK):
         st = micro_stream(pre, budget, cap, fee)
         day = pd.DatetimeIndex(st["entry_time"]).tz_convert("America/New_York").tz_localize(None).normalize()
-        streams.append(st[((day >= cal[0]) & (day <= cal[-1]))])
+        st = st[((day >= cal[0]) & (day <= cal[-1]))]
+        streams.append(null(st, budget) if null is not None and len(st) else st)
     ev, fu = streams
     dates, _, _ = phase_days(ev.drop(columns="w"), fu.drop(columns="w"), cal)
     rs_e, rs_f = split_rows(ev, dates, dips), split_rows(fu, dates, dips)
@@ -117,7 +122,9 @@ def run_variant(pre: pd.DataFrame, cal: pd.DatetimeIndex, last: pd.Timestamp | N
     out = summarize(res, dates, starts, 0, 0)
     evals = out["evals_mean"]
     out["net_per_eval"] = (out["cash_mean"] - START_CASH) / evals if evals else float("nan")
-    out.update({"eval_trades": int(len(ev)), "funded_trades": int(len(fu)), "micros_eval": float(ev["micros"].mean()) if len(ev) else float("nan")})
+    out.update({"eval_trades": int(len(ev)), "funded_trades": int(len(fu)), "micros_eval": float(ev["micros"].mean()) if len(ev) else float("nan"),
+                "eval_dollars_per_trade": float(ev["r"].mean() * eval_risk(TOPSTEPX)) if len(ev) else float("nan"),
+                "funded_dollars_per_trade": float(fu["r"].mean() * FUNDED_RISK) if len(fu) else float("nan")})
     return out
 
 
