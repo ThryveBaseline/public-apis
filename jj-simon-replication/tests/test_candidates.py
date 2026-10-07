@@ -7,9 +7,9 @@ from fpt.evaluate import evaluate_trades, trading_days_of
 from fpt.strategy import StrategyConfig, generate_trades
 from research.anatomy import load_trades
 from research.bracket_replay import dropped_rows, grid, replay, walk_forward
-from research.candidates import (ATR_NAMES, FIRMS, NEEDED_VARIANTS, START_CASH, bootstrap, build_streams, check_grid, firm_rows, format_bootstrap,
-                                 format_row, hold_drift, mean_se, pooled_choices, s3_bracket, score, score_whole, sealed_firm_rows, variant_frame,
-                                 whole_contracts)
+from research.candidates import (ATR_NAMES, FIRMS, NEEDED_VARIANTS, START_CASH, bootstrap, build_streams, check_grid, ev_net, fees_per_eval, firm_rows,
+                                 format_bootstrap, format_row, hold_drift, mean_se, pooled_choices, s3_bracket, score, score_whole, sealed_firm_rows,
+                                 variant_frame, whole_contracts)
 from research.ledger_filters import sequential_pass
 
 NY = "America/New_York"
@@ -32,7 +32,9 @@ def test_firm_rows_reproduce_the_frozen_evaluator(engine):
     for label, part in (("in_sample", "development"), ("out_of_sample", "benchmark")):
         theirs = rep.tables[f"firms_{label}"]
         ours = mine[part]["firms"]
-        cols = [c for c in ours.columns]
+        cols = [c for c in ours.columns if c in theirs.columns]  # ours adds eval_months_mean; the frozen table adds censored counts
+        assert {"firm", "eval_risk", "pass_rate", "pass_stderr", "eval_days_median", "n_eval_starts", "n_eval_open", "payout_rate", "payout_stderr",
+                "payout_days_median", "n_funded_starts", "n_funded_open", "payout_median_amount"} <= set(cols)
         pd.testing.assert_frame_equal(ours[cols].reset_index(drop=True), theirs[cols].reset_index(drop=True), check_dtype=False)
     # and the report rows parse back to exactly our formatted rows
     parsed = sealed_firm_rows(rep.text)
@@ -285,3 +287,24 @@ def test_check_grid_refuses_an_incomplete_replay():
     check_grid(full)
     with pytest.raises(ValueError, match="lacks 2 of the variants"):
         check_grid(full[~full["variant"].isin(["hold_to_1600", ATR_NAMES[3]])])
+
+
+def test_fees_and_net_ev(engine):
+    # Topstep 50K bills $49 a month and $149 on a pass; FundedNext Flex 50K a one-time $70 and no activation fee
+    r = {"firm": "topstep_50k", "pass_rate": 0.2, "payout_rate": 0.4, "payout_median_amount": 1500.0, "eval_months_mean": 1.3}
+    assert fees_per_eval(r) == pytest.approx(49 * 1.3 + 0.2 * 149)
+    assert ev_net(r) == pytest.approx(0.2 * 0.4 * 1500 - (49 * 1.3 + 0.2 * 149))
+    r2 = {**r, "firm": "fundednext_50k_flex"}
+    assert fees_per_eval(r2) == pytest.approx(70.0) and ev_net(r2) == pytest.approx(120.0 - 70.0)
+    assert ev_net({**r, "payout_median_amount": float("nan"), "payout_rate": 0.0}) == pytest.approx(-(49 * 1.3 + 0.2 * 149))
+    # the billing months come from the frozen pass table: resolved starts at their day count, open ones at the horizon
+    from fpt.evaluate import walk_forward_pass_probability
+    from fpt.propfirm import FIRM_PRESETS
+    bars, trades = engine
+    cal = trading_days_of(bars)
+    st = sequential_pass(trades)
+    row = firm_rows(st, cal, firms=("topstep_50k",)).iloc[0]
+    pp = walk_forward_pass_probability(st, FIRM_PRESETS["topstep_50k"], 1000.0, 30, trading_days=cal)
+    run = pp[pp["outcome"] != "censored"]
+    used = [30 if o == "open" else d for o, d in zip(run["outcome"], run["days"])]
+    assert row["eval_months_mean"] == pytest.approx(np.mean([np.ceil(u / 22) for u in used]))

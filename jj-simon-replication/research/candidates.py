@@ -74,6 +74,7 @@ NEEDED_VARIANTS = ["ledger_bracket", "hold_to_1600", *ATR_NAMES]
 CHAIN_START = 3  # as research/bracket_replay.walk_forward: the chain starts at the fourth development year
 MNQ_POINT_VALUE = 2.0  # micro E-mini Nasdaq-100, first traded 2019-05-06
 MICROS_PER_MINI = 10  # the firms count ten micros as one mini against the contract limit
+DAYS_PER_MONTH = 22  # trading days in a billing month, as fpt.bootstrap.HisStatsConfig
 
 
 def firm_rows(part: pd.DataFrame, cal_part: pd.DatetimeIndex, firms=FIRMS, eval_risk_mode: str = "two_trade", eval_risk: float = 500.0,
@@ -88,7 +89,10 @@ def firm_rows(part: pd.DataFrame, cal_part: pd.DatetimeIndex, firms=FIRMS, eval_
         pp = walk_forward_pass_probability(part, rules, er, MAX_EVAL_DAYS, trading_days=cal_part)
         pr = walk_forward_payout_probability(funded_part, rules, FUNDED_RISK, MAX_FUNDED_DAYS, trading_days=cal_part)
         a, b = _rate(pp, "pass", "fail", horizon=MAX_EVAL_DAYS), _rate(pr, "payout", "bust", horizon=MAX_FUNDED_DAYS)
+        run = pp[pp["outcome"] != "censored"]
+        used = np.where(run["outcome"] == "open", MAX_EVAL_DAYS, run["days"].to_numpy(float))  # an open evaluation ran the full horizon
         rows.append({"firm": key, "eval_risk": er, "pass_rate": a["rate"], "pass_stderr": a["stderr"], "eval_days_median": a["days_median"],
+                     "eval_months_mean": float(np.ceil(used / DAYS_PER_MONTH).mean()) if len(run) else float("nan"),
                      "n_eval_starts": a["n_seen"], "n_eval_open": a["n_open"], "payout_rate": b["rate"], "payout_stderr": b["stderr"],
                      "payout_days_median": b["days_median"], "n_funded_starts": b["n_seen"], "n_funded_open": b["n_open"],
                      "payout_median_amount": float(pr.loc[pr["outcome"] == "payout", "amount"].median()) if (pr["outcome"] == "payout").any() else float("nan")})
@@ -111,6 +115,22 @@ def ev_per_eval(r: dict) -> float:
     if not np.isfinite(r["pass_rate"]) or not np.isfinite(r["payout_rate"]):
         return float("nan")
     return float(his_calculator(FIRM_PRESETS[r["firm"]].eval_cost, r["pass_rate"], r["payout_rate"], payout_size(r))["ev_per_eval"])
+
+
+def fees_per_eval(r: dict) -> float:
+    """What one evaluation costs on average under the preset, which the frozen calculator leaves out: the fee for
+    every billing month the evaluation runs when the fee is monthly (open evaluations counted at the full horizon),
+    plus the activation fee on a pass."""
+    rules = FIRM_PRESETS[r["firm"]]
+    months = r["eval_months_mean"] if rules.eval_cost_is_monthly else 1.0
+    return float(rules.eval_cost * months + r["pass_rate"] * rules.activation_fee)
+
+
+def ev_net(r: dict) -> float:
+    """EV per evaluation net of every fee: pass x payout x median payout - fees_per_eval."""
+    if not np.isfinite(r["pass_rate"]) or not np.isfinite(r["payout_rate"]) or not np.isfinite(r["eval_months_mean"]):
+        return float("nan")
+    return float(r["pass_rate"] * r["payout_rate"] * payout_size(r) - fees_per_eval(r))
 
 
 def bootstrap(r: dict, start_cash: float) -> dict:
@@ -397,7 +417,9 @@ def report(streams: dict, pre: dict, chain: dict, cal: pd.DatetimeIndex, cut: pd
     else:
         chain_txt = f"none (the chain needs {CHAIN_START} earlier development years), so S3 and S4 keep the sealed bracket"
     s.append(f"Walk-forward bracket for continuation (S3, S4), chosen on earlier development years only: {chain_txt}.\n")
-    s.append("## Summary, topstep_50k\n\n| stream | period | trades | R/trade | total R | P(pass) | +/- | P(payout) | +/- | median payout | EV per evaluation |\n|---|---|---|---|---|---|---|---|---|---|---|")
+    s.append("## Summary, topstep_50k\n")
+    s.append("EV per evaluation is the frozen calculator's (pass x payout x median payout - one evaluation fee), as in the sealed report. EV net of all fees also charges the evaluation fee for every billing month the evaluation runs (monthly at this firm; 22 trading days a month) and the activation fee on each pass, which the frozen calculator leaves out.\n")
+    s.append("| stream | period | trades | R/trade | total R | P(pass) | +/- | P(payout) | +/- | median payout | EV per evaluation | EV net of all fees |\n|---|---|---|---|---|---|---|---|---|---|---|---|")
     scored = {name: score(st, cal, cut) for name, st in streams.items()}
     for name, sc in scored.items():
         for per in ("development", "benchmark"):
@@ -406,7 +428,7 @@ def report(streams: dict, pre: dict, chain: dict, cal: pd.DatetimeIndex, cut: pd
                 continue
             r = p["firms"].set_index("firm").loc["topstep_50k"].to_dict()
             r["firm"] = "topstep_50k"
-            s.append(f"| {name} | {per} | {p['trades']} | {p['expectancy_r']:+.3f} | {p['total_r']:+.1f} | {r['pass_rate']:.1%} | {r['pass_stderr']:.1%} | {r['payout_rate']:.1%} | {r['payout_stderr']:.1%} | {r['payout_median_amount']:,.0f} | {ev_per_eval(r):+,.0f} |")
+            s.append(f"| {name} | {per} | {p['trades']} | {p['expectancy_r']:+.3f} | {p['total_r']:+.1f} | {r['pass_rate']:.1%} | {r['pass_stderr']:.1%} | {r['payout_rate']:.1%} | {r['payout_stderr']:.1%} | {r['payout_median_amount']:,.0f} | {ev_per_eval(r):+,.0f} | {ev_net(r):+,.0f} |")
     s.append("")
     rules = FIRM_PRESETS["topstep_50k"]
     cap = MICROS_PER_MINI * rules.max_contracts
@@ -415,8 +437,8 @@ def report(streams: dict, pre: dict, chain: dict, cal: pd.DatetimeIndex, cut: pd
              "An entry that rounds to zero contracts is not taken, the sequential pass runs on what is taken, and each R is scaled by the share of the budget actually at risk (size). "
              "Micro NQ began trading on 2019-05-06; this applies today's contract menu to every year, which is the question for an account opened now (before May 2019 only NQ existed, and a stop wider than 50 points could not be taken at $1,000 of risk, nor one wider than 25 at $500). "
              "The sealed 25 and 50-point brackets size exactly, so S0 to S2 match the summary above; the frozen bootstrap is run on these inputs.\n")
-    s.append("| stream | period | evaluation: trades, mean size | P(pass) | +/- | funded: trades, mean size | P(payout) | +/- | median payout | EV per evaluation | P(bust) from $2,000 |")
-    s.append("|---|---|---|---|---|---|---|---|---|---|---|")
+    s.append("| stream | period | evaluation: trades, mean size | P(pass) | +/- | funded: trades, mean size | P(payout) | +/- | median payout | EV per evaluation | EV net of all fees | P(bust) from $2,000 |")
+    s.append("|---|---|---|---|---|---|---|---|---|---|---|---|")
     for name, p in pre.items():
         w = score_whole(p, cal, cut)
         for per in ("development", "benchmark"):
@@ -426,7 +448,7 @@ def report(streams: dict, pre: dict, chain: dict, cal: pd.DatetimeIndex, cut: pd
             r = q["firms"].iloc[0].to_dict()
             ok = np.isfinite(r["pass_rate"]) and np.isfinite(r["payout_rate"])
             bust = f"{bootstrap(r, 2000.0)['p_bust']:.0%}" if ok else "n/a"
-            s.append(f"| {name} | {per} | {q['eval_trades']}, {q['eval_size']:.2f} | {r['pass_rate']:.1%} | {r['pass_stderr']:.1%} | {q['funded_trades']}, {q['funded_size']:.2f} | {r['payout_rate']:.1%} | {r['payout_stderr']:.1%} | {r['payout_median_amount']:,.0f} | {ev_per_eval(r):+,.0f} | {bust} |")
+            s.append(f"| {name} | {per} | {q['eval_trades']}, {q['eval_size']:.2f} | {r['pass_rate']:.1%} | {r['pass_stderr']:.1%} | {q['funded_trades']}, {q['funded_size']:.2f} | {r['payout_rate']:.1%} | {r['payout_stderr']:.1%} | {r['payout_median_amount']:,.0f} | {ev_per_eval(r):+,.0f} | {ev_net(r):+,.0f} | {bust} |")
     s.append("")
     for name, sc in scored.items():
         s.append(f"## {name}\n")
@@ -435,13 +457,14 @@ def report(streams: dict, pre: dict, chain: dict, cal: pd.DatetimeIndex, cut: pd
             if p["firms"].empty:
                 continue
             s.append(f"{per}: {p['trades']} trades, {p['expectancy_r']:+.3f} R per trade, {p['total_r']:+.1f} R.\n")
-            s.append(f"| firm | eval risk | P(pass) within {MAX_EVAL_DAYS} days | +/- | days to pass (median) | starts (open) | P(payout before breach) within {MAX_FUNDED_DAYS} days | +/- | days to payout | starts (open) | payout (median $) | EV per evaluation |\n|---|---|---|---|---|---|---|---|---|---|---|---|")
+            s.append(f"| firm | eval risk | P(pass) within {MAX_EVAL_DAYS} days | +/- | days to pass (median) | starts (open) | P(payout before breach) within {MAX_FUNDED_DAYS} days | +/- | days to payout | starts (open) | payout (median $) | EV per evaluation | EV net of all fees |\n|---|---|---|---|---|---|---|---|---|---|---|---|---|")
             for r in p["firms"].to_dict("records"):
-                s.append(format_row(r)[:-1] + f"| {ev_per_eval(r):+,.0f} |")
+                s.append(format_row(r)[:-1] + f"| {ev_per_eval(r):+,.0f} | {ev_net(r):+,.0f} |")
             s.append("")
     s.append("## Bootstrap with the frozen simulator, topstep_50k\n")
     s.append("The frozen report's bootstrap (fpt.bootstrap.simulate_his_stats: 2,000 paths, seed 0, twelve months, everything reinvested, one payout per funded account, payouts gross) run on each stream's measured topstep_50k inputs from the summary (fractional sizing), exactly as the sealed report runs it on Baseline 0. "
-             "P(bust) is the share of paths with no live account and too little cash for another evaluation within twelve months.\n")
+             "P(bust) is the share of paths with no live account and too little cash for another evaluation within twelve months. "
+             "Like the frozen calculator, the simulator charges one evaluation fee per evaluation and no activation fee, so these rates are optimistic wherever the net EV is below the frozen one.\n")
     s.append("| stream | period | P(bust) from " + " | ".join(f"${c:,.0f}" for c in START_CASH) + " | P(zero payouts, first batch, $2,000) | median days to first payout ($2,000) | funded accounts month 12, median ($2,000) |")
     s.append("|---|---|" + "---|" * (len(START_CASH) + 3))
     for name, sc in scored.items():
