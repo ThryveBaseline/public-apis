@@ -1,27 +1,30 @@
 """The MBO sidecar of the forward paper test (docs/research/mbo_sidecar_pilot.md): annotate-only, it never changes
 a trade, a checkpoint or a candidate.
 
-For each day of GLBX.MDP3 MBO data (ESZ6 and NQZ6, 00:00-21:00 UTC), the NQ order book is rebuilt from the
-midnight snapshot and read at every regular-session minute boundary, 09:30 to 16:00 ET: the best bid and offer,
+For each day of GLBX.MDP3 MBO data (ESZ6 and NQZ6, 00:00-21:00 UTC), the NQ order book is rebuilt from the day's
+clear and snapshot and read at every regular-session minute boundary, 09:30 to 16:00 ET: the best bid and offer,
 the depth of the five best levels each side, and the signed aggressor flow of NQ and ES over the minute before.
-The day is admitted only if the trades it rebuilds reproduce the 1-minute bars of the forward file and the book
-is never crossed or locked at a boundary. Each S3 or S4 trade on an admitted day is then annotated with:
+The day is admitted only if the trades it rebuilds reproduce the 1-minute bars of the bar file (by exchange or
+receive time), and the book starts whole, never meets an unknown cancel or a possibly-bad-book flag, and is
+never crossed, locked or one-sided at a boundary. Each S3 or S4 trade on an admitted day is then annotated with:
 
-  E1  the market fill: the far touch at the entry minute's start, against the engine's assumed entry (the bar's
-      open plus one tick of slippage), in ticks (positive: the real fill was better than the engine assumed);
-  E2  a passive entry: a limit at the near touch at the entry minute's start, filled only if a trade prints
-      through it within the minute (no queue assumed), else a market order at the far touch a minute later;
+  E1  the market fill: the far touch at the entry minute's start;
+  E2  a passive entry: a limit at the near touch, filled only if a trade prints through it within the minute (no
+      queue assumed), else a market order at the far touch a minute later;
   S   book state at the signal: the five-level imbalance, the NQ flow and the ES flow, each signed in the trade's
-      direction, flagged when below the reference sessions' 20th percentile (the round-1 sessions, bought before
-      the forward test); a trade is skip-flagged when both NQ imbalance and NQ flow are flagged.
+      direction, flagged below the reference sessions' 20th percentile (2026-09-17 to 10-02, bought before the
+      forward test); a trade is skip-flagged when both NQ imbalance and NQ flow are flagged.
 
-Raw MBO files are read where they are stored and never copied; everything derived is private.
+E1 and E2 are measured in ticks against the engine's entry and in R, replaying the trade's bracket from each entry
+with the engine's exits; the engine's own entry must replay to its recorded R first. Raw MBO files are read where
+they are stored and never copied; everything derived is private.
 
 usage (on the GB10):
   python research/mbo_sidecar.py day --mbo /path/glbx-mdp3-20261006.mbo.dbn.zst --bars data/forward/nq_1min_forward.csv \\
-      --out research/private/mbo_sidecar
+      --out research/private/mbo_sidecar          (reference days: --bars data/nq_1min_databento.csv, the sealed file)
   python research/mbo_sidecar.py report --features research/private/mbo_sidecar --state research/private/forward_v1_state.json \\
-      --reference-trades research/private/forward_v1_baseline_trades.csv --out research/private/mbo_sidecar_report.md
+      --reference-trades research/private/forward_v1_baseline_trades.csv --bars data/forward/nq_1min_forward.csv \\
+      --reference-bars data/nq_1min_databento.csv --out research/private/mbo_sidecar_report.md
 """
 from __future__ import annotations
 
@@ -51,7 +54,11 @@ SYMBOLS = ("NQZ6", "ESZ6")
 MBO_DTYPE = np.dtype([("length", "u1"), ("rtype", "u1"), ("publisher_id", "<u2"), ("instrument_id", "<u4"), ("ts_event", "<u8"), ("order_id", "<u8"),
                       ("price", "<i8"), ("size", "<u4"), ("flags", "u1"), ("channel_id", "u1"), ("action", "S1"), ("side", "S1"), ("ts_recv", "<u8"),
                       ("ts_in_delta", "<i4"), ("sequence", "<u4")])
-F_LAST, F_TOB = 0x80, 0x40
+F_LAST, F_TOB, F_SNAPSHOT, F_BAD_TS_RECV, F_MAYBE_BAD_BOOK = 0x80, 0x40, 0x20, 0x08, 0x04
+REFERENCE = (pd.Timestamp("2026-09-17"), pd.Timestamp("2026-10-02"))  # the round-1 sessions, bought before the forward test
+FLAT_MIN = 16 * 60  # the candidates' flat_time, 16:00 ET
+SLIP, POINT_VALUE, COMMISSION_RT = 0.25, 20.0, 5.0  # the engine's per-contract conventions (fpt/strategy.StrategyConfig)
+DIRECTION = {"long": 1.0, "short": -1.0}
 
 
 def sha256(path: str) -> str:
@@ -84,12 +91,14 @@ def read_dbn(path: str) -> tuple[dict, np.ndarray]:
     rec = np.frombuffer(body, dtype=MBO_DTYPE)
     if len(rec) == 0 or (rec["length"] != MBO_DTYPE.itemsize // 4).any() or (rec["rtype"] != 0xA0).any():
         raise SystemExit(f"refusing: {path} holds records other than MBO")
+    if list(meta.partial) or list(meta.not_found):
+        raise SystemExit(f"refusing: {path} has partial {list(meta.partial)} or missing {list(meta.not_found)} symbols")
     ids = {}
     for sym, ivs in meta.mappings.items():
-        found = {int(iv["symbol"]) for iv in ivs}
-        if len(found) != 1:
+        found = {str(iv["symbol"]).strip() for iv in ivs}
+        if len(found) != 1 or not next(iter(found)).isdigit():
             raise SystemExit(f"refusing: {sym} maps to {sorted(found)} within the file")
-        ids[sym] = found.pop()
+        ids[sym] = int(found.pop())
     info = {"start": int(meta.start), "end": int(meta.end), "symbols": list(meta.symbols), "ids": ids}
     return info, rec
 
@@ -107,7 +116,8 @@ class Book:
     def __init__(self) -> None:
         self.orders: dict = {}
         self.levels = {b"B": defaultdict(int), b"A": defaultdict(int)}
-        self.unknown = 0
+        self.unknown_cancels = 0
+        self.unknown_modifies = 0  # treated as adds, as in Databento's book example
 
     def clear(self) -> None:
         self.orders.clear()
@@ -129,7 +139,7 @@ class Book:
         elif action == b"C":
             o = self.orders.get(oid)
             if o is None:
-                self.unknown += 1
+                self.unknown_cancels += 1
                 return
             s, p, q = o
             cut = min(size, q)
@@ -141,7 +151,7 @@ class Book:
         elif action == b"M":
             o = self.orders.pop(oid, None)
             if o is None:
-                self.unknown += 1
+                self.unknown_modifies += 1
             else:
                 self._take(*o)
             if side in self.levels:
@@ -156,19 +166,27 @@ class Book:
                 "bid_depth": float(sum(bid[p] for p in bp)), "ask_depth": float(sum(ask[p] for p in ap))}
 
 
-def day_features(rec: np.ndarray, ids: dict, day: pd.Timestamp) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
-    """Per regular-session boundary T (state after every record received before T): NQ's best bid and offer and
-    five-level depth, and the signed aggressor flow of NQ and ES over [T - 60 s, T); NQ's trade range over
-    [T, T + 60 s). Also NQ's 1-minute bars rebuilt from its trades, by exchange time, and the book's counters."""
+def day_features(rec: np.ndarray, ids: dict, day: pd.Timestamp) -> tuple[pd.DataFrame, dict, dict]:
+    """Per regular-session boundary T (state after every NQ record received before T): NQ's best bid and offer and
+    five-level depth; the signed aggressor flow of NQ and ES over [T - 60 s, T); NQ's aggressor trade range over
+    [T, T + 60 s). Prints without an aggressor side are left out of flow and range. Also NQ's 1-minute bars rebuilt
+    from its trades, by exchange time and by receive time, and the book's integrity counters."""
     nq, es = ids["NQZ6"], ids["ESZ6"]
     bnd = boundaries(day)
     bnd_ns = bnd.as_unit("ns").asi8
-    order = np.argsort(rec["ts_recv"], kind="stable")
-    if not (order == np.arange(len(rec))).all():
-        rec = rec[order]
     q = rec[rec["instrument_id"] == nq]
+    if len(q) == 0:
+        raise SystemExit("refusing: no NQ records")
+    if (np.diff(q["ts_recv"].astype(np.int64)) < 0).any():
+        raise SystemExit("refusing: NQ records are not in receive-time order")
     if (q["flags"] & F_TOB).any():
         raise SystemExit("refusing: top-of-book records in an MBO file")
+    clear = bool(q["action"][0] == b"R")
+    snap = (q["flags"] & F_SNAPSHOT != 0)[1 if clear else 0:]
+    n_snap = int(np.argmin(snap)) if not snap.all() else len(snap)  # the snapshot records leading the day, after the clear
+    counters = {"nq_records": int(len(q)), "starts_with_clear": clear,
+                "snapshot_records": n_snap, "maybe_bad_book_records": int((q["flags"] & F_MAYBE_BAD_BOOK != 0).sum()),
+                "bad_ts_recv_records": int((q["flags"] & F_BAD_TS_RECV != 0).sum())}
     book = Book()
     rows, mid_event = [], 0
     ts, act, side, price, size, oid, flags = (q[k].tolist() for k in ("ts_recv", "action", "side", "price", "size", "order_id", "flags"))
@@ -181,31 +199,34 @@ def day_features(rec: np.ndarray, ids: dict, day: pd.Timestamp) -> tuple[pd.Data
             mid_event += 1
         rows.append(book.top())
     f = pd.DataFrame(rows, index=bnd)
+    edges = np.r_[bnd_ns[0] - 60 * PRICE_SCALE, bnd_ns, bnd_ns[-1] + 60 * PRICE_SCALE]  # [09:29, 09:30, ..., 16:00, 16:01]
     trades = {}
     for name, iid in (("nq", nq), ("es", es)):
         t = rec[(rec["instrument_id"] == iid) & (rec["action"] == b"T")]
         trades[name] = pd.DataFrame({"ts_recv": t["ts_recv"].astype("int64"), "ts_event": t["ts_event"].astype("int64"), "price": t["price"] / PRICE_SCALE,
                                      "size": t["size"].astype(float), "sign": np.where(t["side"] == b"B", 1.0, np.where(t["side"] == b"A", -1.0, 0.0))})
     for name, tr in trades.items():
-        k = np.searchsorted(bnd_ns, tr["ts_recv"].to_numpy(), side="right")  # trade in [bnd[k-1], bnd[k])
-        g = pd.DataFrame({"k": k, "signed": tr["sign"] * tr["size"], "size": tr["size"], "price": tr["price"]})
-        g = g[(g["k"] >= 1) & (g["k"] <= len(bnd))]
+        sided = tr[tr["sign"] != 0]
+        k = np.searchsorted(edges, sided["ts_recv"].to_numpy(), side="right") - 1  # bucket k: [edges[k], edges[k + 1])
+        g = pd.DataFrame({"k": k, "signed": sided["sign"] * sided["size"], "size": sided["size"], "price": sided["price"]})
+        g = g[(g["k"] >= 0) & (g["k"] < len(edges) - 1)]
         agg = g.groupby("k").agg(signed=("signed", "sum"), vol=("size", "sum"), lo=("price", "min"), hi=("price", "max"))
-        # flow over [T - 60 s, T) belongs to boundary T = bnd[k]; the range over [T, T + 60 s) to boundary bnd[k - 1]
-        flow = (agg["signed"] / agg["vol"]).reindex(range(1, len(bnd) + 1))
-        f[f"{name}_flow"] = np.r_[np.nan, flow.to_numpy()[:-1]]
+        flow = (agg["signed"] / agg["vol"]).reindex(range(len(edges) - 1))
+        f[f"{name}_flow"] = flow.to_numpy()[:len(bnd)]  # boundary i: bucket i, [T - 60 s, T)
         if name == "nq":
-            f["next_lo"] = agg["lo"].reindex(range(1, len(bnd) + 1)).to_numpy()
-            f["next_hi"] = agg["hi"].reindex(range(1, len(bnd) + 1)).to_numpy()
+            f["next_lo"] = agg["lo"].reindex(range(len(edges) - 1)).to_numpy()[1:]  # boundary i: bucket i + 1, [T, T + 60 s)
+            f["next_hi"] = agg["hi"].reindex(range(len(edges) - 1)).to_numpy()[1:]
     f["spread_ticks"] = (f["ask"] - f["bid"]) / TICK
     f["imbalance"] = (f["bid_depth"] - f["ask_depth"]) / (f["bid_depth"] + f["ask_depth"])
     tq = trades["nq"]
-    minute = pd.to_datetime(tq["ts_event"], utc=True).dt.floor("1min")
-    bars = tq.assign(minute=minute).groupby("minute").agg(open=("price", "first"), high=("price", "max"), low=("price", "min"),
-                                                          close=("price", "last"), volume=("size", "sum"))
-    counters = {"nq_records": int(len(q)), "unknown_order_events": int(book.unknown), "mid_event_boundaries": int(mid_event),
-                "crossed_or_locked_boundaries": int((f["bid"] >= f["ask"]).sum()), "empty_side_boundaries": int(f[["bid", "ask"]].isna().any(axis=1).sum())}
-    return f, bars, counters
+    rebuilt = {}
+    for clock in ("ts_event", "ts_recv"):
+        minute = pd.to_datetime(tq[clock], utc=True).dt.floor("1min")
+        rebuilt[clock] = tq.assign(minute=minute).groupby("minute").agg(open=("price", "first"), high=("price", "max"), low=("price", "min"),
+                                                                        close=("price", "last"), volume=("size", "sum"))
+    counters.update({"unknown_cancels": int(book.unknown_cancels), "unknown_modifies": int(book.unknown_modifies), "mid_event_boundaries": int(mid_event),
+                     "crossed_or_locked_boundaries": int((f["bid"] >= f["ask"]).sum()), "empty_side_boundaries": int(f[["bid", "ask"]].isna().any(axis=1).sum())})
+    return f, rebuilt, counters
 
 
 def bar_match(rebuilt: pd.DataFrame, bars: pd.DataFrame, day: pd.Timestamp, nq_id: int) -> dict:
@@ -213,12 +234,24 @@ def bar_match(rebuilt: pd.DataFrame, bars: pd.DataFrame, day: pd.Timestamp, nq_i
     b = bars[bars["symbol"].astype(str) == str(nq_id)]
     b = b[(b.index >= boundaries(day)[0]) & (b.index < boundaries(day)[-1])]
     if b.empty:
-        return {"minutes": 0, "matched": 0, "share": 0.0}
+        return {"minutes": 0, "matched": 0, "share": 0.0, "note": f"the bar file holds no bar of instrument {nq_id} in this session"}
     r = rebuilt.reindex(b.index.tz_convert("UTC"))
     same = np.ones(len(b), dtype=bool)
     for c in ("open", "high", "low", "close", "volume"):
         same &= np.isclose(r[c].to_numpy(dtype=float), b[c].to_numpy(dtype=float), atol=1e-9, rtol=0)
     return {"minutes": int(len(b)), "matched": int(same.sum()), "share": float(same.mean())}
+
+
+def admitted(match: dict, c: dict) -> bool:
+    """The admission rule, fixed before any book was read: the rebuilt bars reproduce the bar file's on at least 99%
+    of the regular session's minutes, by exchange time or by receive time (which Databento's bars use is not
+    documented beyond doubt; both are recorded); the book starts from a clear and a snapshot, never meets a
+    cancel of an unknown order or a record flagged as a possibly bad book, and is never crossed, locked or empty
+    on a side at a boundary."""
+    bars_ok = max(m["share"] for m in match.values()) >= BAR_MATCH
+    book_ok = (c["starts_with_clear"] and c["snapshot_records"] > 0 and c["unknown_cancels"] == 0 and c["maybe_bad_book_records"] == 0
+               and c["crossed_or_locked_boundaries"] == 0 and c["empty_side_boundaries"] == 0)
+    return bool(bars_ok and book_ok)
 
 
 def day_mode(a) -> int:
@@ -229,13 +262,12 @@ def day_mode(a) -> int:
     day = pd.Timestamp(start.date())
     f, rebuilt, counters = day_features(rec, info["ids"], day)
     bars = load_minute_bars(a.bars, source_tz="UTC")
-    match = bar_match(rebuilt, bars, day, info["ids"]["NQZ6"])
-    admitted = match["share"] >= BAR_MATCH and counters["crossed_or_locked_boundaries"] == 0 and counters["empty_side_boundaries"] == 0
+    match = {clock: bar_match(rb, bars, day, info["ids"]["NQZ6"]) for clock, rb in rebuilt.items()}
     os.makedirs(a.out, exist_ok=True)
     stem = os.path.join(a.out, day.strftime("%Y-%m-%d"))
     f.to_csv(stem + ".features.csv", index_label="boundary")
     check = {"date": day.strftime("%Y-%m-%d"), "mbo_sha256": sha256(a.mbo), "bars_sha256": sha256(a.bars), "ids": info["ids"], "bar_match": match,
-             **counters, "admitted": bool(admitted)}
+             **counters, "admitted": admitted(match, counters)}
     with open(stem + ".check.json", "w") as fh:
         json.dump(check, fh, indent=1, sort_keys=True)
     print(json.dumps(check, indent=1, sort_keys=True))
@@ -252,32 +284,81 @@ def reference_cuts(feats: dict) -> dict:
     return cuts
 
 
-def annotate(trades: pd.DataFrame, feats: dict, cuts: dict) -> pd.DataFrame:
-    """E1, E2 and the skip flags for each trade whose date has admitted features."""
-    out = []
+def replay(day_bars: pd.DataFrame, i0: int, d: float, entry: float, stop_pts: float, target_pts: float, stop_only_first: bool) -> tuple[float, str]:
+    """The engine's exits from bar i0 of the day's bars before 16:00 (research/engine.py): the stop first (filled a
+    tick through), then the target, else flat at the close of the last bar before 16:00 a tick through. With
+    stop_only_first the target is not checked on the first bar (a fill inside it: what printed before is unknown).
+    R per contract, the engine's commission included."""
+    o, h, l, c = (day_bars[k].to_numpy(float) for k in ("open", "high", "low", "close"))
+    stop, target = entry - d * stop_pts, entry + d * target_pts
+    for t in range(i0, len(c)):
+        ex = None
+        if d > 0:
+            if l[t] <= stop:
+                ex, why = stop - SLIP, "stop"
+            elif not (stop_only_first and t == i0) and h[t] >= target:
+                ex, why = target, "target"
+        else:
+            if h[t] >= stop:
+                ex, why = stop + SLIP, "stop"
+            elif not (stop_only_first and t == i0) and l[t] <= target:
+                ex, why = target, "target"
+        if ex is None and t == len(c) - 1:
+            ex, why = c[t] - d * SLIP, "flat"
+        if ex is not None:
+            return ((ex - entry) * d * POINT_VALUE - COMMISSION_RT) / (stop_pts * POINT_VALUE), why
+    return float("nan"), "no bar"
+
+
+def annotate(trades: pd.DataFrame, feats: dict, cuts: dict, bars: pd.DataFrame) -> tuple[pd.DataFrame, list]:
+    """E1, E2, their R and the skip flags for each trade whose date has admitted features. The engine's own entry is
+    replayed first and must give the recorded R and exit, or the trade is set aside as a replay mismatch. Returns
+    the annotations and the trades set aside, with the reason."""
+    out, aside = [], []
+    ny_day = bars.index.tz_convert(NY).normalize()
     for _, t in trades.iterrows():
-        f = feats.get(t["date"])
-        if f is None:
-            continue
+        key = str(t["direction"]).strip().lower()
+        if key not in DIRECTION:
+            raise SystemExit(f"refusing: unknown trade direction {t['direction']!r}")
+        d = DIRECTION[key]
         T = pd.Timestamp(t["entry_time"]).tz_convert("UTC")
-        if T not in f.index:
+        f = feats.get(t["date"])
+        if f is None or T not in f.index:
+            aside.append((t["candidate"], t["date"], "no admitted book for the day" if f is None else "entry not at a boundary"))
+            continue
+        day = bars[(ny_day == T.tz_convert(NY).normalize())]
+        mod = day.index.tz_convert(NY).hour * 60 + day.index.tz_convert(NY).minute
+        day = day[mod < FLAT_MIN]
+        if T not in day.index:
+            aside.append((t["candidate"], t["date"], "no bar at the entry"))
+            continue
+        i0 = day.index.get_loc(T)
+        engine, sp, tp = float(t["entry"]), abs(float(t["entry"]) - float(t["stop"])), abs(float(t["target"]) - float(t["entry"]))
+        r0, why0 = replay(day, i0, d, engine, sp, tp, False)
+        if not (abs(r0 - float(t["r"])) < 1e-6 and why0 == str(t["exit_reason"])):
+            aside.append((t["candidate"], t["date"], "replay mismatch"))
             continue
         i = f.index.get_loc(T)
         row = f.iloc[i]
-        d = 1.0 if str(t["direction"]).lower() in ("long", "1") else -1.0
-        engine = float(t["entry"])
         far = row["ask"] if d > 0 else row["bid"]
         near = row["bid"] if d > 0 else row["ask"]
-        through = (row["next_lo"] < near) if d > 0 else (row["next_hi"] > near)
-        later = f.iloc[i + 1] if i + 1 < len(f) else row
-        fill = near if through else (later["ask"] if d > 0 else later["bid"])
+        r1, _ = replay(day, i0, d, far, sp, tp, False)
+        through = bool((row["next_lo"] < near) if d > 0 else (row["next_hi"] > near))
+        if through:
+            fill = near
+            r2, _ = replay(day, i0, d, near, sp, tp, True)
+        elif i + 1 < len(f) and i0 + 1 < len(day) and day.index[i0 + 1] == f.index[i + 1]:
+            fill = f.iloc[i + 1]["ask"] if d > 0 else f.iloc[i + 1]["bid"]
+            r2, _ = replay(day, i0 + 1, d, fill, sp, tp, False)
+        else:
+            fill, r2 = float("nan"), 0.0  # no later bar before 16:00: the passive order never trades
         sig = {k: d * row[k] for k in ("imbalance", "nq_flow", "es_flow")}
         flags = {f"flag_{k}": bool(v < cuts[k]) for k, v in sig.items()}
-        out.append({"candidate": t["candidate"], "date": t["date"], "entry_time": str(T), "direction": "long" if d > 0 else "short", "r": float(t["r"]),
-                    "exit_reason": t["exit_reason"], "stop_points": abs(engine - float(t["stop"])), "e1_ticks": d * (engine - far) / TICK,
-                    "e2_filled": bool(through), "e2_ticks": d * (engine - fill) / TICK, "spread_ticks": row["spread_ticks"],
+        out.append({"candidate": t["candidate"], "date": t["date"], "entry_time": str(T), "direction": key, "r": float(t["r"]), "exit_reason": t["exit_reason"],
+                    "e1_ticks": d * (engine - far) / TICK, "e2_filled": through, "e2_ticks": d * (engine - fill) / TICK if np.isfinite(fill) else np.nan,
+                    "r_e1": r1, "r_e2": r2, "dr_e1": r1 - r0, "dr_e2": r2 - r0, "spread_ticks": row["spread_ticks"],
                     **{f"signed_{k}": v for k, v in sig.items()}, **flags, "skip_flag": flags["flag_imbalance"] and flags["flag_nq_flow"]})
-    return pd.DataFrame(out)
+    return pd.DataFrame(out), aside
 
 
 def load_features(folder: str) -> tuple[dict, list]:
@@ -291,10 +372,16 @@ def load_features(folder: str) -> tuple[dict, list]:
     return feats, checks
 
 
+def in_reference(d: str) -> bool:
+    return REFERENCE[0] <= pd.Timestamp(d) <= REFERENCE[1]
+
+
 def report_mode(a) -> int:
     feats, checks = load_features(a.features)
-    ref = {d: f for d, f in feats.items() if pd.Timestamp(d) < FIRST_UNSEEN}
+    ref = {d: f for d, f in feats.items() if in_reference(d)}
     fwd = {d: f for d, f in feats.items() if pd.Timestamp(d) >= FIRST_UNSEEN}
+    if not ref:
+        raise SystemExit(f"refusing: no admitted reference session ({REFERENCE[0].date()} to {REFERENCE[1].date()}); check those days against the sealed bar file")
     cuts = reference_cuts(ref)
     with open(a.state) as fh:
         state = json.load(fh)
@@ -302,27 +389,41 @@ def report_mode(a) -> int:
     if a.reference_trades:
         old = pd.read_csv(a.reference_trades)
         old["date"] = pd.to_datetime(old["date"]).dt.strftime("%Y-%m-%d")
-        trades = pd.concat([old[old["date"].isin(ref)], trades], ignore_index=True)
-    ann = annotate(trades, feats, cuts)
+        trades = pd.concat([old[old["date"].map(in_reference)], trades], ignore_index=True)
+    sealed = load_minute_bars(a.reference_bars, source_tz="UTC")
+    forward_bars = load_minute_bars(a.bars, source_tz="UTC")
+    cut = FIRST_UNSEEN.tz_localize(NY)
+    bars = pd.concat([sealed[sealed.index < cut], forward_bars[forward_bars.index >= cut]])
+    ann, aside = annotate(trades, {**ref, **fwd}, cuts, bars)
     s = ["# MBO sidecar pilot: annotations (private)\n",
-         f"Reference sessions (before the forward test): {len(ref)} admitted; forward: {len(fwd)} admitted. Flags at the reference "
-         f"{FLAG_PCT}th percentile of each signed feature: " + ", ".join(f"{k} {v:+.3f}" for k, v in cuts.items()) + ".\n",
-         "| date | admitted | bars matched | crossed or locked | unknown order events |", "|---|---|---|---|---|"]
+         f"Reference sessions ({REFERENCE[0].date()} to {REFERENCE[1].date()}, bought before the forward test): {len(ref)} admitted; forward: {len(fwd)} admitted. "
+         f"Flags at the reference {FLAG_PCT}th percentile of each signed feature: " + ", ".join(f"{k} {v:+.3f}" for k, v in cuts.items()) + ".\n",
+         "| date | admitted | bars matched (exchange time / receive time) | clear + snapshot | unknown cancels / modifies | possibly bad book | crossed or locked |",
+         "|---|---|---|---|---|---|---|"]
     for c in checks:
-        s.append(f"| {c['date']} | {c['admitted']} | {c['bar_match']['matched']}/{c['bar_match']['minutes']} | {c['crossed_or_locked_boundaries']} | "
-                 f"{c['unknown_order_events']} |")
-    s += ["", "| set | candidate | trades | E1 ticks | E2 ticks | E2 filled | skip-flagged | R flagged | R not flagged |", "|---|---|---|---|---|---|---|---|---|"]
-    for label, part in (("reference", ann[ann["date"].map(lambda d: pd.Timestamp(d) < FIRST_UNSEEN)] if len(ann) else ann),
-                        ("forward", ann[ann["date"].map(lambda d: pd.Timestamp(d) >= FIRST_UNSEEN)] if len(ann) else ann)):
+        m = c["bar_match"]
+        s.append(f"| {c['date']} | {c['admitted']} | {m['ts_event']['matched']}/{m['ts_event']['minutes']} / {m['ts_recv']['matched']}/{m['ts_recv']['minutes']} | "
+                 f"{c['starts_with_clear']} + {c['snapshot_records']} | {c['unknown_cancels']} / {c['unknown_modifies']} | {c['maybe_bad_book_records']} | "
+                 f"{c['crossed_or_locked_boundaries']} |")
+    s += ["", "Trades set aside: " + (", ".join(f"{k}: {v}" for k, v in pd.Series([x[2] for x in aside]).value_counts().items()) if aside else "none") + ".\n",
+          "| set | candidate | trades | E1 ticks | E2 ticks | E2 filled | R change, market fill | R change, passive | passive better in R | "
+          "filled: passive - market, R | unfilled: passive - market, R | skip-flagged | R flagged | R not flagged |",
+          "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    for label, keep in (("reference", in_reference), ("forward", lambda d: pd.Timestamp(d) >= FIRST_UNSEEN)):
+        part = ann[ann["date"].map(keep)] if len(ann) else ann
         for name in ("S3", "S4"):
             p = part[part["candidate"] == name] if len(part) else part
             if not len(p):
-                s.append(f"| {label} | {name} | 0 | | | | | | |")
+                s.append(f"| {label} | {name} | 0 |" + " |" * 11)
                 continue
-            fl = p[p["skip_flag"]]
-            s.append(f"| {label} | {name} | {len(p)} | {p['e1_ticks'].mean():+.2f} | {p['e2_ticks'].mean():+.2f} | {p['e2_filled'].mean():.0%} | {len(fl)} | "
+            gain = p["dr_e2"] - p["dr_e1"]
+            fl, filled = p[p["skip_flag"]], p["e2_filled"]
+            s.append(f"| {label} | {name} | {len(p)} | {p['e1_ticks'].mean():+.2f} | {p['e2_ticks'].mean():+.2f} | {filled.mean():.0%} | {p['dr_e1'].mean():+.3f} | "
+                     f"{p['dr_e2'].mean():+.3f} | {(gain > 0).sum()} of {len(p)} | {gain[filled].mean() if filled.any() else float('nan'):+.3f} ({int(filled.sum())}) | "
+                     f"{gain[~filled].mean() if (~filled).any() else float('nan'):+.3f} ({int((~filled).sum())}) | {len(fl)} | "
                      f"{fl['r'].mean() if len(fl) else float('nan'):+.2f} | {p[~p['skip_flag']]['r'].mean():+.2f} |")
-    s += ["", "Ticks are against the engine's assumed entry (positive: better). Each trade is listed in the CSV beside this report."]
+    s += ["", "Ticks are against the engine's assumed entry (positive: better). R changes replay each trade's bracket from that entry against the engine's own "
+          "R. 'Obvious' (fixed before day 10): the passive entry beats the market fill in R on average and on a majority of trades, in both sets."]
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
     with open(a.out, "w") as fh:
         fh.write("\n".join(s) + "\n")
@@ -341,7 +442,9 @@ def main() -> int:
     r = sub.add_parser("report")
     r.add_argument("--features", required=True)
     r.add_argument("--state", required=True)
-    r.add_argument("--reference-trades")
+    r.add_argument("--reference-trades", help="the baseline's private trade list (research/private/forward_v1_baseline_trades.csv)")
+    r.add_argument("--bars", required=True, help="the forward bar file")
+    r.add_argument("--reference-bars", required=True, help="the sealed bar file, for the reference sessions")
     r.add_argument("--out", required=True)
     a = ap.parse_args()
     return day_mode(a) if a.mode == "day" else report_mode(a)
