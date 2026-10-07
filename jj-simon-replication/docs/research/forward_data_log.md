@@ -30,3 +30,12 @@ Dated data-quality decisions for the forward paper test. Each is written before 
 - **If it is still degraded at the morning check on 2026-10-09:** the test cannot start without a change to the runner. Chris then decides between two things, before any session is scored:
   - wait longer; or
   - a version-1 amendment: a list of excluded dates, 2026-10-06's bars used as unscored history only, and the baseline rerun and re-pinned, because the runner's hash is frozen in it.
+
+## 2026-10-07, later: Chris overrides
+
+Chris: Oct 6 doesn't matter; look forward.
+- 2026-10-06's bars are fetched as Databento has them, degraded, without waiting for a revision.
+- The stored copy is kept, even if Databento later revises the date.
+- The frozen runner scores 2026-10-06 as an ordinary session.
+- Every other date keeps the full condition gate.
+- The 2026-10-09 escalation is cancelled.
