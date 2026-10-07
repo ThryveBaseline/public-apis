@@ -30,6 +30,24 @@ This is for the forward paper test (`docs/research/forward_protocol_v1.md`). It 
    - The prepared file and the increments stay under `data/forward/`, which git ignores.
 4. **The daily bar** (`NQ.n.0`, `ohlcv-1d`) is fetched the same way, for the roll cross-check only. Its absence does not hold up the daily run: it is published on another path and may lag a day.
 
+## Data condition, before any date is fetched
+
+Added 2026-10-07, before any forward bar was bought. That afternoon the MBO file for 2026-10-06 carried Databento's possibly-bad-book flag on every non-snapshot record, ES and NQ alike. Databento's condition report gave the reason: from 2026-09-15 on, 2026-10-06 was the only GLBX.MDP3 date reported "degraded". Its last-modified date was the day itself. Every other date had been revised the day after its session. The condition is per dataset and date, so it covers the bars as well as MBO.
+
+1. **Check first, for free.** Before fetching a date, bars or MBO, query `metadata.get_dataset_condition` for `GLBX.MDP3`.
+2. **What counts as ready.** Fetch a date only if both hold:
+   - its condition is "available";
+   - its last-modified date is later than the date itself, meaning it was published after its session. The current day can read "available" while still incomplete.
+3. **Record it.** Store each fetched date's condition and last-modified date with the increment's sha256.
+4. **Otherwise wait.** A date that is degraded, pending or missing is not fetched. The runner needs bars that continue from 2026-10-06 00:00 UTC, so the daily run waits and the wait is reported. The test's first scored day, 2026-10-06, waits for its revision.
+5. **Recheck stored dates.** At every daily run and at the monthly audit, recheck the condition and last-modified date of every stored date.
+   - If a stored date's last-modified date has advanced, refetch it and compare it bar for bar before the next daily run.
+   - Any difference is reported.
+   - If the difference touches a scored date, the runner's history check stops the test. That is what the check is for.
+6. **If a date stays degraded,** Chris decides what to do then. It is never handled by relaxing a check.
+
+For the MBO pilot, each day is bought only when it meets point 2. The degraded 2026-10-06 file is kept, and the sidecar's admission rule rejects it. Re-buying it after its revision, about $2.30, is Chris's call.
+
 ## Monthly audit
 
 Once a month, refetch the whole forward range for both schemas. Transcode it and set `symbol := instrument_id` exactly as for the prepared file, then compare it bar for bar with the prepared file. Comparing a raw transcode would differ on every row's symbol. Any difference is reported before the next daily run.
