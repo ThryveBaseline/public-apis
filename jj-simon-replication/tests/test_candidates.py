@@ -204,7 +204,8 @@ def test_cli_gate_reproduces_the_sealed_rows_and_refuses_a_changed_one(tmp_path,
     text = (tmp_path / "b3.md").read_text()
     assert f"reproduces all 8 firm rows of {tmp_path / 'report.md'} character for character" in text
     assert "## Continuation by direction" in text and "| benchmark |" in text and "## Whole contracts" in text
-    assert "## Position size at Topstep's loss limits" in text and "| topstep_50k_x | S1 continuation only" in text
+    assert "## Position size at Topstep's drawdown, topstep_50k_x" in text and "| topstep_50k_x | S1 continuation only" in text
+    assert "| topstep_50k | S0 sealed ledger |" not in text  # the frozen daily-limit preset never appears below the sealed sizing
     row = next(x for x in rep.text.splitlines() if x.startswith("| topstep_50k |"))
     cells = row.split(" | ")
     cells[4] = str(int(cells[4]) + 1)  # days to pass, in sample: one character's worth of difference
@@ -266,6 +267,10 @@ def test_whole_contracts_size_on_the_full_stop_out(engine):
     ev, fu = whole_contracts(t, 1000.0, 50), whole_contracts(t, 500.0, 50)
     assert list(ev["size"].round(4)) == [0.95, 0.828, 0.6, 0.4] and list(ev["r"].round(4)) == [0.95, 0.828, 0.6, 0.4]
     assert list(fu["size"].round(4)) == [0.9, 0.828, 0.8]  # 300 points: zero micros at $500, not taken
+    # strictly within the budget: 24.5 points is $50 a micro, so 19 micros ($950), not 20 landing exactly on $1,000
+    t2 = t.copy()
+    t2["stop_pts"] = 24.5
+    assert list(whole_contracts(t2, 1000.0, 50)["size"].round(4)) == [round(19 * 24.5 * 2 / 1000, 4)] * 4
     t.loc[t.index[0], "stop_pts"] = np.nan
     with pytest.raises(ValueError, match="no positive stop"):
         whole_contracts(t, 500.0, 50)
@@ -320,7 +325,8 @@ def test_fees_and_net_ev(engine):
     r2 = {**r, "firm": "fundednext_50k_flex"}
     assert fees_per_eval(r2) == pytest.approx(70.0) and ev_net(r2) == pytest.approx(120.0 - 70.0)
     assert ev_net({**r, "payout_median_amount": float("nan"), "payout_rate": 0.0}) == pytest.approx(-(49 * 1.3 + 0.2 * 149))
-    # the billing months come from the frozen pass table: resolved starts at their day count, open ones at the horizon
+    # billing months: one on the start date and one more every 30 calendar days until the evaluation resolves (open
+    # starts run the full 30-day horizon), counted on the frozen walk-forward's own day index
     from fpt.evaluate import walk_forward_pass_probability
     from fpt.propfirm import FIRM_PRESETS
     bars, trades = engine
@@ -328,9 +334,15 @@ def test_fees_and_net_ev(engine):
     st = sequential_pass(trades)
     row = firm_rows(st, cal, firms=("topstep_50k",)).iloc[0]
     pp = walk_forward_pass_probability(st, FIRM_PRESETS["topstep_50k"], 1000.0, 30, trading_days=cal)
-    run = pp[pp["outcome"] != "censored"]
-    used = [30 if o == "open" else d for o, d in zip(run["outcome"], run["days"])]
-    assert row["eval_months_mean"] == pytest.approx(np.mean([np.ceil(u / 22) for u in used]))
+    dates = list(pp["start"])
+    want = []
+    for start, outcome, days in zip(pp["start"], pp["outcome"], pp["days"]):
+        if outcome == "censored":
+            continue
+        used = 30 if outcome == "open" else int(days)
+        end = dates[min(dates.index(start) + used - 1, len(dates) - 1)]
+        want.append(1 + (end - start).days // 30)
+    assert row["eval_months_mean"] == pytest.approx(np.mean(want)) and max(want) >= 2
 
 
 def test_topstep_loss_limit_edge_on_both_presets():
@@ -350,3 +362,9 @@ def test_topstep_loss_limit_edge_on_both_presets():
         for size, want in ((1.00, "fail"), (0.98, "pass")):
             pp = walk_forward_pass_probability(t.assign(r=t["r"] * size), PRESETS[firm], 1000.0, 30, trading_days=days)
             assert pp.iloc[0]["outcome"] == want, (firm, size, pp.iloc[0].to_dict())
+    # a loss then a win on the first day: the frozen preset's daily limit stops the day before the win, and the second
+    # day's loss lands on the threshold; without a daily limit the win is taken and the account goes on to pass
+    entries = [days[0] + pd.Timedelta(hours=9, minutes=35), days[0] + pd.Timedelta(hours=10)] + [d + pd.Timedelta(hours=9, minutes=35) for d in days[1:]]
+    t2 = pd.DataFrame({"entry_time": [pd.Timestamp(e).tz_localize(NY) for e in entries], "r": [-1.02, 1.51, -1.02, 1.51, 1.51, 1.51, 1.51, 1.51, 1.51]})
+    got = {firm: walk_forward_pass_probability(t2, PRESETS[firm], 1000.0, 30, trading_days=days).iloc[0]["outcome"] for firm in ("topstep_50k", "topstep_50k_x")}
+    assert got == {"topstep_50k": "fail", "topstep_50k_x": "pass"}

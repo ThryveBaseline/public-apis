@@ -31,13 +31,16 @@ position suppressed, nor a continuation re-entry an earlier ATR exit would have 
 whatever survives.
 
 Sizing. The frozen account books every trade at R x its risk budget whatever the stop (fractional contracts). At
-that sizing a stop-out costs 1.02 R with slippage and commission, which on Topstep 50K is $1,020 against a $1,000
-soft daily loss limit: the firm caps the day at exactly $1,000, and two such days use exactly the $2,000 drawdown,
-so the account fails; a stream sized 2% smaller survives a third loss. Every Topstep number at the sealed sizing,
-the sealed report's included, sits on this edge, so B3 shows it: a sensitivity table at 1.00, 0.98 and 0.95 of
-the budget, and a whole-contract table sizing each entry in micro NQ to the largest count whose full stop-out
-(slippage and commission included) stays within the budget, capped at the preset's contract limit, skipping
-entries that round to zero and scaling R by the risk carried.
+that sizing a sealed stop-out costs 1.02 R with slippage and commission, so two of them cost $2,040 against Topstep
+50K's $2,000 drawdown and end the evaluation (on the frozen preset its $1,000 soft daily limit caps each at exactly
+$1,000 and the balance lands on the threshold, which also fails). Sized 2% smaller the account fails on the third
+stop-out instead, and two wins (2.96 R) no longer reach the target. Every Topstep number at the sealed sizing, the
+sealed report's included, sits on this edge, so B3 shows each stream at 1.00, 0.98 and 0.95 of the budget and in
+whole micro NQ contracts (the largest count whose full stop-out, slippage and commission included, stays strictly
+within the budget; entries that round to zero skipped; R scaled by the risk carried). Both tables use the TopstepX
+preset, which has no daily limit: below the sealed sizing the frozen account's soft daily limit would credit a
+later trade on a day that has nearly reached the limit with a full win but a loss cut to the room left, which no
+real account allows.
 
 Plus a direction split (long / short) of continuation under the sealed bracket, S3's brackets and the hold-to-16:00
 control, and a drift control for the hold: each trade held to 16:00 against the same-direction trade from the same
@@ -65,7 +68,7 @@ import pandas as pd
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from fpt.bootstrap import HisStatsConfig, his_calculator, simulate_his_stats  # noqa: E402
 from fpt.data import NY, load_minute_bars, roll_days  # noqa: E402
-from fpt.evaluate import _rate, trading_days_of, walk_forward_pass_probability, walk_forward_payout_probability  # noqa: E402
+from fpt.evaluate import _daily_r, _rate, trading_days_of, walk_forward_pass_probability, walk_forward_payout_probability  # noqa: E402
 from fpt.propfirm import FIRM_PRESETS  # noqa: E402
 from research.anatomy import daily_context, exclude_roll_trades, load_trades  # noqa: E402
 from research.bracket_replay import COMMISSION_RT, FIXED_STOP, POINT_VALUE, SLIPPAGE, grid  # noqa: E402
@@ -78,7 +81,10 @@ FIRMS = ("topstep_50k", "fundednext_50k_flex", "topstep_100k", "tradeify_100k_gr
 PRESETS = {**FIRM_PRESETS, "topstep_50k_x": FIRM_PRESETS["topstep_50k"].with_(
     plan="50K Trading Combine -> Express Funded, TopstepX (no daily loss limit)", daily_loss_limit=None, verified=False,
     notes="research variant of topstep_50k without the daily loss limit, as TopstepX accounts since 2024-08-25; everything else as topstep_50k")}
-SIZING_FIRMS = ("topstep_50k", "topstep_50k_x")
+# below the sealed sizing the frozen account's soft daily limit credits a later trade on a day that has nearly reached
+# the limit with a full win but a loss cut to the room left, which no real account allows; the sizing tables therefore
+# use only the preset without a daily limit (the frozen topstep_50k appears at the sealed sizing only)
+SIZING_FIRMS = ("topstep_50k_x",)
 MAX_EVAL_DAYS, MAX_FUNDED_DAYS, FUNDED_RISK = 30, 60, 500.0
 START_CASH = (500.0, 1000.0, 2000.0, 5000.0)  # the frozen report's bootstrap rows
 ATR_NAMES = [v["name"] for v in grid() if v["family"] == "atr"]
@@ -86,7 +92,7 @@ NEEDED_VARIANTS = ["ledger_bracket", "hold_to_1600", *ATR_NAMES]
 CHAIN_START = 3  # as research/bracket_replay.walk_forward: the chain starts at the fourth development year
 MNQ_POINT_VALUE = 2.0  # micro E-mini Nasdaq-100, first traded 2019-05-06
 MICROS_PER_MINI = 10  # the firms count ten micros as one mini against the contract limit
-DAYS_PER_MONTH = 22  # trading days in a billing month, as fpt.bootstrap.HisStatsConfig
+BILLING_DAYS = 30  # calendar days in a billing month
 MICRO_COMMISSION_RT = COMMISSION_RT / MICROS_PER_MINI  # the replay's $5 per NQ round trip, per micro: $0.50 (real micro fees run higher)
 SIZES = (1.00, 0.98, 0.95)  # fractional sizes around Topstep's daily-loss-limit edge
 
@@ -104,9 +110,13 @@ def firm_rows(part: pd.DataFrame, cal_part: pd.DatetimeIndex, firms=FIRMS, eval_
         pr = walk_forward_payout_probability(funded_part, rules, FUNDED_RISK, MAX_FUNDED_DAYS, trading_days=cal_part)
         a, b = _rate(pp, "pass", "fail", horizon=MAX_EVAL_DAYS), _rate(pr, "payout", "bust", horizon=MAX_FUNDED_DAYS)
         run = pp[pp["outcome"] != "censored"]
-        used = np.where(run["outcome"] == "open", MAX_EVAL_DAYS, run["days"].to_numpy(float))  # an open evaluation ran the full horizon
+        dates = pd.DatetimeIndex(_daily_r(part, cal_part)[0])  # the frozen walk-forward's own day index
+        pos = dates.get_indexer(pd.DatetimeIndex(run["start"]))
+        used = np.where(run["outcome"] == "open", MAX_EVAL_DAYS, run["days"].to_numpy(float)).astype(int)  # an open evaluation ran the full horizon
+        last = np.minimum(pos + used - 1, len(dates) - 1)
+        months = 1 + ((dates[last] - dates[pos]).days.to_numpy() // BILLING_DAYS)  # billed on the start date and every 30 calendar days after
         rows.append({"firm": key, "eval_risk": er, "pass_rate": a["rate"], "pass_stderr": a["stderr"], "eval_days_median": a["days_median"],
-                     "eval_months_mean": float(np.ceil(used / DAYS_PER_MONTH).mean()) if len(run) else float("nan"),
+                     "eval_months_mean": float(months.mean()) if len(run) else float("nan"),
                      "n_eval_starts": a["n_seen"], "n_eval_open": a["n_open"], "payout_rate": b["rate"], "payout_stderr": b["stderr"],
                      "payout_days_median": b["days_median"], "n_funded_starts": b["n_seen"], "n_funded_open": b["n_open"],
                      "payout_median_amount": float(pr.loc[pr["outcome"] == "payout", "amount"].median()) if (pr["outcome"] == "payout").any() else float("nan")})
@@ -186,7 +196,8 @@ def whole_contracts(pre: pd.DataFrame, budget: float, cap: int) -> pd.DataFrame:
     if not np.isfinite(stop).all() or (stop <= 0).any():
         raise ValueError("a candidate trade has no positive stop to size from")
     per_micro = (stop + SLIPPAGE) * MNQ_POINT_VALUE + MICRO_COMMISSION_RT
-    n = np.minimum(np.floor(budget / per_micro), cap)
+    n = np.floor(budget / per_micro)
+    n = np.minimum(np.where(n * per_micro >= budget, n - 1, n), cap)  # strictly within: two stop-outs never land exactly on a drawdown of twice the budget
     keep = n > 0
     t = pre[keep].copy()
     t["size"] = n[keep] * stop[keep] * MNQ_POINT_VALUE / budget
@@ -455,11 +466,10 @@ def report(streams: dict, pre: dict, chain: dict, cal: pd.DatetimeIndex, cut: pd
             r["firm"] = "topstep_50k"
             s.append(f"| {name} | {per} | {p['trades']} | {p['expectancy_r']:+.3f} | {p['total_r']:+.1f} | {r['pass_rate']:.1%} | {r['pass_stderr']:.1%} | {r['payout_rate']:.1%} | {r['payout_stderr']:.1%} | {r['payout_median_amount']:,.0f} | {ev_per_eval(r):+,.0f} | {ev_net(r):+,.0f} |")
     s.append("")
-    s.append("## Position size at Topstep's loss limits\n")
-    s.append("At the sealed sizing a stop-out costs 1.02 R with slippage and commission: $1,020 in a Topstep 50K evaluation. On topstep_50k (the frozen preset: the legacy platforms, with a $1,000 soft daily loss limit) the firm caps that day at exactly $1,000 and stops it, so two losing days use exactly the $2,000 drawdown and the account fails at the threshold (the help centre says an account fails when its balance hits the limit). "
-             "On topstep_50k_x (TopstepX, where new and reset accounts have had no daily loss limit since 2024-08-25; everything else as topstep_50k) two stop-outs cost $2,040 and breach the drawdown outright. "
-             "Sized 2% smaller (0.98) two stop-outs cost $1,999 on either preset and the account survives a third, though two wins (2.98 R) no longer reach the $3,000 target; the funded phase has the same kind of edge at four stop-outs. "
-             "Every Topstep row at exactly the sealed sizing, the sealed report's included, sits on this edge (topstep_100k too: $2,000 of risk against a $3,000 drawdown). Fractional sizes, both phases scaled alike.\n")
+    s.append("## Position size at Topstep's drawdown, topstep_50k_x\n")
+    s.append("At the sealed sizing a stop-out costs 1.02 R with slippage and commission ($1,020 in a Topstep 50K evaluation), so two stop-outs cost $2,040 and breach the $2,000 drawdown; on the frozen topstep_50k preset its $1,000 soft daily limit caps each at exactly $1,000 and the balance lands on the threshold, which fails too (the help centre: an account fails when its balance hits the limit). "
+             "Sized 0.98 the account fails on the third stop-out instead of the second, and two wins (2 x 1.51 R x 0.98 = 2.96 R) no longer reach the $3,000 target; the funded phase has the same kind of edge at four stop-outs. 0.98 clears the edge only for stops of about 25 points or more (the edge is 1 / (1 + 0.5 / stop): 0.965 at 14 points). "
+             "This table and the next use topstep_50k_x (TopstepX: no daily loss limit for accounts created or reset since 2024-08-25; everything else as topstep_50k), because below the sealed sizing the frozen account's soft daily limit credits a later trade on a day that has nearly reached the limit with a full win but a loss cut to the room left, which no real account allows; the frozen topstep_50k preset is shown at the sealed sizing only. Fractional sizes, both phases scaled alike.\n")
     s.append("| preset | stream | period | P(pass) at " + " / ".join(f"{z:.2f}" for z in SIZES) + " | P(payout) at " + " / ".join(f"{z:.2f}" for z in SIZES) + " | EV net of all fees at " + " / ".join(f"{z:.2f}" for z in SIZES) + " |")
     s.append("|---|---|---|---|---|---|")
     for firm in SIZING_FIRMS:
@@ -477,7 +487,7 @@ def report(streams: dict, pre: dict, chain: dict, cal: pd.DatetimeIndex, cut: pd
     s.append("## Whole contracts\n")
     s.append(f"Each candidate's entries sized in whole micro NQ contracts ($2 a point): the largest count whose full stop-out (the stop plus {SLIPPAGE} point of exit slippage, plus ${MICRO_COMMISSION_RT:.2f} round-trip commission per micro, the replay's $5 per NQ scaled; real micro fees run higher, about 0.01 to 0.02 R per trade on a 25-point stop) stays within the budget (${rules.profit_target / 3:,.0f} in the evaluation, ${FUNDED_RISK:,.0f} funded), at most {cap} (the preset's {rules.max_contracts} NQ). "
              "An entry that rounds to zero contracts is not taken, the sequential pass runs on what is taken, and each R is scaled by the contracts' stop risk as a share of the budget (size). "
-             "No stream sits on the loss-limit edge here: the sealed 25-point stop takes 19 micros in the evaluation (size 0.95) and 9 funded (0.90), the 50-point stop 9 and 4 (0.90 and 0.80), so the sealed rows differ from the summary for that reason. "
+             "No stream sits on the drawdown edge here: the sealed 25-point stop takes 19 micros in the evaluation (size 0.95) and 9 funded (0.90), the 50-point stop 9 and 4 (0.90 and 0.80), so the sealed rows differ from the summary for that reason; the preset is topstep_50k_x, for the reason given above. "
              "Micro NQ began trading on 2019-05-06; this applies today's contract menu to every year, which is the question for an account opened now (before May 2019 only NQ existed, and a stop wider than 50 points could not be taken at $1,000 of risk, nor one wider than 25 at $500). The frozen bootstrap is run on these inputs.\n")
     s.append("| preset | stream | period | evaluation: trades, mean size | P(pass) | +/- | funded: trades, mean size | P(payout) | +/- | median payout | EV per evaluation | EV net of all fees | P(bust) from $2,000 |")
     s.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|")
