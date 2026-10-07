@@ -1,5 +1,7 @@
 # Research plan after Baseline 0 (set by Chris, 2026-10-06)
 
+> **Superseded on 2026-10-07 by `docs/research/FORWARD_POLICY.md`: forward only.** S3 runs forward unchanged. No further historical strategy research. Changes come as new versions judged only on later forward data. What follows is the record of the historical programme.
+
 **Framing.** Baseline 0 is slightly negative, not dead: in-sample −0.037 R per trade (profit factor 0.94), untouched year −0.071 R (0.89), both after costs. The reconstructed rules are consistently close to, and slightly on the wrong side of, breakeven. The job is to find the missing +0.05 R to +0.15 R per trade: which piece of his framework carries edge, and which piece taxes it away.
 
 **Data rule, binding from now on.**

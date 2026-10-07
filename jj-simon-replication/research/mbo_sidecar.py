@@ -12,8 +12,8 @@ never crossed, locked or one-sided at a boundary. Each S3 or S4 trade on an admi
   E2  a passive entry: a limit at the near touch, filled only if a trade prints through it within the minute (no
       queue assumed), else a market order at the far touch a minute later;
   S   book state at the signal: the five-level imbalance, the NQ flow and the ES flow, each signed in the trade's
-      direction, flagged below the reference sessions' 20th percentile (2026-09-17 to 10-02, bought before the
-      forward test); a trade is skip-flagged when both NQ imbalance and NQ flow are flagged.
+      direction, flagged below the 20th percentile of the admitted forward sessions' boundaries; a trade is
+      skip-flagged when both NQ imbalance and NQ flow are flagged. Forward sessions and trades only.
 
 E1 and E2 are measured in ticks against the engine's entry and in R, replaying the trade's bracket from each entry
 with the engine's exits; the engine's own entry must replay to its recorded R first. Raw MBO files are read where
@@ -22,10 +22,9 @@ they are stored and never copied; everything derived is private.
 usage (on the GB10):
   python research/mbo_sidecar.py check --mbo /path/glbx-mdp3-20261006.mbo.dbn.zst      (integrity only; no feature is read)
   python research/mbo_sidecar.py day --mbo /path/glbx-mdp3-20261006.mbo.dbn.zst --bars data/forward/nq_1min_forward.csv \\
-      --out research/private/mbo_sidecar          (reference days: --bars data/nq_1min_databento.csv, the sealed file)
+      --out research/private/mbo_sidecar
   python research/mbo_sidecar.py report --features research/private/mbo_sidecar --state research/private/forward_v1_state.json \\
-      --reference-trades research/private/forward_v1_baseline_trades.csv --bars data/forward/nq_1min_forward.csv \\
-      --reference-bars data/nq_1min_databento.csv --out research/private/mbo_sidecar_report.md
+      --bars data/forward/nq_1min_forward.csv --out research/private/mbo_sidecar_report.md
 """
 from __future__ import annotations
 
@@ -56,7 +55,6 @@ MBO_DTYPE = np.dtype([("length", "u1"), ("rtype", "u1"), ("publisher_id", "<u2")
                       ("price", "<i8"), ("size", "<u4"), ("flags", "u1"), ("channel_id", "u1"), ("action", "S1"), ("side", "S1"), ("ts_recv", "<u8"),
                       ("ts_in_delta", "<i4"), ("sequence", "<u4")])
 F_LAST, F_TOB, F_SNAPSHOT, F_BAD_TS_RECV, F_MAYBE_BAD_BOOK = 0x80, 0x40, 0x20, 0x08, 0x04
-REFERENCE = (pd.Timestamp("2026-09-17"), pd.Timestamp("2026-10-02"))  # the round-1 sessions, bought before the forward test
 FLAT_MIN = 16 * 60  # the candidates' flat_time, 16:00 ET
 SLIP, POINT_VALUE, COMMISSION_RT = 0.25, 20.0, 5.0  # the engine's per-contract conventions (fpt/strategy.StrategyConfig)
 DIRECTION = {"long": 1.0, "short": -1.0}
@@ -408,32 +406,23 @@ def load_features(folder: str) -> tuple[dict, list]:
     return feats, checks
 
 
-def in_reference(d: str) -> bool:
-    return REFERENCE[0] <= pd.Timestamp(d) <= REFERENCE[1]
-
-
 def report_mode(a) -> int:
+    """Forward sessions only (the forward-only policy, docs/research/FORWARD_POLICY.md): the flags' reference is the
+    admitted forward sessions' own boundaries, both directions (context, not trades), and only forward trades are
+    annotated."""
     feats, checks = load_features(a.features)
-    ref = {d: f for d, f in feats.items() if in_reference(d)}
     fwd = {d: f for d, f in feats.items() if pd.Timestamp(d) >= FIRST_UNSEEN}
-    if not ref:
-        raise SystemExit(f"refusing: no admitted reference session ({REFERENCE[0].date()} to {REFERENCE[1].date()}); check those days against the sealed bar file")
-    cuts = reference_cuts(ref)
+    if not fwd:
+        raise SystemExit("refusing: no admitted forward session")
+    cuts = reference_cuts(fwd)
     with open(a.state) as fh:
         state = json.load(fh)
     trades = pd.DataFrame(state["trades"])
-    if a.reference_trades:
-        old = pd.read_csv(a.reference_trades)
-        old["date"] = pd.to_datetime(old["date"]).dt.strftime("%Y-%m-%d")
-        trades = pd.concat([old[old["date"].map(in_reference)], trades], ignore_index=True)
-    sealed = load_minute_bars(a.reference_bars, source_tz="UTC")
-    forward_bars = load_minute_bars(a.bars, source_tz="UTC")
-    cut = FIRST_UNSEEN.tz_localize(NY)
-    bars = pd.concat([sealed[sealed.index < cut], forward_bars[forward_bars.index >= cut]])
-    ann, aside = annotate(trades, {**ref, **fwd}, cuts, bars)
+    bars = load_minute_bars(a.bars, source_tz="UTC")
+    ann, aside = annotate(trades, fwd, cuts, bars)
     s = ["# MBO sidecar pilot: annotations (private)\n",
-         f"Reference sessions ({REFERENCE[0].date()} to {REFERENCE[1].date()}, bought before the forward test): {len(ref)} admitted; forward: {len(fwd)} admitted. "
-         f"Flags at the reference {FLAG_PCT}th percentile of each signed feature: " + ", ".join(f"{k} {v:+.3f}" for k, v in cuts.items()) + ".\n",
+         f"Forward sessions admitted: {len(fwd)}. Flags at the {FLAG_PCT}th percentile of each signed feature over the admitted forward sessions' "
+         "boundaries: " + ", ".join(f"{k} {v:+.3f}" for k, v in cuts.items()) + ".\n",
          "| date | admitted | bars matched (exchange time / receive time) | clear + snapshot | unknown cancels / modifies | possibly bad book | crossed or locked |",
          "|---|---|---|---|---|---|---|"]
     for c in checks:
@@ -445,24 +434,23 @@ def report_mode(a) -> int:
                  f"{c['starts_with_clear']} + {c['snapshot_records']} | {c['unknown_cancels']} / {c['unknown_modifies']} | {c['maybe_bad_book_records']} | "
                  f"{c['crossed_or_locked_boundaries']} |")
     s += ["", "Trades set aside: " + (", ".join(f"{k}: {v}" for k, v in pd.Series([x[2] for x in aside]).value_counts().items()) if aside else "none") + ".\n",
-          "| set | candidate | trades | E1 ticks | E2 ticks | E2 filled | R change, market fill | R change, passive | passive better in R | "
+          "| candidate | trades | E1 ticks | E2 ticks | E2 filled | R change, market fill | R change, passive | passive better in R | "
           "filled: passive - market, R | unfilled: passive - market, R | skip-flagged | R flagged | R not flagged |",
-          "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
-    for label, keep in (("reference", in_reference), ("forward", lambda d: pd.Timestamp(d) >= FIRST_UNSEEN)):
-        part = ann[ann["date"].map(keep)] if len(ann) else ann
-        for name in ("S3", "S4"):
-            p = part[part["candidate"] == name] if len(part) else part
-            if not len(p):
-                s.append(f"| {label} | {name} | 0 |" + " |" * 11)
-                continue
-            gain = p["dr_e2"] - p["dr_e1"]
-            fl, filled = p[p["skip_flag"]], p["e2_filled"]
-            s.append(f"| {label} | {name} | {len(p)} | {p['e1_ticks'].mean():+.2f} | {p['e2_ticks'].mean():+.2f} | {filled.mean():.0%} | {p['dr_e1'].mean():+.3f} | "
-                     f"{p['dr_e2'].mean():+.3f} | {(gain > 0).sum()} of {len(p)} | {gain[filled].mean() if filled.any() else float('nan'):+.3f} ({int(filled.sum())}) | "
-                     f"{gain[~filled].mean() if (~filled).any() else float('nan'):+.3f} ({int((~filled).sum())}) | {len(fl)} | "
-                     f"{fl['r'].mean() if len(fl) else float('nan'):+.2f} | {p[~p['skip_flag']]['r'].mean():+.2f} |")
+          "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    for name in ("S3", "S4"):
+        p = ann[ann["candidate"] == name] if len(ann) else ann
+        if not len(p):
+            s.append(f"| {name} | 0 |" + " |" * 11)
+            continue
+        gain = p["dr_e2"] - p["dr_e1"]
+        fl, filled = p[p["skip_flag"]], p["e2_filled"]
+        s.append(f"| {name} | {len(p)} | {p['e1_ticks'].mean():+.2f} | {p['e2_ticks'].mean():+.2f} | {filled.mean():.0%} | {p['dr_e1'].mean():+.3f} | "
+                 f"{p['dr_e2'].mean():+.3f} | {(gain > 0).sum()} of {len(p)} | {gain[filled].mean() if filled.any() else float('nan'):+.3f} ({int(filled.sum())}) | "
+                 f"{gain[~filled].mean() if (~filled).any() else float('nan'):+.3f} ({int((~filled).sum())}) | {len(fl)} | "
+                 f"{fl['r'].mean() if len(fl) else float('nan'):+.2f} | {p[~p['skip_flag']]['r'].mean():+.2f} |")
     s += ["", "Ticks are against the engine's assumed entry (positive: better). R changes replay each trade's bracket from that entry against the engine's own "
-          "R. 'Obvious' (fixed before day 10): the passive entry beats the market fill in R on average and on a majority of trades, in both sets."]
+          "R. 'Obvious' (fixed before day 10): the passive entry beats the market fill in R on average and on a majority of the forward trades. "
+          "Observations only: any change they suggest is a new, frozen version judged on later forward data."]
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
     with open(a.out, "w") as fh:
         fh.write("\n".join(s) + "\n")
@@ -483,9 +471,7 @@ def main() -> int:
     r = sub.add_parser("report")
     r.add_argument("--features", required=True)
     r.add_argument("--state", required=True)
-    r.add_argument("--reference-trades", help="the baseline's private trade list (research/private/forward_v1_baseline_trades.csv)")
     r.add_argument("--bars", required=True, help="the forward bar file")
-    r.add_argument("--reference-bars", required=True, help="the sealed bar file, for the reference sessions")
     r.add_argument("--out", required=True)
     a = ap.parse_args()
     return {"check": check_mode, "day": day_mode, "report": report_mode}[a.mode](a)

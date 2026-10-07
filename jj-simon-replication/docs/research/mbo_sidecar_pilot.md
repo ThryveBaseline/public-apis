@@ -61,3 +61,13 @@ The review found four things, now fixed above:
 - the "obvious" test was nearly true by construction: a filled passive entry beats the market fill by the spread, by definition.
 
 The test is now in R, replayed from each entry.
+
+## Forward only, from 2026-10-07
+
+Under `FORWARD_POLICY.md` the sidecar uses forward data only:
+- **The round-1 reference.** The historical sessions and the baseline's historical trades are dropped.
+- **The flags.** Calibrated at the 20th percentile of the admitted forward sessions' own boundaries, both directions. These are context, not trade outcomes.
+- **What is annotated.** Only forward trades.
+- **"Obvious" at day 10.** The passive entry beats the market fill in R on average, and on a majority of the forward trades.
+
+Any change the sidecar suggests is a new, frozen version, judged on later forward data.

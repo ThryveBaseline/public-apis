@@ -157,18 +157,19 @@ def test_check_mode_reads_no_feature(tmp_path, monkeypatch, capsys):
 
 def test_the_report(tmp_path, monkeypatch):
     write_bars(tmp_path / "bars.csv", ["2026-10-02", "2026-10-06"])
-    _day(tmp_path, monkeypatch, "2026-10-06")
     state = {"trades": [{"candidate": "S3", "date": "2026-10-06", "entry_time": "2026-10-06 09:31:00-04:00", "direction": "long", "entry": 20000.50,
                          "stop": 19990.50, "target": 20020.50, "r": -0.125, "exit_reason": "flat"}]}
     (tmp_path / "state.json").write_text(json.dumps(state))
     args = ["mbo_sidecar.py", "report", "--features", str(tmp_path / "feat"), "--state", str(tmp_path / "state.json"), "--bars", str(tmp_path / "bars.csv"),
-            "--reference-bars", str(tmp_path / "bars.csv"), "--out", str(tmp_path / "rep.md")]
+            "--out", str(tmp_path / "rep.md")]
+    _day(tmp_path, monkeypatch, "2026-10-02")  # a session before the forward test: never used (forward only)
     monkeypatch.setattr("sys.argv", args)
-    with pytest.raises(SystemExit, match="no admitted reference session"):
+    with pytest.raises(SystemExit, match="no admitted forward session"):
         mbo_sidecar.main()
-    _day(tmp_path, monkeypatch, "2026-10-02")
+    _day(tmp_path, monkeypatch, "2026-10-06")
     monkeypatch.setattr("sys.argv", args)
     assert mbo_sidecar.main() == 0
     rep = (tmp_path / "rep.md").read_text()
-    assert "| forward | S3 | 1 | +1.00 | +2.00 | 100% | +0.025 | +0.050 | 1 of 1 | +0.025 (1) |" in rep and "| 2026-10-06 | True | 2/2 / 2/2 | True + 4 | 0 / 0 | 0 | 0 |" in rep
+    assert "| S3 | 1 | +1.00 | +2.00 | 100% | +0.025 | +0.050 | 1 of 1 | +0.025 (1) |" in rep and "| 2026-10-06 | True | 2/2 / 2/2 | True + 4 | 0 / 0 | 0 | 0 |" in rep
+    assert "Forward sessions admitted: 1." in rep
     assert len(pd.read_csv(tmp_path / "rep.csv")) == 1
