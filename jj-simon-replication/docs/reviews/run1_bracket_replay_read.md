@@ -41,7 +41,7 @@ The sequential chain (each year, the variant best on all earlier development yea
 | continuation | +0.043 | +0.014 |
 | reversion | −0.073 | −0.084 |
 
-Continuation under the widest ATR bracket gains about +0.03 R per trade out of year, +0.011 in 2022-2025; the paired difference is roughly one and a half standard errors and was chosen at the edge of a 34-variant grid, so it is weak evidence. Reversion stays negative under every family: the best reversion development row is about −0.06 R, and under the widest bracket reversion is worse than sealed in 2022-2025 (−0.076 against −0.068, inferred from the chains).
+Continuation under the widest ATR bracket gains about +0.03 R per trade out of year, +0.011 in 2022-2025; the paired difference is roughly one and a half standard errors and was chosen at the edge of a 34-variant grid, so it is weak evidence. Reversion stays negative under every family: the best reversion development row is −0.051 R (1.5 × previous opening range) against −0.084 sealed, and under the widest bracket reversion is worse than sealed in 2022-2025 (−0.076 against −0.068, inferred from the chains).
 
 Benchmark, comparison only (Surface session's flag): continuation under the chosen bracket is +0.073 against +0.112 for the sealed bracket, with a median stop of 147.5 points and a mean hold of 186 bars against 7. The development preference does not show up in the inspected year.
 
@@ -54,3 +54,11 @@ Benchmark, comparison only (Surface session's flag): continuation under the chos
 ## Pre-registered next for geometry (B1b, cheap, same tool)
 
 Because the chain chose the edge, the grid is extended once, before looking at any result: stop = 0.4, 0.5 and 0.7 × daily ATR (the 2010-2016 ratio was 0.4-0.7) at RR 1.0, 1.52 and 2.0, plus a direction-to-close control with no stop or target, flat at 16:00, R measured in 25-point units. The control measures how much directional content the entry signal carries over the rest of the day, independent of any bracket. Same reproduction gate, same walk-forward, same rule that the benchmark is never selected on.
+
+## Addendum after reading the full report (same day)
+
+* **The reversion chain is not evidence of anything.** Reversion trades per development year are 1, 11, 2, 3, 23, 50, 51 and 27 for 2010 to 2017, then 146 to 848 from 2018. The chain's selection rule averages the earlier years' expectancies without weighting them by trades, so a single 2010 trade at +1.98 R steers the early choices (the chosen reversion bracket changes three times). Its out-of-year −0.073 against −0.084 should not be read as an improvement. The pooled development table carries the reversion conclusion: all 34 brackets negative, best −0.051.
+* **The same flaw inflates the "mean" column** of the per-year matrices for reversion (for example +0.111 for the widest ATR bracket, from that one 2010 trade). For all setups and for continuation, early years hold 80 to 190 trades each and the chain is not distorted in the same way.
+* **Reversion barely exists in this ledger before 2018.** The room rule needs 30.4 points between the signal close and fair value; at 2010-2016 prices and ranges that was rare. The development-era strength is almost entirely continuation, so the pre-2018 data says little about reversion either way.
+* **Fix, applied to the B2 run, not to this file:** the chain selects on the pooled, trade-weighted expectancy of all earlier development years, and the per-year matrices show a pooled mean beside the yearly values. The B1 output stays exactly as run.
+
