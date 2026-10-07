@@ -458,7 +458,7 @@ def report(streams: dict, pre: dict, chain: dict, cal: pd.DatetimeIndex, cut: pd
         chain_txt = f"none (the chain needs {CHAIN_START} earlier development years), so S3 and S4 keep the sealed bracket"
     s.append(f"Walk-forward bracket for continuation (S3, S4), chosen on earlier development years only: {chain_txt}.\n")
     s.append("## Summary, topstep_50k\n")
-    s.append("EV per evaluation is the frozen calculator's (pass x payout x median payout - one evaluation fee), as in the sealed report. EV net of all fees also charges the evaluation fee for every billing month the evaluation runs (monthly at this firm; 22 trading days a month) and the activation fee on each pass, which the frozen calculator leaves out.\n")
+    s.append("EV per evaluation is the frozen calculator's (pass x payout x median payout - one evaluation fee), as in the sealed report. EV net of all fees also charges the evaluation fee for every billing month the evaluation runs (monthly at this firm: once on the start date and again every 30 calendar days the evaluation runs) and the activation fee on each pass, which the frozen calculator leaves out.\n")
     s.append("| stream | period | trades | R/trade | total R | P(pass) | +/- | P(payout) | +/- | median payout | EV per evaluation | EV net of all fees |\n|---|---|---|---|---|---|---|---|---|---|---|---|")
     scored = {name: score(st, cal, cut) for name, st in streams.items()}
     for name, sc in scored.items():
