@@ -4,3 +4,4 @@ docs/research/EXTRACTED.md
 data/*.csv
 data/*.dbn*
 research/private/
+research/staging/
