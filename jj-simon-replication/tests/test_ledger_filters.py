@@ -2,8 +2,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from research.bracket_replay import COMMISSION_RT, POINT_VALUE, grid, replay
-from research.ledger_filters import apply_filter, build_gates, check_alignment, consecutive_loss_stop, evaluate, move_away_gate
+from research.bracket_replay import COMMISSION_RT, POINT_VALUE, dropped_rows, grid, replay
+from research.ledger_filters import apply_filter, build_gates, check_alignment, composite_frame, consecutive_loss_stop, evaluate, move_away_gate, select, sequential_pass
 from tests.test_anatomy import _bars, _trade
 
 NY = "America/New_York"
@@ -15,7 +15,7 @@ def _ledger(day, specs):
     for spec in specs:
         m, setup, grade, d, r, fv = spec[:6]
         e = day.replace(hour=9, minute=30) + pd.Timedelta(minutes=m)
-        t = _trade(e, e + pd.Timedelta(minutes=5), d, 20000.0, r, setup=setup, reason="target" if r > 0 else "stop")
+        t = _trade(e, e + pd.Timedelta(minutes=3), d, 20000.0, r, setup=setup, reason="target" if r > 0 else "stop")
         t["grade"] = grade; t["fair_value"] = fv; t["signal_time"] = e - pd.Timedelta(minutes=1)
         t["pnl_dollars"] = 500.0 * r
         if len(spec) > 6:
@@ -36,7 +36,7 @@ def test_grade_cadence_and_cutoff_filters():
     assert len(apply_filter(t, "base", gates)) == 6
     a = apply_filter(t, "B2a", gates)
     assert (a["setup"] == "continuation").sum() == 1 and (a["grade"] == "A+").sum() == 2 and len(a) == 3
-    c3 = apply_filter(t, "B2c3", gates)
+    c3 = select(t, "B2c3", gates)
     assert (c3["setup"] == "reversion").sum() == 3 and len(c3) == 4
     assert (apply_filter(t, "cut0945", gates)["setup"] == "reversion").sum() == 2
 
@@ -130,6 +130,7 @@ def _consistent_ledger():
 def test_composites_join_check_and_report():
     t, bars, days = _consistent_ledger()
     rep = replay(t, bars, grid())
+    rep = pd.concat([rep, dropped_rows(rep)], ignore_index=True)
     text, out = evaluate(t, bars, days[30].strftime("%Y-%m-%d"), rep)
     assert "Join check: the replayed sealed bracket equals the ledger R on all 2 stop or target exits before 16:00" in text
     labels = [lab for lab, _ in out["composites"]]
@@ -143,7 +144,51 @@ def test_composites_join_check_and_report():
 def test_composites_refuse_a_misaligned_replay():
     t, bars, days = _consistent_ledger()
     rep = replay(t, bars, grid())
+    rep = pd.concat([rep, dropped_rows(rep)], ignore_index=True)
     perm = {1: 2, 2: 3, 3: 1}
     bad = rep.assign(trade=rep["trade"].map(lambda k: perm.get(k, k)))
     with pytest.raises(ValueError, match="misaligned"):
         check_alignment(t.reset_index(drop=True), bad)
+
+
+def test_composite_coverage_is_required():
+    t, bars, days = _consistent_ledger()
+    rep = replay(t, bars, grid())  # no dropped markers: the no-context entry is neither replayed nor marked
+    with pytest.raises(ValueError, match="does not cover"):
+        check_alignment(t.reset_index(drop=True), rep)
+
+
+def test_sequential_pass_blocks_overlap_and_uses_only_printed_outcomes():
+    """The review's scenario: under a long-hold bracket, an open trade blocks the next entry, and its eventual
+    outcome cannot stop or free a trade that entered before it printed."""
+    bars = _bars(days=2)
+    day = bars.index[0].normalize()
+    t = _ledger(day, [(2, "reversion", "A", -1, -1.0, 20000), (8, "reversion", "A", -1, -1.0, 20000),
+                      (15, "reversion", "A", -1, 1.5, 20000), (30, "reversion", "A", -1, 1.5, 20000), (240, "reversion", "A", -1, 1.5, 20000)])
+    # trade 2 (09:45) now holds until 13:00 and wins; trade 3 (10:00) would enter while it is open
+    t.loc[2, "exit_time"] = day.replace(hour=13, minute=0)
+    kept = sequential_pass(t)
+    assert list(kept.index) == [0, 1, 2, 4]  # 3 is blocked by the open position; 4 (13:30) is taken after it exits
+    # if trade 2 eventually loses, trade 3 is still blocked by the position (not by a streak it could not have seen),
+    # and trade 4 is blocked by the three-loss streak that has now printed
+    t.loc[2, "r"] = -1.0; t.loc[2, "pnl_dollars"] = -500.0
+    assert list(sequential_pass(t).index) == [0, 1, 2]
+
+
+def test_cap_counts_only_reversions_actually_taken():
+    bars = _bars(days=2)
+    day = bars.index[0].normalize()
+    t = _ledger(day, [(2, "reversion", "A", -1, 1.5, 20000), (5, "reversion", "A", -1, 1.5, 20000), (20, "reversion", "A", -1, 1.5, 20000),
+                      (30, "reversion", "A", -1, 1.5, 20000), (40, "reversion", "A", -1, 1.5, 20000)])
+    t.loc[0, "exit_time"] = day.replace(hour=9, minute=40)  # trade 0 is open across trade 1's entry
+    kept = sequential_pass(t, cap=3)
+    assert list(kept.index) == [0, 2, 3]  # trade 1 was never taken, so it does not use a cap slot
+
+
+def test_funded_band_is_the_menu_target():
+    bars, day, fv, seti = _gate_bars()
+    t = _ledger(day, [(20, "reversion", "A+", -1, 1.5, fv, 62.0)])  # menu target for 62 points of room is 75
+    for m in range(46, 50):
+        seti(m, "high", fv + 62); seti(m, "close", fv + 60)  # a 62-point move since the last return to fair
+    gates = build_gates(t, bars)
+    assert gates["b1"].iloc[0] and not gates["b1f"].iloc[0]  # beyond the 38 band, not beyond the 75 target

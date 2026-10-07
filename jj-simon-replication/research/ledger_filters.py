@@ -2,13 +2,17 @@
 
 Two layers.
 1. Filters on the sealed ledger. The sealed entries stay as sealed; a filter decides which reversion entries
-   would not have been taken. Continuation is never filtered. After filtering, the three-consecutive-loss
-   session stop is recomputed on the filtered stream exactly as the frozen engine counts it (every exit, in
-   order, reset at the 09:30 session start). Before anything is reported, recomputing that stop on the
-   unfiltered ledger must remove nothing; otherwise the semantics differ from the engine and the tool refuses.
+   would not have been taken. Continuation is never filtered. The surviving entries then go through one
+   sequential pass per session, in entry order, as the frozen engine takes trades: one position at a time (an
+   entry is taken only if the previously taken trade exited before it), the three-consecutive-loss stop (every
+   taken trade counts; reset at the session start), and, for B2c, the cap on reversion attempts actually taken.
+   Before anything is reported, that pass on the unfiltered ledger must keep every trade; otherwise the
+   semantics differ from the engine and the tool refuses.
 2. Composites: the same filters applied to the trades replayed by research/bracket_replay.py under a bracket
-   variant (flat at 16:00), so a filter set and a bracket rule are scored together. The join is checked: the
-   replayed `ledger_bracket` control must equal the ledger R on every stop or target exit before 16:00.
+   variant (flat at 16:00), using each replayed trade's own exit time in the sequential pass, so a longer hold
+   blocks the entries it would have blocked and no decision uses an outcome that had not printed yet. The join
+   is checked twice: the replay must cover every ledger entry (replayed or marked as dropped), and the replayed
+   `ledger_bracket` control must equal the ledger R on every stop or target exit before 16:00.
 
 Screening on a fixed ledger ignores that a dropped trade would have freed the position for a later signal, and
 that trades the sealed loss stop suppressed would now be taken. It is a first screen; shortlisted rule sets go to
@@ -25,7 +29,8 @@ Filters (provenance: docs/research/synthesis/reversion_rules.md section 7):
   cut0945/cut1000  reversion entries before 09:45 / 10:00 (a ledger hypothesis from the anatomy, not a stated rule)
   eval_as_stated   B2b1 with the band equal to the active target (76 on wide-open days, else 38) and, on
                    wide-open days, room >= 0.8 x 76; its bracket part (B2d, 50/76) is in the composites
-  funded_as_stated B2a + B2b1 + B2c4; its bracket part (B2f1, target from the room) is in the composites
+  funded_as_stated B2a + B2b1 with the band equal to the funded target (the B2f1 menu target from the room) + B2c4;
+                   its bracket part (B2f1) is in the composites
 
 usage: python research/ledger_filters.py --trades sealed/run1/trades.csv --csv data/nq_1min_databento.csv \
            --source-tz UTC --oos-start 2025-10-06 --manifest sealed/run1/manifest.json \
@@ -44,14 +49,14 @@ import pandas as pd
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from fpt.data import NY, load_minute_bars, roll_days  # noqa: E402
 from research.anatomy import exclude_roll_trades, load_trades  # noqa: E402
-from research.bracket_replay import WIDE_BODY, WIDE_TARGET, opening_bodies  # noqa: E402
+from research.bracket_replay import WIDE_BODY, WIDE_TARGET, opening_bodies, room_target  # noqa: E402
 
 MAX_CONSEC_LOSSES = 3
 ROOM_SHARE = 0.8
 
 FILTERS = ["base", "B2a", "B2b2", "B2b1", "B2c4", "B2c3", "B2h", "cut0945", "cut1000", "eval_as_stated", "funded_as_stated"]
 FILTER_PARTS = {"base": [], "B2a": ["a"], "B2b2": ["b2"], "B2b1": ["b1"], "B2c4": ["c4"], "B2c3": ["c3"], "B2h": ["room_ge_target"],
-                "cut0945": ["cut0945"], "cut1000": ["cut1000"], "eval_as_stated": ["b1w", "room_w"], "funded_as_stated": ["a", "b1", "c4"]}
+                "cut0945": ["cut0945"], "cut1000": ["cut1000"], "eval_as_stated": ["b1w", "room_w"], "funded_as_stated": ["a", "b1f", "c4"]}
 COMPOSITES = [  # (label, filter, replay variant)
     ("sealed bracket, flat 16:00 (control)", "base", "ledger_bracket"),
     ("B2d wide-open switch", "base", "wide_open_switch"),
@@ -126,6 +131,7 @@ def build_gates(trades: pd.DataFrame, bars: pd.DataFrame) -> dict:
         "b2": move_away_gate(trades, bars, since_last_cross=False),
         "b1": move_away_gate(trades, bars, since_last_cross=True),
         "b1w": move_away_gate(trades, bars, since_last_cross=True, threshold=np.where(wide, WIDE_TARGET, tgt)),
+        "b1f": move_away_gate(trades, bars, since_last_cross=True, threshold=np.array([room_target("menu", float(x)) for x in room])),
         "room_ge_target": pd.Series(room >= tgt, index=trades.index),
         "room_w": pd.Series(~wide | (room >= ROOM_SHARE * WIDE_TARGET), index=trades.index),
         "wide": pd.Series(wide, index=trades.index),
@@ -144,38 +150,51 @@ def apply_filter(trades: pd.DataFrame, name: str, gates: dict) -> pd.DataFrame:
         keep &= ~rev | (minute < 9 * 60 + 45)
     if "cut1000" in parts:
         keep &= ~rev | (minute < 10 * 60)
-    for g in ("b2", "b1", "b1w", "room_ge_target", "room_w"):
+    for g in ("b2", "b1", "b1w", "b1f", "room_ge_target", "room_w"):
         if g in parts:
             keep &= ~rev | gates[g].reindex(t.index).fillna(False).astype(bool)
-    t = t[keep]
-    for cap in ("c4", "c3"):
-        if cap in parts:
-            n = int(cap[1])
-            order = t.sort_values("entry_time", kind="stable")
-            rev_o = order["setup"].astype(str) == "reversion"
-            nth = rev_o.groupby(session_key(order)).cumsum()
-            t = order[~rev_o | (nth <= n)]
-    return t
+    return t[keep]
+
+
+def sequential_pass(t: pd.DataFrame, cap: int | None = None, limit: int = MAX_CONSEC_LOSSES) -> pd.DataFrame:
+    """Take trades per session (New York date) in entry order as the frozen engine would: an entry is taken only if
+    the previously taken trade exited before it (exit_time < entry_time: one position at a time), the session's
+    consecutive-loss streak is below `limit`, and, for a reversion under a cap, fewer than `cap` reversions have
+    been taken. Every taken trade updates the streak (a loss is pnl_dollars < 0; anything else resets it)."""
+    t = t.sort_values("entry_time", kind="stable")
+    keep = np.zeros(len(t), dtype=bool)
+    sess = session_key(t).to_numpy()
+    et = list(t["entry_time"])
+    xt = list(t["exit_time"])
+    pnl = t["pnl_dollars"].astype(float).to_numpy()
+    rev = (t["setup"].astype(str) == "reversion").to_numpy()
+    last, streak, prev_exit, n_rev = None, 0, None, 0
+    for i in range(len(t)):
+        if sess[i] != last:
+            last, streak, prev_exit, n_rev = sess[i], 0, None, 0
+        if prev_exit is not None and prev_exit >= et[i]:
+            continue  # a position is still open
+        if streak >= limit:
+            continue
+        if cap is not None and rev[i] and n_rev >= cap:
+            continue
+        keep[i] = True
+        prev_exit = xt[i]
+        streak = streak + 1 if pnl[i] < 0 else 0
+        n_rev += int(rev[i])
+    return t[keep]
+
+
+def select(trades: pd.DataFrame, name: str, gates: dict) -> pd.DataFrame:
+    """Entry-time filters, then the sequential pass with the filter's reversion cap, if any."""
+    parts = FILTER_PARTS[name]
+    cap = 4 if "c4" in parts else (3 if "c3" in parts else None)
+    return sequential_pass(apply_filter(trades, name, gates), cap=cap)
 
 
 def consecutive_loss_stop(t: pd.DataFrame, limit: int = MAX_CONSEC_LOSSES) -> pd.DataFrame:
-    """Drop trades after `limit` consecutive losses within a session (New York date), in entry order; every
-    trade counts and a non-loss resets the streak, as in the frozen engine (a loss is pnl_dollars < 0)."""
-    t = t.sort_values("entry_time", kind="stable")
-    keep = np.ones(len(t), dtype=bool)
-    pnl = t["pnl_dollars"].astype(float).to_numpy()
-    sess = session_key(t).to_numpy()
-    streak = 0
-    last = None
-    for i in range(len(t)):
-        if sess[i] != last:
-            streak = 0
-            last = sess[i]
-        if streak >= limit:
-            keep[i] = False
-            continue
-        streak = streak + 1 if pnl[i] < 0 else 0
-    return t[keep]
+    """The sequential pass without a cap (kept for callers that only want the engine's stop and one position)."""
+    return sequential_pass(t, cap=None, limit=limit)
 
 
 def _pf(r: pd.Series) -> float:
@@ -198,9 +217,12 @@ def _f(v, spec):
 def check_alignment(trades: pd.DataFrame, replay: pd.DataFrame) -> int:
     """The replayed `ledger_bracket` control must equal the ledger R on every stop or target exit before 16:00;
     otherwise the replay rows are not keyed to these trades and nothing is reported."""
-    ids = pd.Index(replay["trade"].unique())
-    if not ids.isin(trades.index).all():
+    ids = set(int(x) for x in replay["trade"].unique())
+    ledger_ids = set(int(x) for x in trades.index)
+    if not ids <= ledger_ids:
         raise ValueError("replay trade ids are not a subset of the ledger positions")
+    if ids != ledger_ids:
+        raise ValueError(f"replay does not cover the ledger: {len(ledger_ids - ids)} ledger entries are neither replayed nor marked as dropped")
     rv = replay[replay["variant"] == "ledger_bracket"].set_index("trade")["r"].astype(float)
     t = trades.loc[trades.index.intersection(rv.index)]
     xt = _ny(t["exit_time"])
@@ -217,9 +239,12 @@ def composite_frame(trades: pd.DataFrame, replay: pd.DataFrame, variant: str) ->
     rv = replay[replay["variant"] == variant].set_index("trade")
     if rv.empty:
         raise ValueError(f"variant {variant} is not in the replay file")
+    if "exit_time" not in rv.columns:
+        raise ValueError("the replay file has no exit_time column; rerun research/bracket_replay.py at this version")
     t = trades.loc[trades.index.intersection(rv.index)].copy()
     t["r"] = rv.loc[t.index, "r"].astype(float).to_numpy()
     t["pnl_dollars"] = t["r"]  # the loss stop uses only the sign
+    t["exit_time"] = pd.to_datetime(rv.loc[t.index, "exit_time"], utc=True).dt.tz_convert(NY)
     return t
 
 
@@ -262,30 +287,30 @@ def evaluate(trades: pd.DataFrame, bars: pd.DataFrame, oos_start: str, replay: p
     gates = build_gates(trades, bars)
     trades = trades.assign(period=np.where(session_key(trades) < pd.Timestamp(oos_start), "development", "benchmark"),
                            year=_ny(trades["entry_time"]).dt.year)
-    base = consecutive_loss_stop(apply_filter(trades, "base", gates))
+    base = select(trades, "base", gates)
     if len(base) != len(trades):
-        raise ValueError(f"recomputing the three-loss stop on the unfiltered ledger removed {len(trades) - len(base)} trades; the stop semantics differ from the engine")
+        raise ValueError(f"the sequential pass (one position, three-loss stop) on the unfiltered ledger removed {len(trades) - len(base)} trades; the stop semantics differ from the engine")
     years = sorted(int(y) for y in trades.loc[trades["period"] == "development", "year"].unique())
     rev = trades["setup"].astype(str) == "reversion"
     n_rev = int(rev.sum())
     s = ["# B2: reversion rules as stated, screened on the sealed ledger\n"]
-    s.append(f"Base reproduction: recomputing the three-loss session stop on the unfiltered ledger removes 0 of {len(trades)} trades, so the filtered streams use the engine's stop semantics.")
+    s.append(f"Base reproduction: the sequential pass (one position at a time, three-loss session stop) on the unfiltered ledger keeps all {len(trades)} trades, so the filtered streams use the engine's semantics.")
     s.append(f"Reversion entries: {n_rev}. Pass the move-away gate from the open (B2b2): {int(gates['b2'][rev].sum())}; since the last return to fair (B2b1): {int(gates['b1'][rev].sum())}; "
-             f"B2b1 with the band at 76 on wide-open days: {int(gates['b1w'][rev].sum())}. Room at the signal >= the whole target (B2h): {int(gates['room_ge_target'][rev].sum())}. "
+             f"B2b1 with the band at 76 on wide-open days: {int(gates['b1w'][rev].sum())}; B2b1 with the band at the funded menu target: {int(gates['b1f'][rev].sum())}. Room at the signal >= the whole target (B2h): {int(gates['room_ge_target'][rev].sum())}. "
              f"Trades on wide-open days (09:30 body > {WIDE_BODY:g} points): {int(gates['wide'].sum())}.")
     s.append("Screening on a fixed ledger ignores freed positions and trades the sealed stop suppressed (documented caveat). The benchmark year is reported beside and never selected on.\n")
     s.append("## Filters with the sealed brackets (ledger R, including the sealed evening-session exits)\n")
-    frames = [(name, consecutive_loss_stop(apply_filter(trades, name, gates))) for name in FILTERS]
+    frames = [(name, select(trades, name, gates)) for name in FILTERS]
     s += _period_tables(frames, years, "filter", "base")
     out = {"filters": frames}
     if replay is not None:
         n_checked = check_alignment(trades, replay)
         s.append(f"## Composites: filters x brackets (replayed, flat at 16:00)\n\nJoin check: the replayed sealed bracket equals the ledger R on all {n_checked} stop or target exits before 16:00. "
-                 "Every composite is scored on the replayed entries (the replay drops entries without prior-session context for every variant), with the three-loss stop recomputed on its own wins and losses.\n")
+                 "Every composite is scored on the replayed entries (the replay drops entries without prior-session context for every variant), through the sequential pass with each replayed trade's own exit time: a longer hold blocks the entries it would have blocked, and the three-loss stop counts only outcomes that had printed.\n")
         comp = []
         for label, filt, variant in COMPOSITES:
             t = composite_frame(trades, replay, variant)
-            comp.append((label, consecutive_loss_stop(apply_filter(t, filt, gates))))
+            comp.append((label, select(t, filt, gates)))
         s += _period_tables(comp, years, "composite", "the control")
         out["composites"] = comp
     return "\n".join(s), out

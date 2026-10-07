@@ -59,7 +59,7 @@ def test_scaled_stops_use_prior_session_context_and_tick_rounding():
     assert np.isnan(stop_points_for(v_or, 123.4, float("nan"), 20000.0))
     assert stop_points_for(v_atr, 1.0, 10.0, 20000.0) == 2.0  # floor
     names = [v["name"] for v in grid()]
-    assert names[:2] == ["ledger_bracket", "fixed_25_38"] and len(names) == 2 + 7 * 3 + 6 + 5 + 4 + 1 and len(set(names)) == len(names)
+    assert names[:2] == ["ledger_bracket", "fixed_25_38"] and len(names) == 2 + 10 * 3 + 6 + 5 + 4 + 1 + 1 and len(set(names)) == len(names)
 
 
 def test_common_population_and_reproduction_check():
@@ -161,3 +161,36 @@ def test_room_menu_e_widens_only_above_100_points_of_room():
     rep = replay(t, bars, [v for v in grid() if v["name"] in ("room_menu", "room_menu_e")]).set_index("variant")
     assert rep.loc["room_menu", "stop_pts"] == 25.0 and rep.loc["room_menu", "target_pts"] == 100.0
     assert rep.loc["room_menu_e", "stop_pts"] == 50.0 and rep.loc["room_menu_e", "target_pts"] == 100.0
+
+
+def test_hold_to_close_control_and_exit_times():
+    bars = _bars(days=40)
+    day = sorted(set(bars.index.normalize()))[30]
+    e = day.replace(hour=9, minute=40)
+    bars.iloc[bars.index.get_loc(day.replace(hour=15, minute=59)), bars.columns.get_loc("close")] = 20010.0
+    t = pd.DataFrame([_trade(e, e + pd.Timedelta(minutes=5), 1, 20000.0, 0.0, reason="stop")])
+    t["entry_time"] = pd.to_datetime(t["entry_time"]); t["exit_time"] = pd.to_datetime(t["exit_time"])
+    rep = replay(t, bars, [v for v in grid() if v["family"] in ("time_exit", "ledger")]).set_index("variant")
+    h = rep.loc["hold_to_1600"]
+    assert h["exit_reason"] == "flat_1600" and h["exit_time"] == day.replace(hour=15, minute=59)
+    assert h["r"] == pytest.approx(((20010.0 - SLIPPAGE - 20000.0) * POINT_VALUE - COMMISSION_RT) / (25 * POINT_VALUE))
+    assert np.isnan(h["target_pts"]) and h["stop_pts"] == 25.0
+    assert rep.loc["ledger_bracket", "exit_time"] == day.replace(hour=15, minute=59)  # nothing touched: flat at 16:00
+
+
+def test_pooled_selection_ignores_tiny_years():
+    from research.bracket_replay import walk_forward
+    # variant A: one huge win in a 1-trade year, then losing in big years; variant B: steadily slightly positive
+    rows, meta = [], []
+    k = 0
+    for year, n, ra, rb in [(2010, 1, 5.0, -1.0), (2011, 200, -0.10, 0.05), (2012, 200, -0.10, 0.05), (2013, 200, 0.0, 0.0)]:
+        for _ in range(n):
+            rows += [(k, "A", ra), (k, "B", rb)]
+            meta.append((k, "development", year))
+            k += 1
+    rep = pd.DataFrame(rows, columns=["trade", "variant", "r"])
+    m = pd.DataFrame(meta, columns=["trade", "period", "year"]).set_index("trade")
+    piv, pooled, lines = walk_forward(rep, m, [2010, 2011, 2012, 2013], {"all": ["A", "B"]})
+    text = "\n".join(lines)
+    assert "| 2013 | B |" in text  # unweighted means would pick A (+1.60 against -0.30)
+    assert pooled["B"] > pooled["A"]

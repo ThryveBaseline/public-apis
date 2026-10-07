@@ -16,8 +16,8 @@ to full re-simulation on the research branch.
 Grid (pre-registered, see docs/RESEARCH_PLAN.md):
   ledger bracket (control: each trade's own sealed stop and target, so the replay can be checked against the ledger);
   fixed 25/38 (the evaluation bracket applied to every entry, including the sealed 50/75 wide-open trades);
-  ATR family: stop = k x previous Globex session's 14-session daily ATR, k in {0.03, 0.05, 0.075, 0.10, 0.15, 0.20, 0.30},
-              reward-to-risk in {1.0, 1.52, 2.0};
+  ATR family: stop = k x previous Globex session's 14-session daily ATR, k in {0.03, 0.05, 0.075, 0.10, 0.15, 0.20, 0.30}
+              and, added as B1b before any B1b result was seen, {0.40, 0.50, 0.70}; reward-to-risk in {1.0, 1.52, 2.0};
   opening-range family: stop = k x the PREVIOUS session's 09:30-09:35 range (known at entry), k in {0.25, 0.5, 0.75, 1.0, 1.5, 2.0}, RR 1.52;
   price family: stop = y x entry price, y in {0.05%, 0.10%, 0.15%, 0.20%, 0.30%}, RR 1.52;
   room family (B2f, reversions only; continuation keeps its ledger bracket): stop 25 and a target chosen from the room,
@@ -26,7 +26,9 @@ Grid (pre-registered, see docs/RESEARCH_PLAN.md):
     room_exact = min(room, 100), room_half = room / 2 when room >= 76 else room_menu,
     room_menu_e = room_menu with a 50-point stop when room > 100 (B2e, his heavy-volume widening, room trigger only);
   wide_open_switch (B2d, every trade of the session): 50/76 when the 09:30 one-minute bar's body exceeds 25 points, else 25/38.
-Stops are rounded to the 0.25 tick and floored at 2 points.
+  hold_to_1600 (control, never selected): no stop and no target, flat at 16:00, R in 25-point units.
+Stops are rounded to the 0.25 tick and floored at 2 points. Every row of the per-trade output carries its exit time,
+and every entry dropped for all variants gets one `_dropped` marker row, so readers can check coverage and sequencing.
 
 usage: python research/bracket_replay.py --trades sealed/run1/trades.csv --csv data/nq_1min_databento.csv \
            --source-tz UTC --oos-start 2025-10-06 --manifest sealed/run1/manifest.json \
@@ -54,7 +56,7 @@ MIN_STOP = 2.0
 FIXED_STOP, FIXED_TARGET = 25.0, 38.0
 RR_FIXED = FIXED_TARGET / FIXED_STOP
 
-ATR_K = (0.03, 0.05, 0.075, 0.10, 0.15, 0.20, 0.30)
+ATR_K = (0.03, 0.05, 0.075, 0.10, 0.15, 0.20, 0.30, 0.40, 0.50, 0.70)  # 0.4-0.7: B1b, pre-registered after B1 chose the 0.30 edge
 OR_K = (0.25, 0.5, 0.75, 1.0, 1.5, 2.0)
 PRICE_Y = (0.0005, 0.0010, 0.0015, 0.0020, 0.0030)
 
@@ -72,7 +74,11 @@ def grid() -> list[dict]:
     for mode in ("menu", "exact", "half", "menu_e"):
         g.append({"name": f"room_{mode}", "family": "room", "k": mode, "rr": None})
     g.append({"name": "wide_open_switch", "family": "wide_open", "k": None, "rr": None})
+    g.append({"name": "hold_to_1600", "family": "time_exit", "k": None, "rr": None})  # control: no stop, no target; R in 25-point units
     return g
+
+
+CONTROLS = ("time_exit",)  # reported, never selected: a no-stop trade has no comparable risk unit
 
 
 ROOM_MENU = (38.0, 50.0, 75.0, 100.0)
@@ -109,7 +115,7 @@ def stop_points_for(variant: dict, daily_atr: float, or_prev: float, entry: floa
     f = variant["family"]
     if f == "fixed":
         return FIXED_STOP
-    if f in ("ledger", "room", "wide_open"):
+    if f in ("ledger", "room", "wide_open", "time_exit"):
         raise ValueError(f"{f} brackets are resolved per trade in replay()")
     if f == "atr":
         base = daily_atr
@@ -174,21 +180,27 @@ def replay(trades: pd.DataFrame, bars: pd.DataFrame, variants: list[dict], day_e
         room = np.full(len(trades), np.nan)
     body = day.map(opening_bodies(bars)).to_numpy(float)
     n_no_context = 0
+    dropped = []
     rows = []
     for k, (et, d, entry) in enumerate(zip(trades["entry_time"], trades["direction"].astype(int), trades["entry"].astype(float))):
         i0 = idx.searchsorted(et)
         if i0 >= len(idx) or idx[i0] != et:
+            dropped.append((k, "missing_entry_bar"))
             continue  # entry bar missing from the bars: the ledger and the bars disagree; skipped and counted by main()
         if not ok[k]:
             n_no_context += 1
-            continue  # no previous-session ATR (first 14 sessions) or opening range: dropped for EVERY variant so all tables score the same trades
+            dropped.append((k, "no_context"))
+            continue  # no previous-session ATR or opening range: dropped for EVERY variant so all tables score the same trades
         end = et.tz_convert(NY).replace(hour=eh, minute=em, second=0, microsecond=0)
         i2 = idx.searchsorted(end, side="left")
         if i2 <= i0:
             i2 = i0 + 1  # entered at or after day_end: the entry bar alone
         so, sh, sl, sc = o[i0:i2], h[i0:i2], l[i0:i2], c[i0:i2]
         for v in variants:
-            if v["family"] == "ledger":
+            unit = None
+            if v["family"] == "time_exit":
+                sp, tp, unit = np.inf, np.inf, FIXED_STOP
+            elif v["family"] == "ledger":
                 sp, tp = float(led_stop[k]), float(led_tgt[k])
             elif v["family"] == "room":
                 if is_rev[k] and np.isfinite(room[k]):
@@ -203,10 +215,22 @@ def replay(trades: pd.DataFrame, bars: pd.DataFrame, variants: list[dict], day_e
                 sp = stop_points_for(v, atr[k], orp[k], entry)
                 tp = _round_tick(sp * v["rr"])
             xp, reason, held, amb = replay_one(so, sh, sl, sc, d, entry, sp, tp)
-            rows.append((k, v["name"], v["family"], sp, tp, xp, reason, held, amb, r_of(xp, entry, d, sp)))
-    out = pd.DataFrame(rows, columns=["trade", "variant", "family", "stop_pts", "target_pts", "exit", "exit_reason", "bars_held", "ambiguous", "r"])
+            ru = unit if unit is not None else sp
+            rows.append((k, v["name"], v["family"], ru if unit is not None else sp, np.nan if unit is not None else tp, xp, reason, held, amb,
+                         r_of(xp, entry, d, ru), idx[i0 + held - 1]))
+    out = pd.DataFrame(rows, columns=REPLAY_COLUMNS)
     out.attrs["n_no_context"] = n_no_context
+    out.attrs["dropped"] = dropped
     return out
+
+
+REPLAY_COLUMNS = ["trade", "variant", "family", "stop_pts", "target_pts", "exit", "exit_reason", "bars_held", "ambiguous", "r", "exit_time"]
+
+
+def dropped_rows(rep: pd.DataFrame) -> pd.DataFrame:
+    """One marker row per entry dropped for every variant, so a reader of the per-trade file can check coverage."""
+    rows = [(k, "_dropped", "_dropped", np.nan, np.nan, np.nan, why, 0, False, np.nan, pd.NaT) for k, why in rep.attrs.get("dropped", [])]
+    return pd.DataFrame(rows, columns=REPLAY_COLUMNS)
 
 
 def _pf(r: pd.Series) -> float:
@@ -232,21 +256,27 @@ def summarize(rep: pd.DataFrame, meta: pd.DataFrame, by: list[str]) -> pd.DataFr
 
 def walk_forward(rep: pd.DataFrame, meta: pd.DataFrame, years: list[int], families: dict[str, list[str]]) -> tuple[pd.DataFrame, list[str]]:
     """Expectancy by development year per variant, and the sequential chain: for each year Y (from the fourth
-    development year on), the variant with the best mean expectancy over years < Y is chosen and its year-Y
-    expectancy is recorded. Reported per family and over the whole grid, against the fixed bracket."""
+    development year on), the variant with the best POOLED expectancy over all trades in years < Y (trade-weighted,
+    so a year with a handful of trades cannot steer the choice) is chosen and its year-Y expectancy is recorded.
+    Reported per family and over the whole grid, against the sealed bracket."""
     df = rep.join(meta, on="trade")
     df = df[df["period"] == "development"]
-    piv = df.groupby(["variant", "year"])["r"].mean().unstack("year").reindex(columns=years)
-    cnt = df.groupby(["variant", "year"])["r"].size().unstack("year").reindex(columns=years)
+    grp = df.groupby(["variant", "year"])["r"]
+    sums = grp.sum().unstack("year").reindex(columns=years)
+    cnt = grp.size().unstack("year").reindex(columns=years)
+    piv = sums / cnt
+    pooled = sums.sum(axis=1, min_count=1) / cnt.sum(axis=1, min_count=1)
     lines = []
     fixed = piv.loc["ledger_bracket"] if "ledger_bracket" in piv.index else None
     for fam, names in families.items():
-        sub = piv.loc[[n for n in names if n in piv.index]]
+        keep_names = [n for n in names if n in piv.index]
+        sub = piv.loc[keep_names]
+        sub_s, sub_c = sums.loc[keep_names], cnt.loc[keep_names]
         chain = []
         for j, y in enumerate(years):
             if j < 3:
                 continue
-            prior = sub.iloc[:, :j].mean(axis=1)
+            prior = sub_s.iloc[:, :j].sum(axis=1, min_count=1) / sub_c.iloc[:, :j].sum(axis=1, min_count=1)
             if sub.empty or prior.isna().all():
                 continue
             best = prior.idxmax()
@@ -262,7 +292,7 @@ def walk_forward(rep: pd.DataFrame, meta: pd.DataFrame, years: list[int], famili
         for _, r in ch.iterrows():
             lines.append(f"| {int(r['year'])} | {r['chosen_on_prior_years']} | {r['expectancy_r_in_year']:+.3f} | {r['ledger_bracket_in_year']:+.3f} | {int(r['trades'])} |")
         lines.append(f"\nTrade-weighted out-of-year expectancy of the chain: {tot:+.3f} R against {tot_f:+.3f} R for the sealed bracket (each trade's own stop and target, flat at 16:00) over the same years.\n")
-    return piv, lines
+    return piv, pooled, lines
 
 
 def _fmt_table(df: pd.DataFrame, cols: list[str]) -> str:
@@ -282,7 +312,8 @@ def report(trades: pd.DataFrame, rep: pd.DataFrame, oos_start: str, n_excl: int,
                          "ledger_stop": trades["stop_points"].astype(float).to_numpy() if "stop_points" in trades.columns else np.full(len(trades), FIXED_STOP),
                          "exit_before_end": ((xt.dt.hour * 60 + xt.dt.minute) < 16 * 60).to_numpy()}, index=trades.index)
     s = ["# B1: bracket replay on frozen entries\n"]
-    s.append(f"Data hygiene: {n_excl} trades on {n_roll} contract-roll dates excluded, as in the sealed report; {n_skipped} entries skipped because their entry bar is not in the bars; {n_no_context} entries dropped for every variant because the previous session's 14-session ATR or opening range is undefined (the first sessions of the data), so every variant including the controls is scored on the same {trades.index.size - n_skipped - n_no_context} entries. Period split at {oos_start} (development / benchmark; the benchmark is the sealed out-of-sample year, now inspected, reported beside and never selected on).")
+    s.append(f"Data hygiene: {n_excl} trades on {n_roll} contract-roll dates excluded, as in the sealed report; {n_skipped} entries skipped because their entry bar is not in the bars; {n_no_context} entries dropped for every variant because the previous session's 14-session ATR or 09:30-09:35 range is undefined (the first sessions of the data, and any session following one with no 09:30 bars, such as an abbreviated holiday session), so every variant including the controls is scored on the same {trades.index.size - n_skipped - n_no_context} entries. Period split at {oos_start} (development / benchmark; the benchmark is the sealed out-of-sample year, now inspected, reported beside and never selected on).")
+    s.append("The `hold_to_1600` row is a control (no stop, no target, flat at 16:00, R in 25-point units): it measures the directional content of the entries over the rest of the day and is never selected. Chains select on pooled, trade-weighted prior-year expectancy.")
     s.append("Replay ignores sequencing between trades (documented caveat); brackets are per the pre-registered grid in the module docstring; costs as sealed; same-bar stop and target resolved as a stop and counted as ambiguous; positions flat at the last bar before 16:00 New York.\n")
     # reproduction check: the ledger-bracket control must reproduce every ledger stop/target fill that printed before 16:00
     fx = rep[rep["variant"] == "ledger_bracket"].join(meta, on="trade")
@@ -294,7 +325,7 @@ def report(trades: pd.DataFrame, rep: pd.DataFrame, oos_start: str, n_excl: int,
     se = fx["ledger_reason"] == "session_end"
     se_led = float(fx.loc[se, "ledger_r"].mean()) if se.any() else float("nan")
     se_rep = float(fx.loc[se, "r"].mean()) if se.any() else float("nan")
-    n_wide = int((meta["ledger_stop"] != FIXED_STOP).sum())
+    n_wide = int((meta.loc[meta.index.isin(rep["trade"].unique()), "ledger_stop"] != FIXED_STOP).sum())
     s.append("## Reproduction check, ledger bracket\n\n"
              f"On the {len(same)} ledger trades that exited at the stop or the target before 16:00 New York, replaying each trade's own stop and target reaches the same exit reason on {agree:.2%} and the largest absolute R difference is {rdiff:.4f} (both must be 100% and 0 for the replay to be trusted). "
              f"Left out of the check: {int(late.sum())} stop or target fills printed at or after 16:00 (flat at 16:00 in the replay by design) and {int(se.sum())} ledger `session_end` trades (ledger mean R {se_led:+.3f}, replay mean R {se_rep:+.3f}). "
@@ -308,17 +339,18 @@ def report(trades: pd.DataFrame, rep: pd.DataFrame, oos_start: str, n_excl: int,
             t = summarize(rep[rep["trade"].isin(sel)], meta, [])
             s.append(f"## {setup}, {per}\n\n" + _fmt_table(t, cols) + "\n")
     years = sorted(int(y) for y in meta.loc[meta["period"] == "development", "year"].unique())
-    fams = {"all": [v["name"] for v in grid()], "atr": [v["name"] for v in grid() if v["family"] == "atr"],
+    fams = {"all": [v["name"] for v in grid() if v["family"] not in CONTROLS], "atr": [v["name"] for v in grid() if v["family"] == "atr"],
             "or_prev": [v["name"] for v in grid() if v["family"] == "or_prev"], "price": [v["name"] for v in grid() if v["family"] == "price"],
             "room_and_wide_open": [v["name"] for v in grid() if v["family"] in ("room", "wide_open")]}
     for setup_label, sel in [("all setups", meta.index), ("continuation", meta.index[meta["setup"] == "continuation"]), ("reversion", meta.index[meta["setup"] == "reversion"])]:
-        piv, lines = walk_forward(rep[rep["trade"].isin(sel)], meta, years, fams)
+        piv, pooled, lines = walk_forward(rep[rep["trade"].isin(sel)], meta, years, fams)
         s.append(f"## Development years, {setup_label}: expectancy R by year and variant\n")
-        head = "| variant | " + " | ".join(str(y) for y in years) + " | mean | years > 0 |\n|---|" + "---|" * (len(years) + 2)
+        head = "| variant | " + " | ".join(str(y) for y in years) + " | pooled | years > 0 |\n|---|" + "---|" * (len(years) + 2)
         body = []
         for name, row in piv.iterrows():
             vals = row.reindex(years)
-            body.append(f"| {name} | " + " | ".join("n/a" if pd.isna(v) else f"{v:+.3f}" for v in vals) + f" | {np.nanmean(vals):+.3f} | {int((vals > 0).sum())}/{int(vals.notna().sum())} |")
+            pv = pooled.get(name, float("nan"))
+            body.append(f"| {name} | " + " | ".join("n/a" if pd.isna(v) else f"{v:+.3f}" for v in vals) + f" | {'n/a' if pd.isna(pv) else format(pv, '+.3f')} | {int((vals > 0).sum())}/{int(vals.notna().sum())} |")
         s.append(head + "\n" + "\n".join(body) + "\n")
         s.extend(lines)
     return "\n".join(s)
@@ -357,7 +389,7 @@ def main() -> int:
         f.write(text)
     if a.private_out:
         os.makedirs(os.path.dirname(os.path.abspath(a.private_out)), exist_ok=True)
-        rep.to_csv(a.private_out, index=False)
+        pd.concat([rep, dropped_rows(rep)], ignore_index=True).to_csv(a.private_out, index=False)
     print(text[:3000])
     return 0
 
