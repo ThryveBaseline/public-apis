@@ -2,18 +2,19 @@
 
 B3 scored each candidate stream with JJ's calculator, which counts one payout per funded account (the first) and
 retires it. Here a funded account is started on every trading day, as in the frozen payout walk-forward, and kept
-trading for up to H walk-forward days (60, 120 and 250, recorded in one pass), asking for a payout every day as the
-frozen walk-forward does, until it breaches. Topstep's Express Funded rule is applied to the Topstep presets: with a
-payout the maximum loss limit moves to the starting balance (Topstep help centre, read through a search engine;
-the frozen account leaves it trailing), so after a payout what is left is the whole cushion.
+trading for up to H walk-forward days (60, 120 and 250, recorded in one pass) until it breaches, under one of two
+payout policies: ask whenever eligible (the frozen walk-forward's policy) or wait until the loss limit has reached the
+starting balance (Topstep's advice). Topstep's Express Funded rules are applied to the Topstep presets (Topstep help
+centre, read through a search engine): with a payout the maximum loss limit moves to the starting balance (the frozen
+account leaves it trailing), and a payout after the first needs a positive net profit since the previous one.
 
 Nothing before the first payout changes, so each start's first-payout outcome within 60 days must equal the frozen
-walk-forward's (fpt.evaluate.walk_forward_payout_probability) exactly: that is the gate, checked on every stream,
-preset, size and period before anything is reported.
+walk-forward's (fpt.evaluate.walk_forward_payout_probability) exactly under the first policy: that is the gate,
+checked on every stream, preset, size and period before anything is reported.
 
-EV per evaluation over H = P(pass) x the mean lifetime payout per funded account (net of the split, over the starts
-with H days of data or a breach within them) - the fees per evaluation (monthly billing and the activation fee, as
-research/candidates.fees_per_eval). Fixed before any number was computed: B3's streams S0r and S1-S4; the presets
+EV per evaluation over H = P(pass) x the expected lifetime payout per funded account by H (net of the split: each
+day's mean payout over the starts that have that day of data, summed over days 1 to H) - the fees per evaluation
+(monthly billing and the activation fee, as research/candidates.fees_per_eval). Fixed before any number was computed: B3's streams S0r and S1-S4; the presets
 and sizes topstep_50k_x (TopstepX, no daily loss limit) at 1.00 and 0.95 of the budget and the frozen topstep_50k at
 1.00 (its daily limit is not usable below 1.00); horizons 60, 120 and 250 walk-forward days (New York dates with
 bars, about six a week on Globex data). Fractional sizing; the risk per trade stays at the budget after a payout.
@@ -75,11 +76,12 @@ def walk_forward_lifetime(trades: pd.DataFrame, rules, funded_risk: float, horiz
                           wait_for_lock: bool = False) -> tuple[pd.DataFrame, dict]:
     """A funded account started on every trading day, as fpt.evaluate.walk_forward_payout_probability, but kept after
     its payouts. Returns the per-start table (cumulative paid_H and payouts_H, the first payout's day and amount, the
-    breach day) and, per horizon, life-table estimates that use every start for every day it has data: the expected
-    payout and number of payouts by H (each day's mean over the starts that have that day, summed), P(breach by H)
-    (one minus the product of the daily breach hazards among the accounts still live), P(any payout by H) and the
-    expected first payout by H (cumulative incidence, a breach before any payout competing), and the number of starts
-    with H days of data."""
+    breach day) and, per horizon, estimates that use every start for every day it has data, each the sum over days 1
+    to H of that day's mean over the starts observed on it: the expected payout, the expected number of payouts,
+    P(breach by H), P(any payout by H) and the expected first payout (each start breaches once at most and has one
+    first payout, so the daily shares add up); and the number of starts with H days of data. Starts are cut off by the
+    calendar, not by their outcome, so each day's mean is an unbiased estimate of that day's share; with no cut-off the
+    sums are the plain means over starts."""
     dates, rs = _daily_r(trades, trading_days)
     n = len(dates)
     if n == 0:
@@ -90,7 +92,7 @@ def walk_forward_lifetime(trades: pd.DataFrame, rules, funded_risk: float, horiz
     avail = n - starts
     paid, count = np.zeros(n), np.zeros(n, dtype=int)
     first_day, first_amount, bust_day = np.full(n, np.nan), np.full(n, np.nan), np.full(n, np.nan)
-    day_paid, day_count, h_breach, h_first, h_compete, first_amt = (np.full(top, np.nan) for _ in range(6))
+    day_paid, day_count, day_breach, day_first, day_first_amt = (np.full(top, np.nan) for _ in range(5))
     out = {"start": dates}
     for k in range(top):
         obs = avail >= k + 1
@@ -104,14 +106,8 @@ def walk_forward_lifetime(trades: pd.DataFrame, rules, funded_risk: float, horiz
         breached = live & (acct.phase == FAILED)
         first_now = unpaid & (got > 0)
         day_paid[k], day_count[k] = got[obs].mean(), (got[obs] > 0).mean()
-        at_risk = obs & live
-        h_breach[k] = breached[at_risk].mean() if at_risk.any() else 0.0
-        at_risk1 = at_risk & unpaid
-        if at_risk1.any():
-            h_first[k], h_compete[k] = first_now[at_risk1].mean(), (breached & unpaid)[at_risk1].mean()
-            first_amt[k] = np.where(first_now, got, 0.0)[at_risk1].mean()
-        else:
-            h_first[k] = h_compete[k] = first_amt[k] = 0.0
+        day_breach[k], day_first[k] = breached[obs].mean(), first_now[obs].mean()
+        day_first_amt[k] = np.where(first_now, got, 0.0)[obs].mean()
         paid += got
         count += (got > 0).astype(int)
         first_day[first_now], first_amount[first_now] = k + 1, got[first_now]
@@ -122,15 +118,13 @@ def walk_forward_lifetime(trades: pd.DataFrame, rules, funded_risk: float, horiz
         out.setdefault(f"paid_{h}", paid.copy())
         out.setdefault(f"payouts_{h}", count.copy())
     out["first_payout_day"], out["first_payout_amount"], out["bust_day"] = first_day, first_amount, bust_day
-    s_before = np.r_[1.0, np.cumprod(1.0 - np.nan_to_num(h_first) - np.nan_to_num(h_compete))[:-1]]
     summary = {}
     for h in horizons:
         if h > n:
             summary[h] = {k: float("nan") for k in ("paid", "payouts", "p_breach", "p_any", "first_amount")} | {"n_full": 0}
             continue
-        summary[h] = {"paid": float(day_paid[:h].sum()), "payouts": float(day_count[:h].sum()),
-                      "p_breach": float(1.0 - np.prod(1.0 - h_breach[:h])), "p_any": float((s_before[:h] * h_first[:h]).sum()),
-                      "first_amount": float((s_before[:h] * first_amt[:h]).sum()), "n_full": int((avail >= h).sum())}
+        summary[h] = {"paid": float(day_paid[:h].sum()), "payouts": float(day_count[:h].sum()), "p_breach": float(day_breach[:h].sum()),
+                      "p_any": float(day_first[:h].sum()), "first_amount": float(day_first_amt[:h].sum()), "n_full": int((avail >= h).sum())}
     return pd.DataFrame(out), summary
 
 
@@ -160,7 +154,7 @@ def check_first_payout(trades: pd.DataFrame, rules, funded_risk: float, cal_part
 
 
 def lifetime_rows(stream: pd.DataFrame, cal: pd.DatetimeIndex, cut: pd.Timestamp, firm: str, size: float, policies=("ask",)) -> list[dict]:
-    """Per period, payout policy and horizon: P(pass), the fees, the funded lifetime (life-table estimates) and the EV
+    """Per period, payout policy and horizon: P(pass), the fees, the funded lifetime (walk_forward_lifetime) and the EV
     per evaluation, for one stream at one preset and size; the first-payout gate checked on the gated policy."""
     rules = PRESETS[firm]
     t = stream.copy()
@@ -193,16 +187,16 @@ def report(rows: list[dict], gate_note: str) -> str:
          "On the Topstep presets Topstep's Express Funded payout rules apply: with a payout the maximum loss limit moves to the starting balance and stays there, and a payout after the first needs a positive net profit since the previous one. "
          "Two payout policies: " + "; ".join(f"{k}, {v}" for k, v in POLICIES.items()) + ". "
          "Gate, passed on every row of the first policy: each start's first payout within 60 days (outcome, day and amount) equals the frozen payout walk-forward's, so the first payouts are B3's; B3's P(payout) is printed beside. "
-         "Lifetime figures are life-table estimates over every start, each day averaged over the starts that have that day of data, so late starts are used as far as their data goes and none is dropped for surviving (starts with H days counts the starts that have all H). "
+         "Lifetime figures use every start: each is the sum over days 1 to H of that day's mean over the starts that have that day of data, so late starts are used as far as their data goes and none is dropped for surviving (starts with H days counts the starts that have all H). "
          "EV per evaluation = P(pass) x expected lifetime payout by H (net of the split) - fees per evaluation (monthly billing and the activation fee). "
-         "EV first payout only: B3's net EV (median-priced), and the same priced at the mean first payout within 60 days. "
+         "EV first payout only: B3's net EV (median-priced), and the policy's own first payout within 60 days priced at its mean (under the first policy that payout is B3's; under the second it comes later and is larger). "
          "Fractional sizing; the risk per trade stays at the budget after a payout. The benchmark year is reported beside and never used to choose.\n",
          "Not modelled, and worth more once later payouts count: Topstep typically moves an Express Funded trader to a live account after about 30 winning days, so the longest horizons overstate what one Express Funded account pays; "
          "after a payout under the first policy the cushion is often less than one stop-out, where an account that books realised R only (a winning trade's dip toward the limit is not modelled) is most optimistic.\n"]
     df = pd.DataFrame(rows)
     for (firm, size), g in df.groupby(["firm", "size"], sort=False):
         s.append(f"## {firm} at {size:.2f} of the budget\n")
-        s.append("| stream | period | policy | H | P(pass) | fees per evaluation | starts (with H days) | B3 P(payout) | P(any payout by H) | payouts per account | expected paid per account | P(breach by H) | EV per evaluation | EV first payout only (B3, median) | EV first payout only (mean) |")
+        s.append("| stream | period | policy | H | P(pass) | fees per evaluation | starts (with H days) | B3 P(payout) | P(any payout by H) | payouts per account | expected paid per account | P(breach by H) | EV per evaluation | EV first payout only (B3, median) | EV first payout only (this policy, mean) |")
         s.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
         for _, r in g.iterrows():
             s.append(f"| {r['stream']} | {r['period']} | {r['policy']} | {r['horizon']} | {r['pass_rate']:.1%} | {r['fees']:,.0f} | {r['n_starts']} ({r['n_full']}) | {r['b3_payout_rate']:.1%} | {r['p_any']:.1%} | {r['payouts_mean']:.2f} | "

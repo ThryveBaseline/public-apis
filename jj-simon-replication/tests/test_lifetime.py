@@ -99,7 +99,7 @@ def _scalar_reference(st, rules, cal, horizon, topstep_xfa, wait):
 
 
 @pytest.mark.parametrize("firm,xfa,wait", [("topstep_50k_x", True, False), ("topstep_50k_x", True, True), ("fundednext_50k_flex", False, False)])
-def test_the_vectorised_run_equals_a_scalar_reference_and_its_life_table(engine, firm, xfa, wait):
+def test_the_vectorised_run_equals_a_scalar_reference_and_its_daily_estimates(engine, firm, xfa, wait):
     bars, st = engine
     cal = trading_days_of(bars)
     lt, summary = walk_forward_lifetime(st, PRESETS[firm], 500.0, HORIZONS, cal, xfa, wait_for_lock=wait)
@@ -109,18 +109,21 @@ def test_the_vectorised_run_equals_a_scalar_reference_and_its_life_table(engine,
         assert np.allclose(lt[f"paid_{h}"], [sum(p[:h]) for p, _ in ref])
         assert list(lt[f"payouts_{h}"]) == [sum(1 for x in p[:h] if x > 0) for p, _ in ref]
     assert np.allclose(lt["bust_day"].to_numpy(float), [b for _, b in ref], equal_nan=True)
-    for h in HORIZONS:  # the life table: each day's mean over the starts that have that day, summed
+    for h in HORIZONS:  # every summary: the sum over days of that day's mean over the starts that have it
         if h > n:
-            assert np.isnan(summary[h]["paid"])
+            assert np.isnan(summary[h]["paid"]) and np.isnan(summary[h]["p_any"])
             continue
-        want = sum(np.mean([p[k] for p, _ in ref if len(p) > k]) for k in range(h))
-        assert summary[h]["paid"] == pytest.approx(want) and summary[h]["n_full"] == sum(1 for p, _ in ref if len(p) >= h)
-        # breach: one minus the product of the daily hazards among the accounts still live with that day of data
-        surv = 1.0
-        for k in range(h):
-            at_risk = [b for p, b in ref if len(p) > k and not (b <= k)]
-            surv *= 1.0 - (np.mean([b == k + 1 for b in at_risk]) if at_risk else 0.0)
-        assert summary[h]["p_breach"] == pytest.approx(1.0 - surv)
+        seen = [[x for x in ref if len(x[0]) > k] for k in range(h)]
+        first = [next((k for k, x in enumerate(p) if x > 0), None) for p, _ in ref]  # each start's first payout day (0-based)
+        firsts = {id(x): f for x, f in zip(ref, first)}
+        want = {"paid": sum(np.mean([p[k] for p, _ in s]) for k, s in enumerate(seen)),
+                "payouts": sum(np.mean([p[k] > 0 for p, _ in s]) for k, s in enumerate(seen)),
+                "p_breach": sum(np.mean([b == k + 1 for _, b in s]) for k, s in enumerate(seen)),
+                "p_any": sum(np.mean([firsts[id(x)] == k for x in s]) for k, s in enumerate(seen)),
+                "first_amount": sum(np.mean([x[0][k] if firsts[id(x)] == k else 0.0 for x in s]) for k, s in enumerate(seen))}
+        for key, v in want.items():
+            assert summary[h][key] == pytest.approx(v), (h, key)
+        assert summary[h]["n_full"] == sum(1 for p, _ in ref if len(p) >= h)
     if not wait:
         check_first_payout(st, PRESETS[firm], 500.0, cal, lt)
 
