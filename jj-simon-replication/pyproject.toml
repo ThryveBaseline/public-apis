@@ -10,7 +10,8 @@ requires-python = ">=3.10"
 dependencies = ["numpy>=1.26", "pandas>=2.2", "tabulate>=0.9"]
 
 [project.optional-dependencies]
-test = ["pytest>=8"]
+test = ["pytest>=8", "databento-dbn==0.71.0", "zstandard>=0.25"]
+mbo = ["databento-dbn==0.71.0", "zstandard>=0.25"]
 
 [project.scripts]
 fpt = "fpt.cli:main"

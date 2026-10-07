@@ -2,3 +2,5 @@ numpy>=1.26
 pandas>=2.2
 pytest>=8
 tabulate>=0.9
+databento-dbn==0.71.0  # the MBO sidecar's DBN reader (research/mbo_sidecar.py); pinned: the record layout is DBN version 3
+zstandard>=0.25

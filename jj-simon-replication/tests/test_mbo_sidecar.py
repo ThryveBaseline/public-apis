@@ -6,7 +6,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-databento_dbn = pytest.importorskip("databento_dbn")
+import databento_dbn  # noqa: E402  declared in requirements.txt: a missing reader must fail, not skip
+import zstandard  # noqa: E402
 
 from research import mbo_sidecar  # noqa: E402
 from research.mbo_sidecar import annotate, load_features, read_dbn, reference_cuts  # noqa: E402
@@ -71,8 +72,7 @@ def test_the_parse_matches_the_official_decoder(tmp_path):
     official = dec.decode()[1:]
     assert [r.order_id for r in official] == rec["order_id"].tolist() and [r.price for r in official] == rec["price"].tolist()
     assert [str(r.action.value) for r in official] == [a.decode() for a in rec["action"]] and [r.ts_recv for r in official] == rec["ts_recv"].tolist()
-    zst = pytest.importorskip("zstandard")
-    (tmp_path / "d.dbn.zst").write_bytes(zst.ZstdCompressor().compress((tmp_path / "d.dbn").read_bytes()))
+    (tmp_path / "d.dbn.zst").write_bytes(zstandard.ZstdCompressor().compress((tmp_path / "d.dbn").read_bytes()))
     assert (read_dbn(str(tmp_path / "d.dbn.zst"))[1] == rec).all()
     (tmp_path / "bad.dbn").write_bytes((tmp_path / "d.dbn").read_bytes()[:-3])
     with pytest.raises(SystemExit, match="whole MBO records"):
