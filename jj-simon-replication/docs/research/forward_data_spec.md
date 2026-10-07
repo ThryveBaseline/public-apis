@@ -63,7 +63,7 @@ Daily increments cost about $0.011 a trading day, about $2.85 a year. The monthl
   2. the sealed-data baseline is run and pinned;
   3. the bars are bought from 2026-10-06 on;
   4. the daily paper runs start.
-- **MBO sidecar:** approved as a pilot for exactly the first 10 forward trading days, about $23 in total.
+- **MBO sidecar:** approved as a pilot for 10 forward sessions, about $23 in total. On 2026-10-07 Chris set these as the first 10 sessions that pass the data-condition gate. The degraded 2026-10-06 file is quarantined and not re-bought (`forward_data_log.md`).
   - **What:** `GLBX.MDP3` `mbo`, `ESZ6` and `NQZ6`, full session 00:00–21:00 UTC.
   - **Purchase:** each complete day once, quoted before buying.
   - **Storage:** raw files read-only and hashed, on the GB10 only.

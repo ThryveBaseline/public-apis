@@ -1,6 +1,6 @@
 # MBO sidecar pilot: what it measures, fixed before any order-book day is read
 
-Written 2026-10-07. MBO day 1 (2026-10-06) had been bought and its integrity checked, but no book had been rebuilt or read. Chris approved the pilot for exactly the first 10 forward trading days. The tool is `research/mbo_sidecar.py`.
+Written 2026-10-07. MBO day 1 (2026-10-06) had been bought and its integrity checked, but no book had been rebuilt or read. Chris approved the pilot for 10 forward sessions. On 2026-10-07 he set these as the first 10 sessions that pass the data-condition gate (`forward_data_log.md`). The tool is `research/mbo_sidecar.py`.
 
 **Role.** Annotate only. It never changes a trade, a checkpoint or a candidate of forward protocol v1. Raw MBO stays read-only on the GB10, and everything derived from it is private.
 
