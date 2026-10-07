@@ -72,6 +72,13 @@ from research.bracket_replay import COMMISSION_RT, FIXED_STOP, POINT_VALUE, SLIP
 from research.ledger_filters import apply_filter, build_gates, check_alignment, sequential_pass  # noqa: E402
 
 FIRMS = ("topstep_50k", "fundednext_50k_flex", "topstep_100k", "tradeify_100k_growth")
+# the frozen presets plus one research variant (fpt/ is untouched): TopstepX accounts created or reset since 2024-08-25
+# have no daily loss limit in the Combine or the Express Funded Account (Topstep help centre article 8284207, read
+# through a search engine; three third-party guides agree), and new Combines are TopstepX only
+PRESETS = {**FIRM_PRESETS, "topstep_50k_x": FIRM_PRESETS["topstep_50k"].with_(
+    plan="50K Trading Combine -> Express Funded, TopstepX (no daily loss limit)", daily_loss_limit=None, verified=False,
+    notes="research variant of topstep_50k without the daily loss limit, as TopstepX accounts since 2024-08-25; everything else as topstep_50k")}
+SIZING_FIRMS = ("topstep_50k", "topstep_50k_x")
 MAX_EVAL_DAYS, MAX_FUNDED_DAYS, FUNDED_RISK = 30, 60, 500.0
 START_CASH = (500.0, 1000.0, 2000.0, 5000.0)  # the frozen report's bootstrap rows
 ATR_NAMES = [v["name"] for v in grid() if v["family"] == "atr"]
@@ -91,7 +98,7 @@ def firm_rows(part: pd.DataFrame, cal_part: pd.DatetimeIndex, firms=FIRMS, eval_
     funded_part = part if funded_part is None else funded_part
     rows = []
     for key in firms:
-        rules = FIRM_PRESETS[key]
+        rules = PRESETS[key]
         er = rules.profit_target / (2.0 * 1.5) if eval_risk_mode == "two_trade" else eval_risk
         pp = walk_forward_pass_probability(part, rules, er, MAX_EVAL_DAYS, trading_days=cal_part)
         pr = walk_forward_payout_probability(funded_part, rules, FUNDED_RISK, MAX_FUNDED_DAYS, trading_days=cal_part)
@@ -115,20 +122,20 @@ def format_row(r: dict) -> str:
 def payout_size(r: dict) -> float:
     """The frozen report's payout size: the median payout, or half the profit target when no payout happened."""
     size = r["payout_median_amount"]
-    return float(size) if np.isfinite(size) else FIRM_PRESETS[r["firm"]].profit_target / 2
+    return float(size) if np.isfinite(size) else PRESETS[r["firm"]].profit_target / 2
 
 
 def ev_per_eval(r: dict) -> float:
     if not np.isfinite(r["pass_rate"]) or not np.isfinite(r["payout_rate"]):
         return float("nan")
-    return float(his_calculator(FIRM_PRESETS[r["firm"]].eval_cost, r["pass_rate"], r["payout_rate"], payout_size(r))["ev_per_eval"])
+    return float(his_calculator(PRESETS[r["firm"]].eval_cost, r["pass_rate"], r["payout_rate"], payout_size(r))["ev_per_eval"])
 
 
 def fees_per_eval(r: dict) -> float:
     """What one evaluation costs on average under the preset, which the frozen calculator leaves out: the fee for
     every billing month the evaluation runs when the fee is monthly (open evaluations counted at the full horizon),
     plus the activation fee on a pass."""
-    rules = FIRM_PRESETS[r["firm"]]
+    rules = PRESETS[r["firm"]]
     months = r["eval_months_mean"] if rules.eval_cost_is_monthly else 1.0
     return float(rules.eval_cost * months + r["pass_rate"] * rules.activation_fee)
 
@@ -142,7 +149,7 @@ def ev_net(r: dict) -> float:
 
 def bootstrap(r: dict, start_cash: float) -> dict:
     """One row of the frozen report's bootstrap survival table (fpt.evaluate.evaluate_trades), with the same call."""
-    rules = FIRM_PRESETS[r["firm"]]
+    rules = PRESETS[r["firm"]]
     calc = his_calculator(rules.eval_cost, r["pass_rate"], r["payout_rate"], payout_size(r))
     sim = simulate_his_stats(HisStatsConfig(start_cash=start_cash, eval_cost=rules.eval_cost, pass_rate=r["pass_rate"], payout_rate=r["payout_rate"], payout_size=payout_size(r),
                                             eval_days=int(max(1, np.nan_to_num(r["eval_days_median"], nan=5))),
@@ -190,7 +197,7 @@ def whole_contracts(pre: pd.DataFrame, budget: float, cap: int) -> pd.DataFrame:
 def score_whole(pre: pd.DataFrame, cal: pd.DatetimeIndex, cut: pd.Timestamp, firm: str = "topstep_50k") -> dict:
     """One firm's row per period with whole micro contracts: the evaluation trades the stream sized to the two-trade
     evaluation risk, the funded phase the stream sized to the funded risk."""
-    rules = FIRM_PRESETS[firm]
+    rules = PRESETS[firm]
     cap = MICROS_PER_MINI * rules.max_contracts
     ev = whole_contracts(pre, rules.profit_target / (2.0 * 1.5), cap)
     fu = whole_contracts(pre, FUNDED_RISK, cap)
@@ -448,40 +455,43 @@ def report(streams: dict, pre: dict, chain: dict, cal: pd.DatetimeIndex, cut: pd
             r["firm"] = "topstep_50k"
             s.append(f"| {name} | {per} | {p['trades']} | {p['expectancy_r']:+.3f} | {p['total_r']:+.1f} | {r['pass_rate']:.1%} | {r['pass_stderr']:.1%} | {r['payout_rate']:.1%} | {r['payout_stderr']:.1%} | {r['payout_median_amount']:,.0f} | {ev_per_eval(r):+,.0f} | {ev_net(r):+,.0f} |")
     s.append("")
-    rules = FIRM_PRESETS["topstep_50k"]
-    cap = MICROS_PER_MINI * rules.max_contracts
-    s.append("## Position size at Topstep's daily loss limit, topstep_50k\n")
-    s.append("At the sealed sizing a stop-out costs 1.02 R with slippage and commission: $1,020 in the evaluation against the preset's $1,000 soft daily loss limit, which caps the day at exactly $1,000 and stops it, so two losing days use exactly the $2,000 drawdown and the account fails at the threshold. "
-             "Sized 2% smaller (0.98) a stop-out stays inside the limit and the account survives a third loss, though two wins (2.98 R) no longer reach the $3,000 target; the funded phase has the same kind of edge at four stop-outs. "
-             "Every Topstep row at exactly the sealed sizing, the sealed report's included, sits on this edge (topstep_100k too: its limit is $2,000 at $2,000 of risk); FundedNext and Tradeify have no limit at 1 R. Fractional sizes, both phases scaled alike.\n")
-    s.append("| stream | period | P(pass) at " + " / ".join(f"{z:.2f}" for z in SIZES) + " | P(payout) at " + " / ".join(f"{z:.2f}" for z in SIZES) + " | EV net of all fees at " + " / ".join(f"{z:.2f}" for z in SIZES) + " |")
-    s.append("|---|---|---|---|---|")
-    for name, st in streams.items():
-        sized = {z: score_sized(st, cal, cut, z) for z in SIZES}
-        for per in ("development", "benchmark"):
-            rows_ = [sized[z][per] for z in SIZES]
-            if any(x is None for x in rows_):
-                continue
-            s.append(f"| {name} | {per} | " + " / ".join(f"{x['pass_rate']:.1%}" for x in rows_) + " | " + " / ".join(f"{x['payout_rate']:.1%}" for x in rows_)
-                     + " | " + " / ".join(f"{ev_net({**x, 'firm': 'topstep_50k'}):+,.0f}" for x in rows_) + " |")
+    s.append("## Position size at Topstep's loss limits\n")
+    s.append("At the sealed sizing a stop-out costs 1.02 R with slippage and commission: $1,020 in a Topstep 50K evaluation. On topstep_50k (the frozen preset: the legacy platforms, with a $1,000 soft daily loss limit) the firm caps that day at exactly $1,000 and stops it, so two losing days use exactly the $2,000 drawdown and the account fails at the threshold (the help centre says an account fails when its balance hits the limit). "
+             "On topstep_50k_x (TopstepX, where new and reset accounts have had no daily loss limit since 2024-08-25; everything else as topstep_50k) two stop-outs cost $2,040 and breach the drawdown outright. "
+             "Sized 2% smaller (0.98) two stop-outs cost $1,999 on either preset and the account survives a third, though two wins (2.98 R) no longer reach the $3,000 target; the funded phase has the same kind of edge at four stop-outs. "
+             "Every Topstep row at exactly the sealed sizing, the sealed report's included, sits on this edge (topstep_100k too: $2,000 of risk against a $3,000 drawdown). Fractional sizes, both phases scaled alike.\n")
+    s.append("| preset | stream | period | P(pass) at " + " / ".join(f"{z:.2f}" for z in SIZES) + " | P(payout) at " + " / ".join(f"{z:.2f}" for z in SIZES) + " | EV net of all fees at " + " / ".join(f"{z:.2f}" for z in SIZES) + " |")
+    s.append("|---|---|---|---|---|---|")
+    for firm in SIZING_FIRMS:
+        for name, st in streams.items():
+            sized = {z: score_sized(st, cal, cut, z, firm) for z in SIZES}
+            for per in ("development", "benchmark"):
+                rows_ = [sized[z][per] for z in SIZES]
+                if any(x is None for x in rows_):
+                    continue
+                s.append(f"| {firm} | {name} | {per} | " + " / ".join(f"{x['pass_rate']:.1%}" for x in rows_) + " | " + " / ".join(f"{x['payout_rate']:.1%}" for x in rows_)
+                         + " | " + " / ".join(f"{ev_net({**x, 'firm': firm}):+,.0f}" for x in rows_) + " |")
     s.append("")
-    s.append("## Whole contracts, topstep_50k\n")
+    rules = PRESETS["topstep_50k"]
+    cap = MICROS_PER_MINI * rules.max_contracts
+    s.append("## Whole contracts\n")
     s.append(f"Each candidate's entries sized in whole micro NQ contracts ($2 a point): the largest count whose full stop-out (the stop plus {SLIPPAGE} point of exit slippage, plus ${MICRO_COMMISSION_RT:.2f} round-trip commission per micro, the replay's $5 per NQ scaled; real micro fees run higher, about 0.01 to 0.02 R per trade on a 25-point stop) stays within the budget (${rules.profit_target / 3:,.0f} in the evaluation, ${FUNDED_RISK:,.0f} funded), at most {cap} (the preset's {rules.max_contracts} NQ). "
              "An entry that rounds to zero contracts is not taken, the sequential pass runs on what is taken, and each R is scaled by the contracts' stop risk as a share of the budget (size). "
-             "No stream sits on the daily-limit edge here: the sealed 25-point stop takes 19 micros in the evaluation (size 0.95) and 9 funded (0.90), the 50-point stop 9 and 4 (0.90 and 0.80), so the sealed rows differ from the summary for that reason. "
+             "No stream sits on the loss-limit edge here: the sealed 25-point stop takes 19 micros in the evaluation (size 0.95) and 9 funded (0.90), the 50-point stop 9 and 4 (0.90 and 0.80), so the sealed rows differ from the summary for that reason. "
              "Micro NQ began trading on 2019-05-06; this applies today's contract menu to every year, which is the question for an account opened now (before May 2019 only NQ existed, and a stop wider than 50 points could not be taken at $1,000 of risk, nor one wider than 25 at $500). The frozen bootstrap is run on these inputs.\n")
-    s.append("| stream | period | evaluation: trades, mean size | P(pass) | +/- | funded: trades, mean size | P(payout) | +/- | median payout | EV per evaluation | EV net of all fees | P(bust) from $2,000 |")
-    s.append("|---|---|---|---|---|---|---|---|---|---|---|---|")
-    for name, p in pre.items():
-        w = score_whole(p, cal, cut)
-        for per in ("development", "benchmark"):
-            q = w[per]
-            if q["firms"].empty:
-                continue
-            r = q["firms"].iloc[0].to_dict()
-            ok = np.isfinite(r["pass_rate"]) and np.isfinite(r["payout_rate"])
-            bust = f"{bootstrap(r, 2000.0)['p_bust']:.0%}" if ok else "n/a"
-            s.append(f"| {name} | {per} | {q['eval_trades']}, {q['eval_size']:.2f} | {r['pass_rate']:.1%} | {r['pass_stderr']:.1%} | {q['funded_trades']}, {q['funded_size']:.2f} | {r['payout_rate']:.1%} | {r['payout_stderr']:.1%} | {r['payout_median_amount']:,.0f} | {ev_per_eval(r):+,.0f} | {ev_net(r):+,.0f} | {bust} |")
+    s.append("| preset | stream | period | evaluation: trades, mean size | P(pass) | +/- | funded: trades, mean size | P(payout) | +/- | median payout | EV per evaluation | EV net of all fees | P(bust) from $2,000 |")
+    s.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+    for firm in SIZING_FIRMS:
+        for name, p in pre.items():
+            w = score_whole(p, cal, cut, firm)
+            for per in ("development", "benchmark"):
+                q = w[per]
+                if q["firms"].empty:
+                    continue
+                r = q["firms"].iloc[0].to_dict()
+                ok = np.isfinite(r["pass_rate"]) and np.isfinite(r["payout_rate"])
+                bust = f"{bootstrap(r, 2000.0)['p_bust']:.0%}" if ok else "n/a"
+                s.append(f"| {firm} | {name} | {per} | {q['eval_trades']}, {q['eval_size']:.2f} | {r['pass_rate']:.1%} | {r['pass_stderr']:.1%} | {q['funded_trades']}, {q['funded_size']:.2f} | {r['payout_rate']:.1%} | {r['payout_stderr']:.1%} | {r['payout_median_amount']:,.0f} | {ev_per_eval(r):+,.0f} | {ev_net(r):+,.0f} | {bust} |")
     s.append("")
     for name, sc in scored.items():
         s.append(f"## {name}\n")

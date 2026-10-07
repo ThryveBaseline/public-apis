@@ -203,8 +203,8 @@ def test_cli_gate_reproduces_the_sealed_rows_and_refuses_a_changed_one(tmp_path,
     assert candidates.main() == 0
     text = (tmp_path / "b3.md").read_text()
     assert f"reproduces all 8 firm rows of {tmp_path / 'report.md'} character for character" in text
-    assert "## Continuation by direction" in text and "| benchmark |" in text and "## Whole contracts, topstep_50k" in text
-    assert "## Position size at Topstep's daily loss limit, topstep_50k" in text
+    assert "## Continuation by direction" in text and "| benchmark |" in text and "## Whole contracts" in text
+    assert "## Position size at Topstep's loss limits" in text and "| topstep_50k_x | S1 continuation only" in text
     row = next(x for x in rep.text.splitlines() if x.startswith("| topstep_50k |"))
     cells = row.split(" | ")
     cells[4] = str(int(cells[4]) + 1)  # days to pass, in sample: one character's worth of difference
@@ -331,3 +331,22 @@ def test_fees_and_net_ev(engine):
     run = pp[pp["outcome"] != "censored"]
     used = [30 if o == "open" else d for o, d in zip(run["outcome"], run["days"])]
     assert row["eval_months_mean"] == pytest.approx(np.mean([np.ceil(u / 22) for u in used]))
+
+
+def test_topstep_loss_limit_edge_on_both_presets():
+    """Two stop-outs at the sealed sizing (1.02 R each) end a Topstep 50K evaluation, on the frozen preset (the
+    $1,000 daily limit caps each day at exactly $1,000, so the balance lands on the threshold) and on the TopstepX
+    variant (no daily limit: $2,040 breaches outright); 2% smaller, the same path survives and later passes."""
+    from fpt.evaluate import walk_forward_pass_probability
+    from fpt.propfirm import FIRM_PRESETS
+    from research.candidates import PRESETS
+    assert FIRM_PRESETS["topstep_50k"].daily_loss_limit == 1000 and PRESETS["topstep_50k_x"].daily_loss_limit is None
+    assert [k for k in FIRM_PRESETS["topstep_50k"].__dataclass_fields__
+            if getattr(FIRM_PRESETS["topstep_50k"], k) != getattr(PRESETS["topstep_50k_x"], k)] == ["plan", "daily_loss_limit", "verified", "notes"]
+    days = pd.bdate_range("2025-03-03", periods=8)
+    r = [-1.02, -1.02, 1.52, 1.52, 1.52, 1.52, 1.52, 1.52]
+    t = pd.DataFrame({"entry_time": [pd.Timestamp(d).tz_localize(NY) + pd.Timedelta(hours=9, minutes=35) for d in days], "r": r})
+    for firm in ("topstep_50k", "topstep_50k_x"):
+        for size, want in ((1.00, "fail"), (0.98, "pass")):
+            pp = walk_forward_pass_probability(t.assign(r=t["r"] * size), PRESETS[firm], 1000.0, 30, trading_days=days)
+            assert pp.iloc[0]["outcome"] == want, (firm, size, pp.iloc[0].to_dict())
