@@ -121,6 +121,7 @@ def test_the_vectorised_run_equals_a_scalar_reference_and_its_daily_estimates(en
                 "p_breach": sum(np.mean([b == k + 1 for _, b in s]) for k, s in enumerate(seen)),
                 "p_any": sum(np.mean([firsts[id(x)] == k for x in s]) for k, s in enumerate(seen)),
                 "first_amount": sum(np.mean([x[0][k] if firsts[id(x)] == k else 0.0 for x in s]) for k, s in enumerate(seen))}
+        want["p_breach"], want["p_any"] = min(1.0, want["p_breach"]), min(1.0, want["p_any"])  # sums of daily shares, capped at 1
         for key, v in want.items():
             assert summary[h][key] == pytest.approx(v), (h, key)
         assert summary[h]["n_full"] == sum(1 for p, _ in ref if len(p) >= h)
@@ -174,3 +175,12 @@ def test_cli_runs_through_b3s_gates(sealed_4y, tmp_path, monkeypatch):
         assert head in text
     assert text.count("| S4 S3 + A+ reversion, sealed bracket | development | ask |") == 3 * len(HORIZONS)
     assert text.count("| S4 S3 + A+ reversion, sealed bracket | development | wait |") == 3 * len(HORIZONS)
+
+
+def test_a_sum_of_daily_shares_is_capped_at_one():
+    """Four days, one large loss on the last: every start breaches on that day, so the share breaching is 1/4 on day 1
+    (the last start), 1/3 on day 2, 1/2 on day 3 and 1 on day 4; the sum, 2.08, is reported as 1."""
+    cal = pd.DatetimeIndex(pd.bdate_range("2024-01-02", periods=4))
+    t = pd.DataFrame({"entry_time": [pd.Timestamp("2024-01-05 09:35", tz=NY)], "r": [-5.0]})
+    _, summary = walk_forward_lifetime(t, PRESETS["topstep_50k_x"], 500.0, (4,), cal, True)
+    assert summary[4]["p_breach"] == 1.0 and summary[4]["p_any"] == 0.0

@@ -81,7 +81,8 @@ def walk_forward_lifetime(trades: pd.DataFrame, rules, funded_risk: float, horiz
     P(breach by H), P(any payout by H) and the expected first payout (each start breaches once at most and has one
     first payout, so the daily shares add up); and the number of starts with H days of data. Starts are cut off by the
     calendar, not by their outcome, so each day's mean is an unbiased estimate of that day's share; with no cut-off the
-    sums are the plain means over starts."""
+    sums are the plain means over starts. In a short period later days are averaged over fewer, earlier starts, so a
+    sum of shares can pass 1: the two probabilities are capped at 1."""
     dates, rs = _daily_r(trades, trading_days)
     n = len(dates)
     if n == 0:
@@ -123,8 +124,8 @@ def walk_forward_lifetime(trades: pd.DataFrame, rules, funded_risk: float, horiz
         if h > n:
             summary[h] = {k: float("nan") for k in ("paid", "payouts", "p_breach", "p_any", "first_amount")} | {"n_full": 0}
             continue
-        summary[h] = {"paid": float(day_paid[:h].sum()), "payouts": float(day_count[:h].sum()), "p_breach": float(day_breach[:h].sum()),
-                      "p_any": float(day_first[:h].sum()), "first_amount": float(day_first_amt[:h].sum()), "n_full": int((avail >= h).sum())}
+        summary[h] = {"paid": float(day_paid[:h].sum()), "payouts": float(day_count[:h].sum()), "p_breach": min(1.0, float(day_breach[:h].sum())),
+                      "p_any": min(1.0, float(day_first[:h].sum())), "first_amount": float(day_first_amt[:h].sum()), "n_full": int((avail >= h).sum())}
     return pd.DataFrame(out), summary
 
 
@@ -187,7 +188,7 @@ def report(rows: list[dict], gate_note: str) -> str:
          "On the Topstep presets Topstep's Express Funded payout rules apply: with a payout the maximum loss limit moves to the starting balance and stays there, and a payout after the first needs a positive net profit since the previous one. "
          "Two payout policies: " + "; ".join(f"{k}, {v}" for k, v in POLICIES.items()) + ". "
          "Gate, passed on every row of the first policy: each start's first payout within 60 days (outcome, day and amount) equals the frozen payout walk-forward's, so the first payouts are B3's; B3's P(payout) is printed beside. "
-         "Lifetime figures use every start: each is the sum over days 1 to H of that day's mean over the starts that have that day of data, so late starts are used as far as their data goes and none is dropped for surviving (starts with H days counts the starts that have all H). "
+         "Lifetime figures use every start: each is the sum over days 1 to H of that day's mean over the starts that have that day of data, so late starts are used as far as their data goes and none is dropped for surviving (starts with H days counts the starts that have all H); in a short period such a sum can pass 100%, so P(breach) and P(any payout) are capped there. "
          "EV per evaluation = P(pass) x expected lifetime payout by H (net of the split) - fees per evaluation (monthly billing and the activation fee). "
          "EV first payout only: B3's net EV (median-priced), and the policy's own first payout within 60 days priced at its mean (under the first policy that payout is B3's; under the second it comes later and is larger). "
          "Fractional sizing; the risk per trade stays at the budget after a payout. The benchmark year is reported beside and never used to choose.\n",
