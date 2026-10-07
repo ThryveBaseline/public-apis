@@ -1,6 +1,7 @@
 """S3 and S4 on a Topstep 50K account with what B4/B5 left out (docs/reviews/topstep_economics_audit.md): TopstepX's
 micro fee ($1.22 a round trip, not $0.50), the loss limit enforced on each trade's worst excursion rather than only
-on closed trades, and the call-up to Live at the 3rd payout. Before any money is spent (task 15); it does not touch
+on closed trades, and the call-up to Live at the 3rd payout. Sizing includes the real fee, as a live account must
+(the forward ledger's micro counts are sized at $0.50 and are bookkeeping only). Before any money is spent (task 15); it does not touch
 the forward test.
 
 The candidates are the forward protocol's frozen S3 and S4 (research/forward.CANDIDATES, research/engine.py) on the
@@ -8,9 +9,8 @@ sealed bars. The paths are B5's (research/b5_paths.simulate): from $2,000, one a
 TopstepX, 365 days, both payout policies, with and without the call-up. Each candidate runs four ways, so each
 correction's cost shows: the B5 fee or the real one, and dips ignored or counted.
 
-A dip is counted exactly with the frozen account: each trade becomes two steps on its day, the worst excursion
-(entry to the most adverse price over its bars, the exit bar's whole range included, the round-trip fee charged
-up front), then the rest of the trade. The frozen account fails on any step that takes the balance to the loss
+A dip is counted with the frozen account: each trade becomes two steps on its day, the worst excursion (see
+mae_points; the round-trip fee charged up front), then the rest of the trade. The frozen account fails on any step that takes the balance to the loss
 limit, and TopstepX has no daily loss limit and trails at the day's end, so nothing else changes.
 
 usage:
@@ -38,12 +38,15 @@ from research.forward import CANDIDATES, DEV_END, FIRST_UNSEEN, candidate_trades
 from research.ledger_filters import sequential_pass  # noqa: E402
 
 FEES = {"B5": 0.50, "TopstepX": 1.22}  # per micro round trip
+CHAIN_FROM = pd.Timestamp("2021-01-01")  # S3's walk-forward chain chose this bracket, on earlier years only, every year from 2021 (research/run1_b3.md)
 POLICIES = ("ask", "wait")
 
 
 def mae_points(trades: pd.DataFrame, bars: pd.DataFrame) -> np.ndarray:
-    """Each trade's most adverse excursion from its entry, in points, over the bars from the entry bar to the exit
-    bar, the exit bar's whole range included (conservative: the target may have printed before its low)."""
+    """Each trade's most adverse excursion from its entry, in points. A stop exit's is exactly its fill (no earlier
+    bar reached the stop, or the trade would have stopped there). Otherwise the bars from the entry bar to the exit
+    bar, the exit bar's whole range included (conservative for a target exit: the target may have printed before
+    the bar's low; exact for a 16:00 exit, open through its bar)."""
     idx = bars.index
     lo, hi = bars["low"].to_numpy(float), bars["high"].to_numpy(float)
     a = idx.searchsorted(pd.DatetimeIndex(trades["entry_time"]).tz_convert(idx.tz), side="left")
@@ -55,6 +58,8 @@ def mae_points(trades: pd.DataFrame, bars: pd.DataFrame) -> np.ndarray:
         if b[i] <= a[i]:
             raise ValueError(f"trade {i} has no bar between its entry and exit")
         out[i] = entry[i] - lo[a[i]:b[i]].min() if long[i] else hi[a[i]:b[i]].max() - entry[i]
+    stop = (trades["exit_reason"].astype(str) == "stop").to_numpy()
+    out = np.where(stop, -trades["pnl_points"].astype(float).to_numpy(), out)
     return np.maximum(out, 0.0)
 
 
@@ -123,7 +128,11 @@ def report(rows: list[dict], meta: dict) -> str:
          f"(evaluation budget ${eval_risk(TOPSTEPX):,.0f}, funded ${FUNDED_RISK:,.0f}), {PATH_DAYS} days; development paths start every trading day "
          f"and end by {DEV_END.date()}, the benchmark is one path from 2025-10-06. Fees per micro round trip: B5 $0.50, TopstepX $1.22. "
          "Dips: the loss limit is checked at each trade's worst excursion (the exit bar's whole range included, the fee charged up front). "
-         f"Call-up: every account closes at the path's {CALLUP}rd payout request and the Live account counts for nothing.\n",
+         f"Call-up: every account closes at the path's {CALLUP}rd payout request and the Live account counts for nothing. "
+         "Sizing includes the fee in each variant's budget (a live account must size with the real $1.22).\n",
+         "Which rows to read: the bracket was chosen on all development years, so 'development, in-sample' flatters both candidates. "
+         "'Development from 2021' is out of sample for the bracket (S3's walk-forward chain chose it each year from 2021 on earlier years only), "
+         "and the benchmark is one path the choice never saw.\n",
          "Net per evaluation is (mean final cash - $2,000) / mean evaluations bought; it includes the activations and the payouts.\n",
          "| candidate | period | policy | call-up | fee | dips | paths | ruin | cash p10 | median cash | mean cash | > $2,000 | evaluations | payouts | net per evaluation |",
          "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
@@ -155,7 +164,8 @@ def main() -> int:
     for name in CANDIDATES:
         pre = trades[name].copy()
         pre["mae_points"] = mae_points(pre, bars)
-        for period, cal, last in (("development", sessions[sessions <= DEV_END], DEV_END),
+        for period, cal, last in (("development, in-sample", sessions[sessions <= DEV_END], DEV_END),
+                                  ("development from 2021", sessions[(sessions >= CHAIN_FROM) & (sessions <= DEV_END)], DEV_END),
                                   ("benchmark", sessions[(sessions > DEV_END) & (sessions < FIRST_UNSEEN)], None)):
             for policy in POLICIES:
                 for callup in (None, CALLUP):

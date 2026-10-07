@@ -12,10 +12,13 @@ NY = "America/New_York"
 
 def test_the_worst_excursion():
     idx = pd.date_range(pd.Timestamp("2026-03-02 09:30", tz=NY), periods=6, freq="1min")
-    bars = pd.DataFrame({"open": 100.0, "high": [101, 102, 103, 104, 105, 106], "low": [99, 97, 98, 96, 99, 100], "close": 100.0}, index=idx)
-    t = pd.DataFrame({"entry_time": [idx[1], idx[1]], "exit_time": [idx[3], idx[4]], "direction": ["long", "short"], "entry": [100.0, 100.0]})
-    # long: the lowest low from the entry bar to the exit bar, both included (96); short: the highest high (105)
-    assert list(rex.mae_points(t, bars)) == [4.0, 5.0]
+    # the bar before the entry is the most extreme of all: it must not count
+    bars = pd.DataFrame({"open": 100.0, "high": [120, 102, 103, 104, 105, 106], "low": [80, 97, 98, 96, 99, 100], "close": 100.0}, index=idx)
+    t = pd.DataFrame({"entry_time": [idx[1], idx[1], idx[1]], "exit_time": [idx[3], idx[4], idx[3]], "direction": ["long", "short", "long"],
+                      "entry": [100.0, 100.0, 100.0], "exit_reason": ["target", "flat", "stop"], "pnl_points": [6.0, -1.0, -3.25]})
+    # long: the lowest low from the entry bar to the exit bar, both included (96); short: the highest high (105);
+    # a stop exit: exactly its fill (3.25 points), not the exit bar's whole range
+    assert list(rex.mae_points(t, bars)) == [4.0, 5.0, 3.25]
 
 
 @pytest.fixture(scope="module")
@@ -68,5 +71,25 @@ def test_split_rows_interleave_the_worst_point(setup):
     st = rex.micro_stream(pre, 500.0, 50, 1.22)
     dates = pd.DatetimeIndex(sorted(set(pd.DatetimeIndex(st["entry_time"]).tz_convert(NY).tz_localize(None).normalize())))
     one, two = rex.split_rows(st, dates, False), rex.split_rows(st, dates, True)
-    for a, b in zip(one, two):
-        assert len(b) == 2 * len(a) and np.allclose(b[0::2] + b[1::2], a)
+    day = pd.DatetimeIndex(st["entry_time"]).tz_convert(NY).tz_localize(None).normalize()
+    for d, a, b in zip(dates, one, two):
+        own = st[day == d].sort_values("entry_time")
+        assert np.allclose(b[0::2], own["w"]) and np.allclose(b[1::2], own["r"] - own["w"]) and np.allclose(a, own["r"])
+
+
+def test_the_b5_variant_reproduces_b5(setup):
+    from research.b5_paths import run
+    pre, sessions = setup
+    for policy, callup in (("ask", None), ("wait", 3)):
+        b5 = run(pre, sessions, sessions[-1], TOPSTEPX, policy, "whole micros", 1.0, 1, callup)  # B5's own run, its gates included
+        ours = rex.run_variant(pre, sessions, sessions[-1], policy, callup, 0.50, dips=False)
+        for k in ("paths", "p_ruin", "cash_p10", "cash_p50", "cash_mean", "evals_mean", "passes_mean", "payouts_mean", "paid_mean", "fees_mean", "p_callup"):
+            assert ours[k] == pytest.approx(b5[k], rel=1e-12, abs=1e-9), k
+
+
+def test_dips_through_the_stream_only_cost(setup):
+    pre, sessions = setup
+    for fee in (0.50, 1.22):
+        closed = rex.run_variant(pre, sessions, sessions[-1], "ask", None, fee, dips=False)
+        dips = rex.run_variant(pre, sessions, sessions[-1], "ask", None, fee, dips=True)
+        assert dips["xfa_breaches_mean"] + dips["evals_mean"] >= closed["xfa_breaches_mean"] + closed["evals_mean"] - 1e-9
