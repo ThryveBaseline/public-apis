@@ -21,8 +21,9 @@ full re-simulation on the research branch.
 Filters (provenance: docs/research/synthesis/reversion_rules.md section 7):
   base             the sealed ledger
   B2a              reversion grade A+ only (his funded entry trigger: break of structure)
-  B2b2             move-away gate from the 09:30 open: through the signal bar, price had moved more than the trade's
-                   target away from its recorded fair value, on the side the reversion fades
+  B2b2             the engine's own require_band_touch gate, for contrast: through the signal bar, the session extreme since
+                   09:30 reached at least the trade's target away from its recorded fair value, on the side the reversion
+                   fades (measured against the fair value in force at the signal, as the engine does)
   B2b1             the same gate restarted after the last close through fair value (a return to fair resets it)
   B2c4 / B2c3      at most 4 / 3 reversion attempts per session, in entry order
   B2h              April room rule: room at the signal >= the whole target (instead of 80% of it)
@@ -84,10 +85,13 @@ def sealed_target(trades: pd.DataFrame) -> np.ndarray:
     return (trades["target"].astype(float) - trades["entry"].astype(float)).abs().to_numpy()
 
 
-def move_away_gate(trades: pd.DataFrame, bars: pd.DataFrame, since_last_cross: bool, threshold=None, session_start: str = "09:30") -> pd.Series:
+def move_away_gate(trades: pd.DataFrame, bars: pd.DataFrame, since_last_cross: bool, threshold=None, session_start: str = "09:30",
+                   inclusive: bool = False) -> pd.Series:
     """True for reversion trades whose decision was preceded, within the session and through the signal bar (known
     at the decision; entry is at the next bar's open), by a move of more than `threshold` points (default: the
-    trade's sealed target) away from the trade's recorded fair value on the side it fades. Continuation rows: True."""
+    trade's sealed target) away from the trade's recorded fair value on the side it fades. Continuation rows: True.
+    `inclusive=True` passes at equality, as the frozen engine's require_band_touch does (fpt/strategy.py: it skips only
+    when the session extreme is short of fair value plus the band); his own "more than" gates are strict."""
     hi = bars["high"].to_numpy(float)
     lo = bars["low"].to_numpy(float)
     cl = bars["close"].to_numpy(float)
@@ -114,7 +118,7 @@ def move_away_gate(trades: pd.DataFrame, bars: pd.DataFrame, since_last_cross: b
             out[k] = False
             continue
         excursion = (hi[i0:i1].max() - fv[k]) if d[k] < 0 else (fv[k] - lo[i0:i1].min())
-        out[k] = bool(excursion > thr[k])
+        out[k] = bool(excursion >= thr[k]) if inclusive else bool(excursion > thr[k])
     return pd.Series(out, index=trades.index)
 
 
@@ -128,7 +132,7 @@ def build_gates(trades: pd.DataFrame, bars: pd.DataFrame) -> dict:
     tgt = sealed_target(trades)
     room = trades["distance_from_fv"].astype(float).abs().to_numpy()
     return {
-        "b2": move_away_gate(trades, bars, since_last_cross=False),
+        "b2": move_away_gate(trades, bars, since_last_cross=False, inclusive=True),  # the engine's require_band_touch, for contrast
         "b1": move_away_gate(trades, bars, since_last_cross=True),
         "b1w": move_away_gate(trades, bars, since_last_cross=True, threshold=np.where(wide, WIDE_TARGET, tgt)),
         "b1f": move_away_gate(trades, bars, since_last_cross=True, threshold=np.array([room_target("menu", float(x)) for x in room])),
@@ -152,7 +156,10 @@ def apply_filter(trades: pd.DataFrame, name: str, gates: dict) -> pd.DataFrame:
         keep &= ~rev | (minute < 10 * 60)
     for g in ("b2", "b1", "b1w", "b1f", "room_ge_target", "room_w"):
         if g in parts:
-            keep &= ~rev | gates[g].reindex(t.index).fillna(False).astype(bool)
+            gv = gates[g].reindex(t.index)
+            if gv.isna().any():
+                raise ValueError(f"gate {g} has no value for {int(gv.isna().sum())} trades: the subset's labels are not ledger positions")
+            keep &= ~rev | gv.astype(bool)
     return t[keep]
 
 
@@ -217,6 +224,8 @@ def _f(v, spec):
 def check_alignment(trades: pd.DataFrame, replay: pd.DataFrame) -> int:
     """The replayed `ledger_bracket` control must equal the ledger R on every stop or target exit before 16:00;
     otherwise the replay rows are not keyed to these trades and nothing is reported."""
+    if "exit_time" not in replay.columns:
+        raise ValueError("the replay file has no exit_time column; rerun research/bracket_replay.py at this version")
     ids = set(int(x) for x in replay["trade"].unique())
     ledger_ids = set(int(x) for x in trades.index)
     if not ids <= ledger_ids:
@@ -294,12 +303,12 @@ def evaluate(trades: pd.DataFrame, bars: pd.DataFrame, oos_start: str, replay: p
     rev = trades["setup"].astype(str) == "reversion"
     n_rev = int(rev.sum())
     s = ["# B2: reversion rules as stated, screened on the sealed ledger\n"]
-    s.append(f"Base reproduction: the sequential pass (one position at a time, three-loss session stop) on the unfiltered ledger keeps all {len(trades)} trades, so the filtered streams use the engine's semantics.")
+    s.append(f"Base reproduction: the sequential pass (one position at a time, three-loss session stop) on the unfiltered ledger keeps all {len(trades)} trades. That is a necessary condition only; that the pass reproduces the engine's stop is shown in the test suite by running the frozen engine with and without its loss stop.")
     s.append(f"Reversion entries: {n_rev}. Pass the move-away gate from the open (B2b2): {int(gates['b2'][rev].sum())}; since the last return to fair (B2b1): {int(gates['b1'][rev].sum())}; "
              f"B2b1 with the band at 76 on wide-open days: {int(gates['b1w'][rev].sum())}; B2b1 with the band at the funded menu target: {int(gates['b1f'][rev].sum())}. Room at the signal >= the whole target (B2h): {int(gates['room_ge_target'][rev].sum())}. "
              f"Trades on wide-open days (09:30 body > {WIDE_BODY:g} points): {int(gates['wide'].sum())}.")
     s.append("Screening on a fixed ledger ignores freed positions and trades the sealed stop suppressed (documented caveat). The benchmark year is reported beside and never selected on.\n")
-    s.append("## Filters with the sealed brackets (ledger R, including the sealed evening-session exits)\n")
+    s.append("## Filters with the sealed brackets (ledger R, including positions held past 11:00 and the sealed `session_end` exits at the end of the New York calendar day)\n")
     frames = [(name, select(trades, name, gates)) for name in FILTERS]
     s += _period_tables(frames, years, "filter", "base")
     out = {"filters": frames}

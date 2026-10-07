@@ -192,3 +192,73 @@ def test_funded_band_is_the_menu_target():
         seti(m, "high", fv + 62); seti(m, "close", fv + 60)  # a 62-point move since the last return to fair
     gates = build_gates(t, bars)
     assert gates["b1"].iloc[0] and not gates["b1f"].iloc[0]  # beyond the 38 band, not beyond the 75 target
+
+
+def _engine_ledger(tmp_path, bars, cfg, name):
+    """Frozen-engine trades written and read back exactly as the sealed ledger is."""
+    from fpt.strategy import generate_trades
+    from research.anatomy import load_trades
+    p = tmp_path / name
+    generate_trades(bars, cfg).to_csv(p, index=False)
+    return load_trades(str(p))
+
+
+@pytest.mark.parametrize("seed", [7, 13])
+def test_sequential_pass_reproduces_the_engine_loss_stop(tmp_path, seed):
+    """Engine without its three-loss stop, then the pass, must equal the engine with the stop."""
+    from dataclasses import replace
+    from fpt.data import synthetic_minute_bars
+    from fpt.strategy import StrategyConfig
+    bars = synthetic_minute_bars(days=120, seed=seed)
+    cfg = StrategyConfig()
+    with_stop = _engine_ledger(tmp_path, bars, cfg, "stop.csv")
+    without = _engine_ledger(tmp_path, bars, replace(cfg, max_consecutive_losses=None), "nostop.csv")
+    assert len(without) > len(with_stop)  # the stop binds, so the test means something
+    passed = sequential_pass(without)
+    assert list(passed["entry_time"]) == list(with_stop.sort_values("entry_time")["entry_time"])
+
+
+def test_wide_open_days_match_the_engine_big_open_rule(tmp_path):
+    from fpt.data import synthetic_minute_bars
+    from fpt.strategy import StrategyConfig
+    from research.ledger_filters import wide_open_days
+    bars = synthetic_minute_bars(days=160, seed=5, open_shock_points=40.0)
+    t = _engine_ledger(tmp_path, bars, StrategyConfig(), "wide.csv")
+    cont = t[t["setup"].astype(str) == "continuation"]
+    wide = wide_open_days(cont, bars)
+    assert wide.any() and (~wide).any()
+    assert ((cont["stop_points"].astype(float) == 50.0).to_numpy() == wide).all()
+
+
+def test_long_side_gate_and_engine_boundary():
+    bars = _bars(days=2)
+    day = bars.index[0].normalize()
+    fv = 20000.0
+    i = bars.index.get_loc(day.replace(hour=9, minute=35))
+    bars.iloc[i, bars.columns.get_loc("low")] = fv - 38.0  # exactly the band below fair value
+    t = _ledger(day, [(20, "reversion", "A+", 1, 1.5, fv)])  # a long reversion fades price below fair value
+    assert move_away_gate(t, bars, since_last_cross=False, inclusive=True).iloc[0]   # engine: passes at equality
+    assert not move_away_gate(t, bars, since_last_cross=False).iloc[0]              # his "more than": strict
+    bars.iloc[i, bars.columns.get_loc("low")] = fv - 45.0
+    for m in range(35, 50):  # price stays below fair value after the move, so the last return to fair is 09:34
+        bars.iloc[bars.index.get_loc(day.replace(hour=9, minute=m)), bars.columns.get_loc("close")] = fv - 30.0
+    assert move_away_gate(t, bars, since_last_cross=True).iloc[0]
+    bars.iloc[bars.index.get_loc(day.replace(hour=9, minute=45)), bars.columns.get_loc("close")] = fv + 1.0  # back through fair at 09:45
+    assert not move_away_gate(t, bars, since_last_cross=True).iloc[0]  # the 45-point move is before the return: reset
+
+
+def test_label_mismatch_raises_instead_of_failing_the_gate():
+    bars = _bars(days=2)
+    day = bars.index[0].normalize()
+    t = _ledger(day, [(10, "reversion", "A+", -1, 1.5, 20000, 40.0), (20, "reversion", "A+", -1, 1.5, 20000, 40.0)])
+    gates = build_gates(t, bars)
+    shifted = t.set_axis([5, 6])
+    with pytest.raises(ValueError, match="not ledger positions"):
+        apply_filter(shifted, "B2b1", gates)
+
+
+def test_stale_replay_gets_the_right_refusal():
+    t, bars, days = _consistent_ledger()
+    rep = replay(t, bars, grid()).drop(columns=["exit_time"])
+    with pytest.raises(ValueError, match="no exit_time column"):
+        check_alignment(t.reset_index(drop=True), rep)
