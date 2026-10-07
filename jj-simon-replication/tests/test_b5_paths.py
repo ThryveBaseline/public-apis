@@ -54,10 +54,57 @@ def test_an_open_evaluation_is_billed_monthly_and_closed_after_30_days():
 
 
 def test_an_evaluation_whose_fee_cannot_be_paid_is_cancelled(monkeypatch):
+    """Bought on 2024-01-02 with $11 left; the second fee falls due on the first trading day 30 calendar days later
+    (2024-02-01, the 23rd business day), cannot be paid, and the path is ruined that day."""
     monkeypatch.setattr(b5_paths, "START_CASH", 60.0)
     res = _one_path([[]] * 40, [[]] * 40)
     assert res["evals"][0] == 1 and res["cancelled"][0] == 1 and res["eval_log"] == [] and res["ruined"][0]
-    assert res["final_cash"][0] == pytest.approx(11.0)
+    assert res["final_cash"][0] == pytest.approx(11.0) and res["ruin_day"][0] == 23
+
+
+def test_a_pending_payout_is_waited_for_and_arrives_five_trading_days_later(monkeypatch):
+    """$198: one evaluation ($49), passed on day 4 and activated ($149), leaves nothing. The funded account asks for
+    $675 on its fifth day (day 9) and breaches on day 10: nothing live and no cash, but a payout pending, so no ruin.
+    The $675 arrives on day 14, five trading days after the request, and buys the next evaluation that day."""
+    monkeypatch.setattr(b5_paths, "START_CASH", 198.0)
+    res = _one_path([[0.8]] * 30, [[0.6]] * 9 + [[-5.0]] + [[0.6]] * 20)
+    assert [x[1] for x in res["eval_log"]][:2] == [0, 13] and res["first_payout"][0] == 9
+    assert res["xfa_log"][0] == (0, 4, "payout", 5, pytest.approx(675.0)) and res["xfa_breaches"][0] >= 1
+    assert not res["ruined"][0]
+
+
+def test_a_phase_with_no_trade_still_runs(stream):
+    """Stops of 300 points: one micro fits the $1,000 evaluation budget ($601 at a full stop-out) and none the $500
+    funded one. The run completes, the gates compare against a stream with no trade, and nothing is ever paid."""
+    pre, cal, cut = stream
+    wide = pre.copy()
+    wide["stop_points"] = 300.0
+    ev, fu = phase_streams(wide, "topstep_50k_x", "whole micros", 1.0)
+    assert len(ev) and fu.empty
+    out = run(wide, cal[cal <= cut], cut, "topstep_50k_x", "ask", "whole micros", 1.0, 1)
+    assert out["paths"] > 100 and out["funded_trades"] == 0 and out["paid_mean"] == 0.0 and out["gate_evaluations"] > 0
+    assert run(wide, cal[cal <= cut], cut, "topstep_50k_x", "wait", "whole micros", 1.0, 5)["paid_mean"] == 0.0
+
+
+def test_the_plan_runs_whole_micros_on_topstepx_only():
+    from research.b5_paths import plan_runs
+    sel = [{"stream": "S1", "firm": "topstep_50k", "size": 1.00, "policy": "ask", "runs": True},
+           {"stream": "S1", "firm": "topstep_50k_x", "size": 0.95, "policy": "ask", "runs": True},
+           {"stream": "S1", "firm": "topstep_50k_x", "size": 1.00, "policy": "wait", "runs": False},
+           {"stream": "S3", "firm": "topstep_50k", "size": 1.00, "policy": "wait", "runs": True}]
+    got = [(x["stream"], x["firm"], x["policy"], x["sizing"], x["size"]) for x in plan_runs(sel)]
+    assert got == [("S1", "topstep_50k", "ask", "fractional", 1.00), ("S1", "topstep_50k_x", "ask", "whole micros", 1.0),
+                   ("S1", "topstep_50k_x", "ask", "fractional", 0.95), ("S3", "topstep_50k", "wait", "fractional", 1.00),
+                   ("S3", "topstep_50k_x", "wait", "whole micros", 1.0)]
+
+
+def test_the_frozen_row_is_the_periods_own(stream):
+    from research.b5_paths import frozen_row
+    from research.candidates import bootstrap, score_sized
+    pre, cal, cut = stream
+    for period in ("development", "benchmark"):
+        want = bootstrap(score_sized(sequential_pass(pre), cal, cut, 0.95, "topstep_50k_x")[period], START_CASH)
+        assert frozen_row(pre, cal, cut, "topstep_50k_x", "fractional", 0.95, period) == want
 
 
 def test_a_slot_restarts_its_payout_count_with_a_purchase():

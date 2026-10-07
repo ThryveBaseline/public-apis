@@ -25,7 +25,10 @@ scalar reference). Evaluations cancelled for fees and accounts cut off by the pa
 Which configurations run: every stream B4 scores (B3's S0r and S1-S4; S5 and S6 if the trend exit passes its
 registered test; H3's favoured-side streams if H3 passes its registered test on these inputs), at every preset, size
 and payout policy B4 uses, whose development lifetime EV per evaluation at H 250 is positive. Each runs at its B4 size
-(fractional) and in whole micro contracts, at caps 1 and 5, on development paths and on the benchmark path.
+(fractional) on its preset; for every stream and policy with a selected configuration, whole micro contracts run on
+TopstepX (the frozen preset's soft daily limit is not usable below the sealed sizing; registration clarification 5).
+All at caps 1 and 5, on development paths and on the benchmark path. Both phases share one calendar, so a period in
+which no trade fits one phase's budget still runs: that phase's account never trades.
 
 usage: python research/b5_paths.py <B3's arguments> --registration docs/research/preregistration_b5_bootstrap.md \
            --trend-registration docs/research/preregistration_trend_exit.md \
@@ -43,7 +46,7 @@ import pandas as pd
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fpt.data import NY  # noqa: E402
-from fpt.evaluate import _daily_r, walk_forward_pass_probability, walk_forward_payout_probability  # noqa: E402
+from fpt.evaluate import _calendar, _daily_r, walk_forward_pass_probability, walk_forward_payout_probability  # noqa: E402
 from fpt.propfirm import EVAL, FAILED, FUNDED, INACTIVE  # noqa: E402
 from research import conditions, h3_filter, trend_exit  # noqa: E402
 from research.candidates import (BILLING_DAYS, FUNDED_RISK, MAX_EVAL_DAYS, MAX_FUNDED_DAYS, MICROS_PER_MINI, PRESETS, add_gate_args, bootstrap,  # noqa: E402
@@ -52,13 +55,14 @@ from research.ledger_filters import sequential_pass  # noqa: E402
 from research.lifetime import POLICIES, RUNS, STREAMS, TOPSTEP_XFA, LifetimeAccount, lifetime_rows, walk_forward_lifetime  # noqa: E402
 from research.stream_report import on_span  # noqa: E402
 
-REGISTRATION_SHA256 = "2693fb360b3e68ed70580a643bc2f3437cbcbf360e2579929349fb5baa405a2a"  # registered in df2bc28, clarified in 1995b2c
+REGISTRATION_SHA256 = "2efd497dbb5cd333023ae754aef13eda94709ecb7ab88103fc12302685e6e48f"  # registered in df2bc28, clarified in 1995b2c and 7465eed
 START_CASH = 2000.0
 H_SELECT = 250
 PATH_DAYS = 365
 PAYOUT_DELAY = 5
 CAPS = (1, 5)
 SIZINGS = ("fractional", "whole micros")
+TOPSTEPX = "topstep_50k_x"  # whole micros run on this preset only (clarification 5)
 
 
 class SlotAccount(LifetimeAccount):
@@ -225,12 +229,39 @@ def simulate(dates: pd.DatetimeIndex, ev: tuple[np.ndarray, np.ndarray], fu: tup
     return out
 
 
-def first_payout_reference(fu_stream: pd.DataFrame, cal: pd.DatetimeIndex, firm: str, policy: str) -> pd.DataFrame:
+def phase_days(ev_stream: pd.DataFrame, fu_stream: pd.DataFrame, cal: pd.DatetimeIndex) -> tuple[pd.DatetimeIndex, list, list]:
+    """Both phases' day rows on one calendar: the period's trading days and every day either phase trades, each row as
+    fpt.evaluate._daily_r gives it on that calendar (empty arrays throughout for a stream with no trade)."""
+    days = set(_calendar(cal))
+    for st in (ev_stream, fu_stream):
+        days |= set(ny_day(st)) if len(st) else set()
+    dates = pd.DatetimeIndex(sorted(days))
+    rows = []
+    for st in (ev_stream, fu_stream):
+        if st.empty:
+            rows.append([np.zeros(0) for _ in range(len(dates))])
+            continue
+        got, rs = _daily_r(st, dates)
+        if len(got) != len(dates) or (pd.DatetimeIndex(got) != dates).any():
+            raise ValueError("a phase's day rows do not match the shared calendar")
+        rows.append(rs)
+    return dates, rows[0], rows[1]
+
+
+def _empty_reference(n: int, horizon: int) -> pd.DataFrame:
+    """The walk-forward of a stream with no trade: every start that has the horizon's days is open, the rest censored."""
+    avail = n - np.arange(n)
+    return pd.DataFrame({"outcome": np.where(avail >= horizon, "open", "censored"), "days": np.nan, "amount": 0.0})
+
+
+def first_payout_reference(fu_stream: pd.DataFrame, dates: pd.DatetimeIndex, firm: str, policy: str) -> pd.DataFrame:
     """Per start day: the first payout within 60 days (outcome, day, amount) as the gate's reference."""
     rules = PRESETS[firm]
+    if fu_stream.empty:
+        return _empty_reference(len(dates), MAX_FUNDED_DAYS)
     if policy == "ask":
-        return walk_forward_payout_probability(fu_stream, rules, FUNDED_RISK, MAX_FUNDED_DAYS, trading_days=cal)
-    lt, _ = walk_forward_lifetime(fu_stream, rules, FUNDED_RISK, (MAX_FUNDED_DAYS,), cal, firm in TOPSTEP_XFA, wait_for_lock=True)
+        return walk_forward_payout_probability(fu_stream, rules, FUNDED_RISK, MAX_FUNDED_DAYS, trading_days=dates)
+    lt, _ = walk_forward_lifetime(fu_stream, rules, FUNDED_RISK, (MAX_FUNDED_DAYS,), dates, firm in TOPSTEP_XFA, wait_for_lock=True)
     fd, bd = lt["first_payout_day"].to_numpy(float), lt["bust_day"].to_numpy(float)
     pay = fd <= MAX_FUNDED_DAYS
     bust = ~pay & (bd <= MAX_FUNDED_DAYS)
@@ -239,12 +270,16 @@ def first_payout_reference(fu_stream: pd.DataFrame, cal: pd.DatetimeIndex, firm:
                          "amount": np.where(pay, lt["first_payout_amount"].to_numpy(float), 0.0)})
 
 
-def check_gates(res: dict, ev_stream: pd.DataFrame, fu_stream: pd.DataFrame, cal: pd.DatetimeIndex, firm: str, policy: str) -> tuple[int, int]:
-    """Refuse unless every logged evaluation and every logged first payout equals its reference. Returns the counts
-    compared."""
+def check_gates(res: dict, ev_stream: pd.DataFrame, fu_stream: pd.DataFrame, dates: pd.DatetimeIndex, firm: str, policy: str) -> tuple[int, int]:
+    """Refuse unless every logged evaluation and every logged first payout equals its reference on the shared
+    calendar `dates`. Returns the counts compared."""
     rules = PRESETS[firm]
-    ref_e = walk_forward_pass_probability(ev_stream, rules, eval_risk(firm), MAX_EVAL_DAYS, trading_days=cal)
-    ref_f = first_payout_reference(fu_stream, cal, firm, policy)
+    ref_e = (walk_forward_pass_probability(ev_stream, rules, eval_risk(firm), MAX_EVAL_DAYS, trading_days=dates) if len(ev_stream)
+             else _empty_reference(len(dates), MAX_EVAL_DAYS))
+    ref_f = first_payout_reference(fu_stream, dates, firm, policy)
+    for ref in (ref_e, ref_f):
+        if len(ref) != len(dates):
+            raise ValueError("a gate reference does not cover the shared calendar")
     e = pd.DataFrame(res["eval_log"], columns=["path", "start", "outcome", "days"])
     f = pd.DataFrame(res["xfa_log"], columns=["path", "start", "outcome", "days", "amount"])
     for what, log, ref in (("evaluation", e, ref_e), ("Express Funded account", f, ref_f)):
@@ -272,17 +307,17 @@ def run(pre: pd.DataFrame, cal: pd.DatetimeIndex, last: pd.Timestamp | None, fir
         day = ny_day(st)
         streams.append(st[((day >= cal[0]) & (day <= cal[-1])).to_numpy()])
     ev_stream, fu_stream = streams
-    (dates, rs_e), (dates_f, rs_f) = _daily_r(ev_stream, cal), _daily_r(fu_stream, cal)
-    dates = pd.DatetimeIndex(dates)
-    if len(dates_f) != len(dates) or (pd.DatetimeIndex(dates_f) != dates).any():
-        raise ValueError("the evaluation and funded streams do not share a calendar")
+    dates, rs_e, rs_f = phase_days(ev_stream, fu_stream, cal)
     width = max([1] + [len(x) for x in rs_e + rs_f])
     starts, ends = path_bounds(dates, last)
     if not len(starts):
         return {"paths": 0}
     res = simulate(dates, day_arrays(rs_e, width), day_arrays(rs_f, width), starts, ends, firm, policy, cap)
-    n_e, n_f = check_gates(res, ev_stream, fu_stream, cal, firm, policy)
-    return summarize(res, dates, starts, n_e, n_f)
+    n_e, n_f = check_gates(res, ev_stream, fu_stream, dates, firm, policy)
+    out = summarize(res, dates, starts, n_e, n_f)
+    out.update({"eval_trades": int(len(ev_stream)), "funded_trades": int(len(fu_stream)),
+                "span_days": int(np.median((dates[ends - 1] - dates[starts]).days + 1))})
+    return out
 
 
 def summarize(res: dict, dates: pd.DatetimeIndex, starts: np.ndarray, n_e: int, n_f: int) -> dict:
@@ -343,16 +378,32 @@ def select(streams: list[tuple], cal: pd.DatetimeIndex, cut: pd.Timestamp) -> li
     return rows
 
 
-def frozen_row(pre_s: pd.DataFrame, cal_s: pd.DatetimeIndex, cut: pd.Timestamp, firm: str, sizing: str, size: float) -> dict:
-    """B3's development firm row for the same stream, preset and sizing, and the frozen bootstrap from $2,000 on it."""
+def frozen_row(pre_s: pd.DataFrame, cal_s: pd.DatetimeIndex, cut: pd.Timestamp, firm: str, sizing: str, size: float, period: str) -> dict:
+    """That period's B3 firm row for the same stream, preset and sizing, and the frozen bootstrap from $2,000 on it,
+    as B3 calls it (research/candidates.bootstrap): P(bust), the median days to the first payout, the funded accounts
+    at month 12."""
     if sizing == "fractional":
-        r = score_sized(sequential_pass(pre_s), cal_s, cut, size, firm)["development"]
+        r = score_sized(sequential_pass(pre_s), cal_s, cut, size, firm)[period]
     else:
-        w = score_whole(pre_s, cal_s, cut, firm)["development"]["firms"]
+        w = score_whole(pre_s, cal_s, cut, firm)[period]["firms"]
         r = w.iloc[0].to_dict() if not w.empty else None
     if r is None or not (np.isfinite(r["pass_rate"]) and np.isfinite(r["payout_rate"])):
         return {"p_bust": float("nan"), "first_payout_days": float("nan"), "funded_month12": float("nan")}
     return bootstrap(r, START_CASH)
+
+
+def plan_runs(sel: list[dict]) -> list[dict]:
+    """The runs the selection asks for, without repeats: every selected configuration at its B4 size on its own
+    preset, and for every stream and policy with a selected configuration on any preset, whole micros on TopstepX
+    (clarification 5: the frozen preset's soft daily limit is not usable below the sealed sizing)."""
+    plan, seen = [], set()
+    for r in (x for x in sel if x["runs"]):
+        for firm, sizing, size in ((r["firm"], "fractional", r["size"]), (TOPSTEPX, "whole micros", 1.0)):
+            key = (r["stream"], firm, r["policy"], sizing, size if sizing == "fractional" else None)
+            if key not in seen:
+                seen.add(key)
+                plan.append({"stream": r["stream"], "firm": firm, "policy": r["policy"], "sizing": sizing, "size": size})
+    return plan
 
 
 def qualifies(x: dict) -> bool:
@@ -366,13 +417,15 @@ def _f(x, fmt: str) -> str:
 
 def report(sel: list[dict], results: list[dict], notes: list[str], gate_note: str, reg_sha: str, cut: pd.Timestamp) -> str:
     s = ["# B5: the $2,000 bootstrap on replayed market paths\n", gate_note, "",
-         f"Implements docs/research/preregistration_b5_bootstrap.md as registered in df2bc28 and clarified in 1995b2c, before any B5 number (sha256 of the file read: {reg_sha}, the pinned value). "
-         f"Development: New York days through {cut.date()}; benchmark from {(cut + pd.Timedelta(days=1)).date()}, one path, reported beside and never used. "
+         f"Implements docs/research/preregistration_b5_bootstrap.md as registered in df2bc28 and clarified in 1995b2c and 7465eed, before any B5 number (sha256 of the file read: {reg_sha}, the pinned value). "
+         f"Development: New York days through {cut.date()}; benchmark from {(cut + pd.Timedelta(days=1)).date()}, one path over the benchmark year, reported beside and never used. "
          f"From ${START_CASH:,.0f} of cash, each path runs Topstep 50K evaluations and Express Funded accounts for {PATH_DAYS} calendar days on the stream's own trading days, every live account taking the same trades on the same day: "
-         "$49 an evaluation at purchase and every 30 calendar days it stays live, $149 to activate a pass, payouts net of the split credited five trading days later, at most one purchase a day, "
+         "$49 an evaluation at purchase and every 30 calendar days it stays live, $149 to activate a pass, payouts net of the split credited five trading days after they are requested, at most one purchase a day, "
          f"evaluations closed after {MAX_EVAL_DAYS} trading days; ruin is cash below $49 with nothing live and nothing pending. "
-         "Gates, passed on every run: each evaluation's outcome and day equal the frozen pass walk-forward's for its start day, and each Express Funded account's first payout within 60 days equals the frozen payout walk-forward's "
-         "(B4's walk-forward of the same policy under \"wait\"); B4's own gate holds on every configuration.\n",
+         "Gates, passed on every run: each evaluation compared (those cancelled for fees or cut off by the path's end are not) equals the frozen pass walk-forward for its start day in outcome and day, and each Express Funded account's first payout within 60 days "
+         "equals the frozen payout walk-forward's (B4's walk-forward of the same policy under \"wait\") in outcome, day and amount; B4's own gate passed on every stream in the selection. "
+         "Whole micros run on TopstepX only (clarification 5); a selected configuration on the frozen topstep_50k preset is shown at its B4 size for the record and decides nothing. "
+         "Not modelled: Topstep's limit of 20 account purchases a month, which binds on part of the paths at cap 5 (in the review's synthetic probe enforcing it moved P(ruin) by under a point).\n",
          "Streams: " + "; ".join(notes) + ".\n",
          f"## Which configurations run (B4's development lifetime EV per evaluation at H {H_SELECT})\n",
          "| stream | preset | size | policy | P(pass) | fees per evaluation | expected paid per funded account | EV per evaluation | runs |",
@@ -384,38 +437,43 @@ def report(sel: list[dict], results: list[dict], notes: list[str], gate_note: st
         s.append(f"No configuration has a positive development lifetime EV at H {H_SELECT}. By the registration, B5 stops here.\n")
         return "\n".join(s)
     s += ["## Results\n",
-          "Cash at 12 months counts payouts earned and not yet credited; accounts live at the end count for nothing. Deepest fall: how far cash went below $2,000 at its lowest (the money actually at risk). "
+          "Cash at the end counts payouts requested and not yet credited; accounts live at the end count for nothing. Development paths cover 365 calendar days; the benchmark path's span is shown. "
+          "Ruin day and first payout: trading days into the path (about 310 a year), the payout on the day it is requested. Deepest fall: how far cash went below $2,000 at its lowest (the money actually at risk). "
           "Years: the non-overlapping years of data behind the development paths (the paths overlap, so this, not the number of paths, is the sample). "
-          "Frozen bootstrap: B3's P(bust) from $2,000 at the same stream, preset and sizing (independent accounts, one payout each, no activation fee), for comparison.\n"]
+          "Frozen bootstrap: the frozen simulator from $2,000 on that period's B3 firm row at the same stream, preset and sizing, as B3 calls it (independent accounts, one payout each, no activation fee): P(bust), median days to the first payout, funded accounts at month 12.\n"]
     for c in results:
-        s += [f"### {c['stream']}: {c['firm']}, {c['policy']}\n",
-              "| sizing | cap | period | paths (years) | P(ruin in 12 months) | median ruin day | cash at 12 months: p10 / p25 / median / p75 / p90 | mean | P(above $2,000) | P(above $4,000) | deepest fall: median / p90 | frozen bootstrap P(bust) |",
+        role = " (for the record: decides nothing)" if c["firm"] != TOPSTEPX else ""
+        s += [f"### {c['stream']}: {c['firm']}, {c['policy']}{role}\n",
+              "| sizing | cap | period | paths (years; span) | P(ruin) | median ruin day | cash at the end: p10 / p25 / median / p75 / p90 | mean | P(above $2,000) | P(above $4,000) | deepest fall: median / p90 | frozen bootstrap: P(bust), first payout days, funded at month 12 |",
               "|---|---|---|---|---|---|---|---|---|---|---|---|"]
         for x in c["runs"]:
-            o = x["out"]
+            o, fz = x["out"], x["frozen"]
+            frozen = f"{_f(fz['p_bust'], '.0%')}, {_f(fz['first_payout_days'], '.0f')}, {_f(fz['funded_month12'], '.0f')}"
             if not o.get("paths"):
-                s.append(f"| {x['sizing_label']} | {x['cap']} | {x['period']} | 0 | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a |")
+                s.append(f"| {x['sizing_label']} | {x['cap']} | {x['period']} | 0 | n/a | n/a | n/a | n/a | n/a | n/a | n/a | {frozen} |")
                 continue
             q = " / ".join(f"{o[k]:,.0f}" for k in ("cash_p10", "cash_p25", "cash_p50", "cash_p75", "cash_p90"))
-            s.append(f"| {x['sizing_label']} | {x['cap']} | {x['period']} | {o['paths']} ({o['years']:.1f}) | {o['p_ruin']:.1%} | {_f(o['ruin_day_median'], '.0f')} | {q} | {o['cash_mean']:,.0f} | "
-                     f"{o['p_above_2000']:.1%} | {o['p_above_4000']:.1%} | {o['fall_p50']:,.0f} / {o['fall_p90']:,.0f} | {_f(x['frozen']['p_bust'], '.0%')} |")
-        s += ["", "| sizing | cap | period | evaluations | passes | lost passes | cancelled | Express Funded breaches | payouts | fees | paid | first payout day (median) | no payout | gate: evaluations, funded compared |",
-              "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+            s.append(f"| {x['sizing_label']} | {x['cap']} | {x['period']} | {o['paths']} ({o['years']:.1f}; {o['span_days']} days) | {o['p_ruin']:.1%} | {_f(o['ruin_day_median'], '.0f')} | {q} | {o['cash_mean']:,.0f} | "
+                     f"{o['p_above_2000']:.1%} | {o['p_above_4000']:.1%} | {o['fall_p50']:,.0f} / {o['fall_p90']:,.0f} | {frozen} |")
+        s += ["", "| sizing | cap | period | trades: evaluation, funded | evaluations | passes | lost passes | cancelled | Express Funded breaches | payouts | fees | paid | first payout requested (median day) | no payout | gate: evaluations, funded compared |",
+              "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
         for x in c["runs"]:
             o = x["out"]
             if not o.get("paths"):
                 continue
-            s.append(f"| {x['sizing_label']} | {x['cap']} | {x['period']} | {o['evals_mean']:.1f} | {o['passes_mean']:.2f} | {o['lost_passes_mean']:.2f} | {o['cancelled_mean']:.2f} | {o['xfa_breaches_mean']:.2f} | "
-                     f"{o['payouts_mean']:.2f} | {o['fees_mean']:,.0f} | {o['paid_mean']:,.0f} | {_f(o['first_payout_median'], '.0f')} | {o['p_no_payout']:.1%} | {o['gate_evaluations']}, {o['gate_funded']} |")
+            s.append(f"| {x['sizing_label']} | {x['cap']} | {x['period']} | {o['eval_trades']}, {o['funded_trades']} | {o['evals_mean']:.1f} | {o['passes_mean']:.2f} | {o['lost_passes_mean']:.2f} | {o['cancelled_mean']:.2f} | "
+                     f"{o['xfa_breaches_mean']:.2f} | {o['payouts_mean']:.2f} | {o['fees_mean']:,.0f} | {o['paid_mean']:,.0f} | {_f(o['first_payout_median'], '.0f')} | {o['p_no_payout']:.1%} | {o['gate_evaluations']}, {o['gate_funded']} |")
         s.append("")
     s += ["## Reading (the registered rule)\n",
-          "A configuration goes on to a forward test only if, on development paths in whole micros at either cap, P(ruin within 12 months) is at most 10%, the median cash at 12 months is above $2,000 and its 25th percentile is at least $1,000. "
+          "A configuration goes on to a forward test only if, on development paths in whole micros (on TopstepX) at either cap, P(ruin within 12 months) is at most 10%, the median cash at 12 months is above $2,000 and its 25th percentile is at least $1,000. "
           "The benchmark path decides nothing; clean proof comes only from data after 2026-10-05.\n",
-          "| stream | preset | policy | cap 1 | cap 5 | goes on to a forward test |", "|---|---|---|---|---|---|"]
-    for c in results:
+          "| stream | policy | cap 1 | cap 5 | goes on to a forward test |", "|---|---|---|---|---|"]
+    for c in (x for x in results if x["firm"] == TOPSTEPX):
         dev = {x["cap"]: x["out"] for x in c["runs"] if x["sizing"] == "whole micros" and x["period"] == "development"}
+        if not dev:
+            continue
         cells = ["yes" if qualifies(dev.get(cap, {})) else "no" for cap in CAPS]
-        s.append(f"| {c['stream']} | {c['firm']} | {c['policy']} | " + " | ".join(cells) + f" | {'**yes**' if 'yes' in cells else 'no'} |")
+        s.append(f"| {c['stream']} | {c['policy']} | " + " | ".join(cells) + f" | {'**yes**' if 'yes' in cells else 'no'} |")
     s.append("")
     return "\n".join(s)
 
@@ -444,25 +502,21 @@ def main() -> int:
         streams, notes = candidate_streams(trades, bars, b2, cut)
         sel = select(streams, cal, cut)
         by_name = {name: (pre, start) for name, pre, start in streams}
-        results, done = [], set()
-        for r in (x for x in sel if x["runs"]):
-            pre, start = by_name[r["stream"]]
+        results = []
+        for item in plan_runs(sel):
+            pre, start = by_name[item["stream"]]
             pre_s, cal_s = on_span(pre, cal, start)
-            key = (r["stream"], r["firm"], r["policy"])
+            key = (item["stream"], item["firm"], item["policy"])
             c = next((x for x in results if (x["stream"], x["firm"], x["policy"]) == key), None)
             if c is None:
-                c = {"stream": r["stream"], "firm": r["firm"], "policy": r["policy"], "runs": []}
+                c = {"stream": item["stream"], "firm": item["firm"], "policy": item["policy"], "runs": []}
                 results.append(c)
-            for sizing in SIZINGS:
-                label = f"{r['size']:.2f} of the budget" if sizing == "fractional" else "whole micros"
-                if (key, label) in done:
-                    continue
-                done.add((key, label))
-                frozen = frozen_row(pre_s, cal_s, cut, r["firm"], sizing, r["size"])
-                for cap in CAPS:
-                    for period, part, last in (("development", cal_s[cal_s <= cut], cut), ("benchmark", cal_s[cal_s > cut], None)):
-                        out = run(pre_s, part, last, r["firm"], r["policy"], sizing, r["size"], cap)
-                        c["runs"].append({"sizing": sizing, "sizing_label": label, "cap": cap, "period": period, "out": out, "frozen": frozen})
+            label = f"{item['size']:.2f} of the budget" if item["sizing"] == "fractional" else "whole micros"
+            for cap in CAPS:
+                for period, part, last in (("development", cal_s[cal_s <= cut], cut), ("benchmark", cal_s[cal_s > cut], None)):
+                    out = run(pre_s, part, last, item["firm"], item["policy"], item["sizing"], item["size"], cap)
+                    frozen = frozen_row(pre_s, cal_s, cut, item["firm"], item["sizing"], item["size"], period)
+                    c["runs"].append({"sizing": item["sizing"], "sizing_label": label, "cap": cap, "period": period, "out": out, "frozen": frozen})
     except ValueError as e:
         raise SystemExit(f"refusing to report: {e}")
     text = report(sel, results, notes, g["note"], reg_sha, cut)
