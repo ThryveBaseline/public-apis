@@ -126,3 +126,24 @@ Prompted by the independent review of the tool on synthetic data. B5 has still n
 7. **Not modelled: Topstep's limit of 20 account purchases a month.** See `docs/research/prop-firm-rules.md`. At cap 5 it binds on part of the paths. In the review's probe on synthetic data, enforcing it moved P(ruin) by under one point and left the cash percentiles unchanged. The report states it as a caveat.
 8. **The frozen bootstrap beside each row** is computed on that period's own B3 row: development beside development, benchmark beside benchmark. The full row is printed: P(bust), the median days to the first payout, and the funded accounts at month 12.
 9. **A period in which no trade fits one phase's budget** still runs. That phase's account then never trades: an evaluation stays open, and an Express Funded account pays nothing. The gates compare with that phase's walk-forward on an empty stream, where every start with the full horizon is open. Both phases share one calendar.
+
+## Amendment, 2026-10-07: the call-up to a Live account (a change, before any B5 number)
+
+This is a change to the registration, not a clarification. It was made after B4 had run and before B5 had run on any real data. It was prompted by a rule found after the registration was written.
+
+**The rule.** Topstep's risk team calls an Express Funded trader up to a Live Funded Account at its discretion, typically between the trader's 3rd and 5th Express Funded payout. At the call-up every Express Funded account closes. Their combined balances move into the Live account: 20% available, at least $10,000, and 80% held in a reserve released at profit thresholds. Daily payouts unlock after 30 winning days. Sources: Topstep's Live Funded Account pages, read through a search engine because the help centre is blocked from the research container; third-party guides agree.
+
+**Why it matters here.** The registered paths keep up to five Express Funded accounts paying for twelve months. Once payouts accumulate, a real operation would not get that.
+
+10. **The call-up as a lower bound.** Every run is repeated with a call-up at the path's 3rd payout request, counted across all of its accounts. That is the early end of the typical range, so the more conservative choice.
+    - At the end of that day every account of the path closes, Combines included, and nothing more is bought.
+    - The path's final cash is its cash plus the payouts already requested.
+    - The Live account counts for nothing. That understates the truth: a Live account's losses are the firm's, and it can pay.
+    - Accounts closed by the call-up are left out of the gates, as cut-off accounts are.
+    - Reported per run: the share of paths called up within the 12 months, and the median day of the call-up.
+11. **The reading** now requires both versions. A configuration goes on to a forward test only if, on development paths in whole micros on TopstepX, at one cap, the registered thresholds hold both without a call-up and with the call-up at the 3rd payout:
+    - P(ruin within 12 months) at most 10%;
+    - median final cash above $2,000;
+    - its 25th percentile at least $1,000.
+
+    One that qualifies only without the call-up is reported as depending on the Live account's value, and is not carried forward on this evidence.
