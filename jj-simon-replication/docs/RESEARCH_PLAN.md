@@ -30,3 +30,12 @@ Once a tweak is chosen with knowledge of the 2025-26 year, that year is no longe
 Its gate: the sealed ledger scored its way reproduces the eight firm rows of `sealed/run1/report.md` character for character. Whatever survives B3 is then re-simulated on `research/engine.py`, the frozen rules with hooks that are inert at their defaults (proved on synthetic bars under 16 frozen configurations, and on the real bars by `research/engine_check.py`, which must rebuild `sealed/run1/trades.csv` byte for byte). The ledger replay changes exits but cannot add the entries the frozen engine skipped while a position was open; the re-simulation takes them.
 
 **Rules that still hold.** `sealed/run1` and commit `f585bfb` are never modified. Candidates are B1, B2, ... with provenance (what changed, why, which weakness, what data invented it, what data tested it, result versus Baseline 0). Same-bar ambiguity stays resolved as a stop. Roll dates stay excluded. Costs stay in. Nothing is tuned on the benchmark year.
+
+**Where it stands (2026-10-07, later).** B3's read (`docs/reviews/run1_b3_read.md`) is in: continuation's direction call beats the market's drift in 14 of 16 development years, the continuation streams pass a Topstep 50K evaluation about 29-30% of the time against 18-20% for the sealed ledger, and the first-payout EV net of every fee sits near zero on TopstepX (the best, S4 at 0.95, +$8 per evaluation in development). Step 4 (`research/run1_conditions.md`): of nine pre-registered conditions only H3 passes (continuation after a large opening candle), and its benchmark year points the other way. Four tools follow, each reviewed independently before it touches real data:
+
+- **B4** (`research/lifetime.py`): what a funded account is worth over its life, with every payout under Topstep's Express Funded rules and every fee, at horizons of 60, 120 and 250 days and under two payout policies.
+- **The trend exit** (`research/trend_exit.py`, pre-registered in `docs/research/preregistration_trend_exit.md`): a stop with no target for continuation, tested once against S3 on the same entries.
+- **H3 through firm scoring** (`research/h3_filter.py`), as its registration requires.
+- **B5** (`research/b5_paths.py`, pre-registered in `docs/research/preregistration_b5_bootstrap.md` before B4 had run): the $2,000 bootstrap on replayed market paths, every account trading the same days, with a fixed reading rule for what goes on to a forward test.
+
+Every candidate here is chosen on development data. Only bars after 2026-10-05 can confirm any of them.
