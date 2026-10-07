@@ -5,3 +5,4 @@ data/*.csv
 data/*.dbn*
 research/private/
 research/staging/
+data/forward/

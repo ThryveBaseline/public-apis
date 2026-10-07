@@ -60,3 +60,29 @@ All thresholds come from the baseline's development trades. Windows are blocks o
 ## The MBO sidecar
 
 For forward days with MBO data (subject to its own quote), each S3 and S4 trade is annotated with two things: whether a microstructure-timed entry would have filled better, and whether book state at the signal pointed to a skip. These annotations are recorded beside the ledger. They never change a trade, a checkpoint or the candidates during version 1.
+
+## Clarifications before the first forward day
+
+Written 2026-10-07, after the runner's independent review and before any bar after 2026-10-05 was bought or seen. The text above left some things underspecified. These clarifications say how it is carried out. They change no candidate, rule, threshold method or checkpoint.
+
+1. **A session** is a New York date with a 09:30 ET bar, both in the baseline (the thresholds' 10-session windows) and forward. Sunday evenings and closed holidays are not sessions. "10 forward trading days" means the first 10 scored sessions.
+2. **Completeness.** A forward session is scored once the file holds a bar on a later New York date. This replaces "its bars reach the close of the 15:59 ET bar". That rule would never score an early close (13:15 ET), and it would score a date before its evening roll could be seen.
+   - Roll dates are still excluded.
+   - Every forward weekday that is not scored is listed with its reason: a roll date, or no 09:30 bar (market closed or data missing).
+3. **Continuity.**
+   - The forward bars must continue the sealed file within 30 minutes. The sealed file ends at 2026-10-05 23:59 UTC; the forward request starts at 2026-10-06 00:00 UTC.
+   - A stretch of over 30 minutes without a bar inside a weekday's 09:30–16:00 session stops the run as missing data.
+   - Overnight stretches can be genuine, since a one-minute bar exists only when a trade occurred. They are reported, not refused.
+   - The baseline reports how often each kind would have occurred in the benchmark year.
+   - The raw forward file must have unique, increasing timestamps and an instrument on every bar.
+4. **The record.** The forward ledger is a private state file, written atomically. It holds:
+   - the scored dates;
+   - every trade, with its signal time and the ambiguous-bar flag;
+   - a run log, each entry carrying the previous state's hash;
+   - the sha256 of the code that produces the trades: `research/engine.py`, `anatomy.py`, `bracket_replay.py`, `candidates.py` and the `fpt` modules they use.
+
+   A change to that code stops the test. It would be version 2.
+5. **Public and private.**
+   - The public status gives counts, hashes, scored and unscored dates and, at each checkpoint, which checks were flagged.
+   - A private status holds the values behind the checks, the forward R, the exit mix and the paper account.
+6. **S4's setup checks** are taken at S4's own 20th and 30th setups, against S4's own development thresholds.

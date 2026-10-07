@@ -18,7 +18,10 @@ This is for the forward paper test (`docs/research/forward_protocol_v1.md`). It 
    - set `symbol := instrument_id`;
    - de-overlap, with the stored copy winning: an increment's rows in the overlap are discarded.
 
-   Record the file's sha256, its row count, and its first and last `ts_event`. The first `ts_event` must be 2026-10-06T00:00:00Z or later, and there must be no duplicate timestamp.
+   Record the file's sha256, its row count, and its first and last `ts_event`.
+   - The first increment's request starts at exactly 2026-10-06T00:00:00Z, the minute after the sealed file's last bar.
+   - The runner refuses a file whose first bar comes more than 30 minutes after the sealed file's last bar, one that repeats or reorders a timestamp, one with a bar lacking its instrument, and one missing bars for over 30 minutes inside a 09:30–16:00 session.
+   - The prepared file and the increments stay under `data/forward/`, which git ignores.
 4. **The daily bar** (`NQ.n.0`, `ohlcv-1d`) is fetched the same way, for the roll cross-check only. Its absence does not hold up the daily run: it is published on another path and may lag a day.
 
 ## Monthly audit
