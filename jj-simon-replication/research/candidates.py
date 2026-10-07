@@ -549,8 +549,8 @@ def sha256(path: str) -> str:
     return h.hexdigest()
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser()
+def add_gate_args(ap: argparse.ArgumentParser) -> None:
+    """The arguments every tool built on B3's streams takes."""
     ap.add_argument("--trades", required=True)
     ap.add_argument("--csv", required=True)
     ap.add_argument("--source-tz", default="UTC")
@@ -558,8 +558,13 @@ def main() -> int:
     ap.add_argument("--manifest", required=True)
     ap.add_argument("--report", required=True, help="sealed/run1/report.md: its firm rows are the reproduction gate")
     ap.add_argument("--replay-csv", required=True)
-    ap.add_argument("--out", required=True)
-    a = ap.parse_args()
+
+
+def gated_inputs(a) -> dict:
+    """Load the sealed inputs and run every gate before any stream is built: provenance (sha256 of the trades, the
+    bar file and the report against the manifest), roll dates and population as sealed, the eight sealed firm rows
+    reproduced character for character, and the replay file complete and aligned with the ledger. Exits with the
+    reason on any failure."""
     with open(a.manifest) as fh:
         m = json.load(fh)
     try:
@@ -590,17 +595,30 @@ def main() -> int:
     try:
         check_grid(replay)
         n_checked = check_alignment(trades, replay)
+    except ValueError as e:
+        raise SystemExit(f"refusing to report: {e}")
+    note = (f"Data hygiene: {n_excl} trades on {len(rolls)} contract-roll dates excluded, as in the sealed report. "
+            f"Provenance: the trades, the bar file and the report given ({a.report}) have the manifest's sha256. "
+            f"Reproduction gate: the sealed ledger scored here reproduces all {2 * len(FIRMS)} firm rows of {a.report} character for character. "
+            f"Replay join: checked on {n_checked} stop or target exits before 16:00 (R and exit time); every variant read is present for every replayed entry.")
+    return {"trades": trades, "bars": bars, "replay": replay, "rolls": rolls, "cut": cut, "cal": cal, "note": note}
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    add_gate_args(ap)
+    ap.add_argument("--out", required=True)
+    a = ap.parse_args()
+    g = gated_inputs(a)
+    trades, bars, replay, rolls, cut, cal = g["trades"], g["bars"], g["replay"], g["rolls"], g["cut"], g["cal"]
+    try:
         pre, streams, chain, s3_choice = build_streams(trades, bars, replay, cut)
         cont = s3_choice.index[trades.loc[s3_choice.index, "setup"].astype(str) == "continuation"]
         drift = hold_drift(trades, bars, replay, cont, cut, rolls)
     except ValueError as e:
         raise SystemExit(f"refusing to report: {e}")
     links = sorted(k for k in chain if k != "benchmark")
-    gate_note = (f"Data hygiene: {n_excl} trades on {len(rolls)} contract-roll dates excluded, as in the sealed report. "
-                 f"Provenance: the trades, the bar file and the report given ({a.report}) have the manifest's sha256. "
-                 f"Reproduction gate: the sealed ledger scored here reproduces all {2 * len(FIRMS)} firm rows of {a.report} character for character. "
-                 f"Replay join: checked on {n_checked} stop or target exits before 16:00 (R and exit time); every variant read is present for every replayed entry.")
-    text = report(streams, pre, chain, cal, cut, gate_note, direction_table(trades, replay, s3_choice, drift, links[0] if links else None))
+    text = report(streams, pre, chain, cal, cut, g["note"], direction_table(trades, replay, s3_choice, drift, links[0] if links else None))
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
     with open(a.out, "w") as f:
         f.write(text)
