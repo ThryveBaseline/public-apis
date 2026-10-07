@@ -43,7 +43,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from fpt.bootstrap import his_calculator  # noqa: E402
+from fpt.bootstrap import HisStatsConfig, his_calculator, simulate_his_stats  # noqa: E402
 from fpt.data import NY, load_minute_bars, roll_days  # noqa: E402
 from fpt.evaluate import _rate, trading_days_of, walk_forward_pass_probability, walk_forward_payout_probability  # noqa: E402
 from fpt.propfirm import FIRM_PRESETS  # noqa: E402
@@ -53,6 +53,7 @@ from research.ledger_filters import apply_filter, build_gates, check_alignment, 
 
 FIRMS = ("topstep_50k", "fundednext_50k_flex", "topstep_100k", "tradeify_100k_growth")
 MAX_EVAL_DAYS, MAX_FUNDED_DAYS, FUNDED_RISK = 30, 60, 500.0
+START_CASH = (500.0, 1000.0, 2000.0, 5000.0)  # the frozen report's bootstrap rows
 ATR_NAMES = [v["name"] for v in grid() if v["family"] == "atr"]
 CHAIN_START = 3  # as research/bracket_replay.walk_forward: the chain starts at the fourth development year
 
@@ -79,12 +80,32 @@ def format_row(r: dict) -> str:
             f"{r['payout_rate']:.1%} | {r['payout_stderr']:.1%} | {r['payout_days_median']:.0f} | {r['n_funded_starts']} ({r['n_funded_open']}) | {r['payout_median_amount']:,.0f} |")
 
 
-def ev_per_eval(r: dict) -> float:
-    rules = FIRM_PRESETS[r["firm"]]
+def payout_size(r: dict) -> float:
+    """The frozen report's payout size: the median payout, or half the profit target when no payout happened."""
     size = r["payout_median_amount"]
-    if not np.isfinite(r["pass_rate"]) or not np.isfinite(r["payout_rate"]) or not np.isfinite(size):
+    return float(size) if np.isfinite(size) else FIRM_PRESETS[r["firm"]].profit_target / 2
+
+
+def ev_per_eval(r: dict) -> float:
+    if not np.isfinite(r["pass_rate"]) or not np.isfinite(r["payout_rate"]):
         return float("nan")
-    return float(his_calculator(rules.eval_cost, r["pass_rate"], r["payout_rate"], size)["ev_per_eval"])
+    return float(his_calculator(FIRM_PRESETS[r["firm"]].eval_cost, r["pass_rate"], r["payout_rate"], payout_size(r))["ev_per_eval"])
+
+
+def bootstrap(r: dict, start_cash: float) -> dict:
+    """One row of the frozen report's bootstrap survival table (fpt.evaluate.evaluate_trades), with the same call."""
+    rules = FIRM_PRESETS[r["firm"]]
+    calc = his_calculator(rules.eval_cost, r["pass_rate"], r["payout_rate"], payout_size(r))
+    sim = simulate_his_stats(HisStatsConfig(start_cash=start_cash, eval_cost=rules.eval_cost, pass_rate=r["pass_rate"], payout_rate=r["payout_rate"], payout_size=payout_size(r),
+                                            eval_days=int(max(1, np.nan_to_num(r["eval_days_median"], nan=5))),
+                                            qualifying_days=int(max(1, np.nan_to_num(r["payout_days_median"], nan=10))), sims=2000))
+    return {"p_bust": sim["p_bust"], "p_zero_first_batch": (1 - calc["p_payout_per_eval"]) ** int(start_cash // rules.eval_cost),
+            "first_payout_days": sim["first_payout"]["median_trading_days"], "funded_month12": sim["funded_last_month"]["median"]}
+
+
+def format_bootstrap(start_cash: float, b: dict) -> str:
+    """Exactly the frozen report's bootstrap row format."""
+    return f"| {start_cash:,.0f} | {b['p_bust']:.0%} | {b['p_zero_first_batch']:.0%} | {b['first_payout_days']:.0f} | {b['funded_month12']:.0f} |"
 
 
 def score(stream: pd.DataFrame, cal: pd.DatetimeIndex, cut: pd.Timestamp) -> dict:
@@ -297,6 +318,24 @@ def report(streams: dict, chain: dict, cal: pd.DatetimeIndex, cut: pd.Timestamp,
             for r in p["firms"].to_dict("records"):
                 s.append(format_row(r)[:-1] + f"| {ev_per_eval(r):+,.0f} |")
             s.append("")
+    s.append("## Bootstrap with the frozen simulator, topstep_50k\n")
+    s.append("The frozen report's bootstrap (fpt.bootstrap.simulate_his_stats: 2,000 paths, seed 0, twelve months, everything reinvested, one payout per funded account, payouts gross) run on each stream's measured topstep_50k inputs above, exactly as the sealed report runs it on Baseline 0. "
+             "P(bust) is the share of paths with no live account and too little cash for another evaluation within twelve months.\n")
+    s.append("| stream | period | P(bust) from " + " | ".join(f"${c:,.0f}" for c in START_CASH) + " | P(zero payouts, first batch, $2,000) | median days to first payout ($2,000) | funded accounts month 12, median ($2,000) |")
+    s.append("|---|---|" + "---|" * (len(START_CASH) + 3))
+    for name, sc in scored.items():
+        for per in ("development", "benchmark"):
+            p = sc[per]
+            if p["firms"].empty:
+                continue
+            r = p["firms"].set_index("firm").loc["topstep_50k"].to_dict()
+            r["firm"] = "topstep_50k"
+            if not (np.isfinite(r["pass_rate"]) and np.isfinite(r["payout_rate"])):
+                continue
+            b = {c: bootstrap(r, c) for c in START_CASH}
+            k = b[2000.0]
+            s.append(f"| {name} | {per} | " + " | ".join(f"{b[c]['p_bust']:.0%}" for c in START_CASH) + f" | {k['p_zero_first_batch']:.0%} | {k['first_payout_days']:.0f} | {k['funded_month12']:.0f} |")
+    s.append("")
     s += direction_lines
     return "\n".join(s)
 

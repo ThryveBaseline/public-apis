@@ -7,8 +7,8 @@ from fpt.evaluate import evaluate_trades, trading_days_of
 from fpt.strategy import StrategyConfig, generate_trades
 from research.anatomy import load_trades
 from research.bracket_replay import dropped_rows, grid, replay, walk_forward
-from research.candidates import (ATR_NAMES, FIRMS, build_streams, format_row, hold_drift, mean_se, pooled_choices, score,
-                                 sealed_firm_rows, variant_frame)
+from research.candidates import (ATR_NAMES, FIRMS, START_CASH, bootstrap, build_streams, format_bootstrap, format_row, hold_drift, mean_se,
+                                 pooled_choices, score, sealed_firm_rows, variant_frame)
 from research.ledger_filters import sequential_pass
 
 NY = "America/New_York"
@@ -179,3 +179,16 @@ def test_cli_gate_reproduces_the_sealed_rows_and_refuses_a_changed_one(tmp_path,
     (tmp_path / "report.md").write_text(rep.text.replace(row, " | ".join(cells), 1))
     with pytest.raises(SystemExit, match="refusing to report: the development firm rows"):
         candidates.main()
+
+
+def test_bootstrap_rows_reproduce_the_frozen_report(engine):
+    bars, trades = engine
+    rep = evaluate_trades(trades, bars, oos_months=2)
+    last = trades["entry_time"].dt.tz_convert(NY).dt.normalize().dt.tz_localize(None).max()
+    mine = score(sequential_pass(trades), trading_days_of(bars), (last - pd.DateOffset(months=2)).normalize())
+    for label, part in (("in sample", "development"), ("out of sample", "benchmark")):
+        text = rep.text.split(f"## Bootstrap survival from the measured inputs ({label}, topstep_50k")[1].split("\n## ")[0]
+        r = mine[part]["firms"].set_index("firm").loc["topstep_50k"].to_dict()
+        r["firm"] = "topstep_50k"
+        for c in START_CASH:
+            assert format_bootstrap(c, bootstrap(r, c)) in text.splitlines()
