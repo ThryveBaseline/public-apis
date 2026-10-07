@@ -100,7 +100,7 @@ def test_report_end_to_end_formats_walk_forward_rows():
     idx = []
     d0 = pd.Timestamp("2018-01-08", tz=NY)
     k = 0
-    while len(idx) < 7 * 60:
+    while len(idx) < 6 * 252:
         day = d0 + pd.offsets.BDay(k); k += 1
         idx.append(pd.date_range(day.replace(hour=9, minute=30), day.replace(hour=16), freq="1min", inclusive="left"))
     index = idx[0].append(idx[1:])
@@ -111,14 +111,14 @@ def test_report_end_to_end_formats_walk_forward_rows():
     days = sorted(set(index.normalize()))
     rows = []
     for j, d in enumerate(days):
-        if j < 16 or j % 3:
+        if j < 16 or j % 4:
             continue
         e = d.replace(hour=9, minute=35 + (j % 20)); i = index.get_loc(e)
         rows.append(_trade(e, e + pd.Timedelta(minutes=15), 1 if j % 2 else -1, float(bars["open"].iloc[i]) + 0.25, 0.0,
                            setup="continuation" if j % 2 else "reversion", reason="stop"))
     t = pd.DataFrame(rows); t["entry_time"] = pd.to_datetime(t["entry_time"]); t["exit_time"] = pd.to_datetime(t["exit_time"])
     rep = replay(t, bars, grid())
-    oos = days[-30].strftime("%Y-%m-%d")
+    oos = days[-100].strftime("%Y-%m-%d")
     text = report(t, rep, oos, 0, 0, 0, rep.attrs["n_no_context"])
     assert "### Sequential walk-forward, family `all`" in text
     assert "| sealed bracket in year |" in text
