@@ -222,25 +222,46 @@ def _f(v, spec):
 
 
 def check_alignment(trades: pd.DataFrame, replay: pd.DataFrame) -> int:
-    """The replayed `ledger_bracket` control must equal the ledger R on every stop or target exit before 16:00;
-    otherwise the replay rows are not keyed to these trades and nothing is reported."""
+    """Refuse a replay file that is not exactly this ledger's replay, before any composite is scored:
+    every ledger entry is replayed or marked as dropped (never both), no (trade, variant) row is duplicated, every
+    variant covers every replayed entry, every replayed row has a valid exit time, and on every ledger stop or target
+    exit before 16:00 the replayed sealed-bracket control equals the ledger in both R and exit time. Engine exit
+    times are strictly increasing, so the exit-time check pins each replay row to its ledger trade."""
     if "exit_time" not in replay.columns:
         raise ValueError("the replay file has no exit_time column; rerun research/bracket_replay.py at this version")
-    ids = set(int(x) for x in replay["trade"].unique())
+    if replay.duplicated(["trade", "variant"]).any():
+        raise ValueError(f"duplicate (trade, variant) rows in the replay file: {int(replay.duplicated(['trade', 'variant']).sum())}")
+    rows = replay[replay["variant"] != "_dropped"]
+    replayed = set(int(x) for x in rows["trade"].unique())
+    dropped = set(int(x) for x in replay.loc[replay["variant"] == "_dropped", "trade"].unique())
+    if replayed & dropped:
+        raise ValueError(f"{len(replayed & dropped)} entries are both replayed and marked as dropped")
+    ids = replayed | dropped
     ledger_ids = set(int(x) for x in trades.index)
     if not ids <= ledger_ids:
         raise ValueError("replay trade ids are not a subset of the ledger positions")
     if ids != ledger_ids:
         raise ValueError(f"replay does not cover the ledger: {len(ledger_ids - ids)} ledger entries are neither replayed nor marked as dropped")
-    rv = replay[replay["variant"] == "ledger_bracket"].set_index("trade")["r"].astype(float)
-    t = trades.loc[trades.index.intersection(rv.index)]
+    for v, g in rows.groupby("variant"):
+        if set(int(x) for x in g["trade"]) != replayed:
+            raise ValueError(f"variant {v} does not cover every replayed entry ({len(replayed - set(int(x) for x in g['trade']))} missing)")
+    xt_rep = pd.to_datetime(rows["exit_time"], utc=True, errors="coerce")
+    if xt_rep.isna().any():
+        raise ValueError(f"{int(xt_rep.isna().sum())} replayed rows have no valid exit time")
+    ctrl = rows[rows["variant"] == "ledger_bracket"].set_index("trade")
+    t = trades.loc[trades.index.intersection(ctrl.index)]
     xt = _ny(t["exit_time"])
     sel = t["exit_reason"].astype(str).isin(["stop", "target"]) & ((xt.dt.hour * 60 + xt.dt.minute) < 16 * 60)
     if not sel.any():
         raise ValueError("no ledger stop/target exits before 16:00 to check the replay join against")
-    diff = (rv.loc[t.index[sel]].to_numpy() - t.loc[sel, "r"].astype(float).to_numpy())
+    chk = t.index[sel]
+    diff = ctrl.loc[chk, "r"].astype(float).to_numpy() - t.loc[sel, "r"].astype(float).to_numpy()
     if np.abs(diff).max() > 1e-9:
         raise ValueError(f"replay join misaligned: max |R replay - R ledger| = {np.abs(diff).max():.6f} on {int(sel.sum())} checked trades")
+    a = pd.to_datetime(ctrl.loc[chk, "exit_time"], utc=True).to_numpy()
+    b = t.loc[sel, "exit_time"].dt.tz_convert("UTC").to_numpy()
+    if (a != b).any():
+        raise ValueError(f"replay join misaligned: {int((a != b).sum())} control exit times differ from the ledger on {int(sel.sum())} checked trades")
     return int(sel.sum())
 
 
@@ -314,7 +335,7 @@ def evaluate(trades: pd.DataFrame, bars: pd.DataFrame, oos_start: str, replay: p
     out = {"filters": frames}
     if replay is not None:
         n_checked = check_alignment(trades, replay)
-        s.append(f"## Composites: filters x brackets (replayed, flat at 16:00)\n\nJoin check: the replayed sealed bracket equals the ledger R on all {n_checked} stop or target exits before 16:00. "
+        s.append(f"## Composites: filters x brackets (replayed, flat at 16:00)\n\nJoin check: the replay covers every ledger entry once per variant, and the replayed sealed bracket equals the ledger in R and exit time on all {n_checked} stop or target exits before 16:00. "
                  "Every composite is scored on the replayed entries (the replay drops entries without prior-session context for every variant), through the sequential pass with each replayed trade's own exit time: a longer hold blocks the entries it would have blocked, and the three-loss stop counts only outcomes that had printed.\n")
         comp = []
         for label, filt, variant in COMPOSITES:

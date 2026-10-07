@@ -254,7 +254,7 @@ def summarize(rep: pd.DataFrame, meta: pd.DataFrame, by: list[str]) -> pd.DataFr
     return out
 
 
-def walk_forward(rep: pd.DataFrame, meta: pd.DataFrame, years: list[int], families: dict[str, list[str]]) -> tuple[pd.DataFrame, list[str]]:
+def walk_forward(rep: pd.DataFrame, meta: pd.DataFrame, years: list[int], families: dict[str, list[str]]) -> tuple[pd.DataFrame, pd.Series, list[str]]:
     """Expectancy by development year per variant, and the sequential chain: for each year Y (from the fourth
     development year on), the variant with the best POOLED expectancy over all trades in years < Y (trade-weighted,
     so a year with a handful of trades cannot steer the choice) is chosen and its year-Y expectancy is recorded.

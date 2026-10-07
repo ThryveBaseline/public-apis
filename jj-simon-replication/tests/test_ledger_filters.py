@@ -132,7 +132,7 @@ def test_composites_join_check_and_report():
     rep = replay(t, bars, grid())
     rep = pd.concat([rep, dropped_rows(rep)], ignore_index=True)
     text, out = evaluate(t, bars, days[30].strftime("%Y-%m-%d"), rep)
-    assert "Join check: the replayed sealed bracket equals the ledger R on all 2 stop or target exits before 16:00" in text
+    assert "equals the ledger in R and exit time on all 2 stop or target exits before 16:00" in text
     labels = [lab for lab, _ in out["composites"]]
     assert labels[0].startswith("sealed bracket") and any(lab.startswith("funded as stated") for lab in labels)
     ctrl = out["composites"][0][1]
@@ -262,3 +262,33 @@ def test_stale_replay_gets_the_right_refusal():
     rep = replay(t, bars, grid()).drop(columns=["exit_time"])
     with pytest.raises(ValueError, match="no exit_time column"):
         check_alignment(t.reset_index(drop=True), rep)
+
+
+
+@pytest.mark.parametrize("corruption, message", [
+    ("duplicate", "duplicate"),
+    ("drop_variant_row", "does not cover every replayed entry"),
+    ("empty_exit_time", "no valid exit time"),
+    ("shift_exit_time", "exit times differ"),
+    ("naive_exit_time", "exit times differ"),
+])
+def test_join_refuses_corrupted_replays(corruption, message):
+    t, bars, days = _consistent_ledger()
+    rep = pd.concat([replay(t, bars, grid()), dropped_rows(replay(t, bars, grid()))], ignore_index=True)
+    rep["exit_time"] = rep["exit_time"].astype(str).where(rep["variant"] != "_dropped")  # as read back from the CSV
+    check_alignment(t.reset_index(drop=True), rep)  # the clean file passes
+    live = rep["variant"] != "_dropped"
+    if corruption == "duplicate":
+        bad = pd.concat([rep, rep.iloc[[0]]], ignore_index=True)
+    elif corruption == "drop_variant_row":
+        bad = rep.drop(index=rep.index[(rep["variant"] == "room_menu")][0])
+    elif corruption == "empty_exit_time":
+        bad = rep.assign(exit_time=np.nan)
+    elif corruption == "shift_exit_time":
+        bad = rep.copy()
+        bad.loc[live, "exit_time"] = (pd.to_datetime(rep.loc[live, "exit_time"], utc=True) + pd.Timedelta(hours=4)).astype(str)
+    else:
+        bad = rep.copy()
+        bad.loc[live, "exit_time"] = pd.to_datetime(rep.loc[live, "exit_time"], utc=True).dt.tz_convert(NY).dt.tz_localize(None).astype(str)
+    with pytest.raises(ValueError, match=message):
+        check_alignment(t.reset_index(drop=True), bad)
