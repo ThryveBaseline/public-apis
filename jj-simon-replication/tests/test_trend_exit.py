@@ -133,6 +133,10 @@ def _boom(*_a, **_k):
     raise ValueError("boom")
 
 
+def _key(*_a, **_k):
+    raise KeyError("missing")
+
+
 def test_cli_end_to_end_on_four_years(sealed_4y, tmp_path, monkeypatch):
     """Four years of synthetic bars (the walk-forward needs four development years), a roll, the real pipeline, the
     pinned registration; and the refusal of any other registration text."""
@@ -154,7 +158,10 @@ def test_cli_end_to_end_on_four_years(sealed_4y, tmp_path, monkeypatch):
     monkeypatch.setattr(trend_exit, "scoring_sections", _boom)
     assert trend_exit.main() == 0  # a failure in the firm scoring leaves the test standing
     text = (tmp_path / "te.md").read_text()
-    assert "## The test" in text and "The firm scoring of the streams stopped: boom" in text
+    assert "## The test" in text and "The firm scoring of the streams stopped (ValueError): boom" in text
+    monkeypatch.setattr(trend_exit, "scoring_sections", _key)
+    assert trend_exit.main() == 0  # any exception, not only a ValueError
+    assert "The firm scoring of the streams stopped (KeyError)" in (tmp_path / "te.md").read_text()
     monkeypatch.undo()
     fake = tmp_path / "reg.md"
     fake.write_text("edited")

@@ -46,6 +46,17 @@ def h3_frames(pre: dict, h3: pd.Series) -> list[tuple[str, pd.DataFrame]]:
     return out
 
 
+def h3_result(f: pd.DataFrame) -> dict:
+    """H3's registered test on these inputs, exactly as research/conditions computes it: all nine hypotheses, Holm
+    across the family, the pass rule."""
+    rows = []
+    for h, pop, _, _ in conditions.HYPOTHESES:
+        res = conditions.evaluate_hypothesis(f, h, pop)
+        rows.append({"id": h, **{f"dev_{k}": v for k, v in res["development"].items()}})
+    conditions.decide(rows)
+    return next(r for r in rows if r["id"] == "H3")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     add_gate_args(ap)
@@ -69,6 +80,7 @@ def main() -> int:
             raise ValueError("H3 is defined on no entry")
         first = int(g["trades"].loc[defined, "entry_time"].dt.tz_convert(NY).dt.year.min())
         frames = h3_frames(pre, f["H3"])
+        res = h3_result(f)
     except ValueError as e:
         raise SystemExit(f"refusing to report: {e}")
     start = pd.Timestamp(first, 1, 1)
@@ -77,7 +89,9 @@ def main() -> int:
         s.append("**NOT THE REGISTERED RUN: the cut differs from the registered one (a test-only flag).**\n")
     s += [g["note"], "",
           f"H3 as registered in commit c0c7a15 and clarified in 26cb07a (sha256 of the file read: {reg_sha}, the pinned value), at the registered cut: development through {cut.date()}, benchmark from {(cut + pd.Timedelta(days=1)).date()}. "
-          "It passed its test (Holm p 0.047, 11 of 15 years; research/run1_conditions.md) with the benchmark pointing the other way under the bracket. "
+          f"On these inputs its registered test gives a development difference of {res['dev_delta']:+.3f} R (standard error {res['dev_se']:.3f}), Holm p {res['holm']:.4f} across the nine, "
+          f"positive in {res['dev_years_pos']} of {res['dev_years_n']} years: it **{'passes' if res['passes'] else 'does not pass'}**"
+          + ("" if res["passes"] else ", so by its registration it is no candidate filter and these tables are for the record only") + ". "
           "Each stream is shown on the continuation entries where H3 is defined (the comparator) and on H3's favoured side only; S4's reversion A+ entries are the same in both, and the filter is applied before the sequential pass. "
           f"H3 is first defined in {first}, so both sides of every pair are scored on a calendar from {start.date()}.\n"]
     try:

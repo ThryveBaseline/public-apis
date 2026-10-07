@@ -29,6 +29,7 @@ def test_cli_runs_and_pins_its_registration_and_cut(sealed_4y, tmp_path, monkeyp
     assert h3_filter.main() == 0
     text = (tmp_path / "h3.md").read_text()
     assert "NOT THE REGISTERED RUN" in text and "H3 is first defined in 2020, so both sides of every pair are scored on a calendar from 2020-01-01" in text
+    assert "On these inputs its registered test gives a development difference of" in text and ("it **passes**" in text or "it **does not pass**" in text)
     for head in ("### B3 summary", "### Size sensitivity", "### Whole micro contracts", "### Lifetime (B4)"):
         assert head in text
     for short, _ in STREAMS:  # both sides of every pair on the same span

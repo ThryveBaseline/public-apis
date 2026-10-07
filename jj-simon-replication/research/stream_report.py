@@ -8,11 +8,13 @@ no trade at all and count as failures, and the later early starts replay its fir
 is an evaluation the stream could have run, and together they bias every rate in either direction.
 
 Sections, per stream and period:
-  B3 summary            the frozen topstep_50k at the sealed sizing: P(pass), P(payout), their standard errors, the
-                        median payout, JJ's calculator's EV and the EV net of every fee (research/candidates.score)
+  B3 summary            the frozen topstep_50k at the sealed sizing: trades, R per trade, total R, P(pass), P(payout),
+                        their standard errors, the median payout, JJ's calculator's EV and the EV net of every fee
+                        (research/candidates.score)
   size sensitivity      topstep_50k_x (TopstepX) at 1.00, 0.98 and 0.95 of the budget (candidates.score_sized)
   whole micro contracts topstep_50k_x, entries sized in whole micro NQ within the budget (candidates.score_whole),
-                        with the evaluation and funded trade counts and mean sizes; n/a when no funded trade fits
+                        with the evaluation and funded trade counts and mean sizes, and the frozen bootstrap's P(bust)
+                        from $2,000 as B3 prints it; n/a when no funded trade fits
   lifetime              B4 (research/lifetime.lifetime_rows) at every preset and size B4 uses, both payout policies,
                         horizons 60, 120 and 250
 """
@@ -21,7 +23,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from research.candidates import SIZES, ev_net, ev_per_eval, ny_day, score, score_sized, score_whole
+from research.candidates import SIZES, bootstrap, ev_net, ev_per_eval, ny_day, score, score_sized, score_whole
 from research.ledger_filters import sequential_pass
 from research.lifetime import HORIZONS, POLICIES, RUNS, lifetime_rows
 
@@ -41,10 +43,13 @@ def _cell(x: float, fmt: str) -> str:
 
 def scoring_sections(streams: list[tuple[str, pd.DataFrame, pd.Timestamp | None]], cal: pd.DatetimeIndex, cut: pd.Timestamp) -> list[str]:
     """The four sections for (name, entries before the sequential pass, span start) triples."""
+    names = [name for name, _, _ in streams]
+    if len(set(names)) != len(names):
+        raise ValueError(f"stream names must be distinct: {names}")
     spans = [(name, *on_span(pre, cal, start), start) for name, pre, start in streams]
     s = ["### B3 summary: the frozen topstep_50k at the sealed sizing\n",
-         "| stream | period | span from | trades | R/trade | P(pass) | +/- | P(payout) | +/- | median payout | EV per evaluation | EV net of all fees |",
-         "|---|---|---|---|---|---|---|---|---|---|---|---|"]
+         "| stream | period | span from | trades | R/trade | total R | P(pass) | +/- | P(payout) | +/- | median payout | EV per evaluation | EV net of all fees |",
+         "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     seqs = {}
     for name, pre, cal_s, start in spans:
         st = sequential_pass(pre)
@@ -56,7 +61,7 @@ def scoring_sections(streams: list[tuple[str, pd.DataFrame, pd.Timestamp | None]
                 continue
             r = p["firms"].set_index("firm").loc["topstep_50k"].to_dict()
             r["firm"] = "topstep_50k"
-            s.append(f"| {name} | {per} | {start.date() if start is not None else 'all'} | {p['trades']} | {p['expectancy_r']:+.3f} | {r['pass_rate']:.1%} | {r['pass_stderr']:.1%} | "
+            s.append(f"| {name} | {per} | {start.date() if start is not None else 'all'} | {p['trades']} | {p['expectancy_r']:+.3f} | {p['total_r']:+.1f} | {r['pass_rate']:.1%} | {r['pass_stderr']:.1%} | "
                      f"{r['payout_rate']:.1%} | {r['payout_stderr']:.1%} | {_cell(r['payout_median_amount'], ',.0f')} | {_cell(ev_per_eval(r), '+,.0f')} | {_cell(ev_net(r), '+,.0f')} |")
     s += ["", f"### Size sensitivity, {TOPSTEPX}\n",
           "| stream | period | P(pass) at " + " / ".join(f"{z:.2f}" for z in SIZES) + " | P(payout) at " + " / ".join(f"{z:.2f}" for z in SIZES) + " | EV net of all fees at " + " / ".join(f"{z:.2f}" for z in SIZES) + " |",
@@ -70,19 +75,23 @@ def scoring_sections(streams: list[tuple[str, pd.DataFrame, pd.Timestamp | None]
             s.append(f"| {name} | {per} | " + " / ".join(f"{x['pass_rate']:.1%}" for x in rows) + " | " + " / ".join(f"{x['payout_rate']:.1%}" for x in rows)
                      + " | " + " / ".join(_cell(ev_net({**x, 'firm': TOPSTEPX}), '+,.0f') for x in rows) + " |")
     s += ["", f"### Whole micro contracts, {TOPSTEPX}\n",
-          "| stream | period | evaluation: trades, mean size | P(pass) | +/- | funded: trades, mean size | P(payout) | +/- | median payout | EV per evaluation | EV net of all fees |",
-          "|---|---|---|---|---|---|---|---|---|---|---|"]
+          "| stream | period | evaluation: trades, mean size | P(pass) | +/- | funded: trades, mean size | P(payout) | +/- | median payout | EV per evaluation | EV net of all fees | P(bust) from $2,000 (frozen bootstrap) |",
+          "|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for name, (st, pre, cal_s) in seqs.items():
         w = score_whole(pre, cal_s, cut, TOPSTEPX)
         for per in ("development", "benchmark"):
             q = w[per]
+            if not q["eval_trades"] and not q["funded_trades"]:
+                continue
             head = f"| {name} | {per} | {q['eval_trades']}, {_cell(q['eval_size'], '.2f')} |"
             if q["firms"].empty:
-                s.append(head + " n/a | n/a | " + f"{q['funded_trades']}, {_cell(q['funded_size'], '.2f')} | n/a (no funded trade fits) | n/a | n/a | n/a | n/a |")
+                s.append(head + " n/a | n/a | " + f"{q['funded_trades']}, {_cell(q['funded_size'], '.2f')} | n/a (no funded trade fits) | n/a | n/a | n/a | n/a | n/a |")
                 continue
             r = q["firms"].iloc[0].to_dict()
+            ok = np.isfinite(r["pass_rate"]) and np.isfinite(r["payout_rate"])
+            bust = f"{bootstrap(r, 2000.0)['p_bust']:.0%}" if ok else "n/a"
             s.append(head + f" {r['pass_rate']:.1%} | {r['pass_stderr']:.1%} | {q['funded_trades']}, {_cell(q['funded_size'], '.2f')} | {r['payout_rate']:.1%} | {r['payout_stderr']:.1%} | "
-                     f"{_cell(r['payout_median_amount'], ',.0f')} | {_cell(ev_per_eval(r), '+,.0f')} | {_cell(ev_net(r), '+,.0f')} |")
+                     f"{_cell(r['payout_median_amount'], ',.0f')} | {_cell(ev_per_eval(r), '+,.0f')} | {_cell(ev_net(r), '+,.0f')} | {bust} |")
     s += ["", "### Lifetime (B4): EV per evaluation with every payout and every fee\n",
           "Payout policies: " + "; ".join(f"{k}, {v}" for k, v in POLICIES.items()) + ". The first-payout gate is checked on the first policy.\n"]
     for firm, size in RUNS:

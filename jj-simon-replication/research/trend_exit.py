@@ -11,12 +11,17 @@ The test: the paired difference per continuation entry, trend-exit R minus S3's 
 for the entry's year), averaged over development entries from the chain's first year to the cut, with a standard
 error clustered by day and a one-sided normal p-value; it passes if p < 0.05 and the mean difference is positive in
 at least 60% of the chain's development years. Reported beside: the chain, R per trade by direction against S1 and
-S3, the exit mix, and the streams S5 (continuation, walk-forward trend exit) and S6 (S5 plus reversion A+, sealed
-bracket) with their comparators S3 and S4 from the chain's first year, through B3's firm scoring (TopstepX at 0.95,
-whole micro contracts) and B4's lifetime EV. The benchmark year is reported beside and never used.
+S3, the exit mix by period, and the streams S5 (continuation, walk-forward trend exit) and S6 (S5 plus reversion A+,
+sealed bracket) with their comparators S3 and S4, each scored on a calendar from the chain's first year through
+research/stream_report.scoring_sections: B3's summary on the frozen topstep_50k, TopstepX at 1.00, 0.98 and 0.95 of
+the budget, whole micro contracts, and B4's lifetime EV at its presets, sizes, horizons and both payout policies. The
+benchmark year is reported beside and never used. The test section is written to --out before any of the streams is
+scored, so nothing that fails there can lose it.
 
-Gates: B3's (research/candidates.gated_inputs), the registration file pinned by sha256, and the trend replay covering
-exactly the entries the B2 replay covers.
+Gates: B3's (research/candidates.gated_inputs); the registration file pinned by sha256; the trend replay covering
+exactly the entries the B2 replay covers; where B2's same-k bracket with a 2:1 target never filled its target, the
+trend replay equal to it in R and exit time (k 0.2 to 0.7; check_against_b2); and both chains starting in the fourth
+development year.
 
 usage: python research/trend_exit.py <B3's arguments> --registration docs/research/preregistration_trend_exit.md \
            --out research/staging/run1_trend_exit.md
@@ -185,6 +190,7 @@ def main() -> int:
           ("Per the registration these are the next step for a passing exit. " if test["passes"] else "The exit failed its test; per the registration these are reported once for the record and dropped. ")
           + f"Every stream takes its first trade in {first}, so each is scored on a calendar from {start.date()} (research/stream_report: on a wider calendar, evaluations started more than a horizon earlier see no trade and count as failures, and the later early ones replay the first days on a shortened window). "
           + "S4 and S6 keep the reversion A+ entries of the same span.\n"]
+    _write(a.out, "\n".join(s + ["", "(The streams' firm scoring follows; if this line is the last, it did not finish.)\n"]))
     try:
         gates = build_gates(trades, bars)
         rev = t.index[~cont.to_numpy()]
@@ -193,14 +199,18 @@ def main() -> int:
         s4_pre = apply_filter(pd.concat([s3_frame, rev_frame]).sort_values("entry_time", kind="stable"), "B2a", gates)
         s += scoring_sections([(f"S3 from {first}", s3_frame, start), ("S5 continuation, walk-forward trend exit", trend_frame, start),
                                (f"S4 from {first}", s4_pre, start), (f"S6 S5 + A+ reversion, from {first}", s6_pre, start)], cal, cut)
-    except ValueError as e:
-        s.append(f"The firm scoring of the streams stopped: {e}. The test above stands.\n")
+    except Exception as e:  # noqa: BLE001 - whatever stops the scoring, the registered test above stands
+        s.append(f"The firm scoring of the streams stopped ({type(e).__name__}): {e}. The test above stands.\n")
     text = "\n".join(s)
-    os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
-    with open(a.out, "w") as f:
-        f.write(text)
+    _write(a.out, text)
     print(text[:3000])
     return 0
+
+
+def _write(path: str, text: str) -> None:
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    with open(path, "w") as f:
+        f.write(text)
 
 
 if __name__ == "__main__":

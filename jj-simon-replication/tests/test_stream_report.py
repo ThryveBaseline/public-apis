@@ -54,9 +54,15 @@ def test_a_stream_is_scored_on_its_span_only(stream):
     spanned = score(st, cal[cal >= start], cut)["development"]["firms"].set_index("firm").loc["topstep_50k"]
     whole = score(st, cal, cut)["development"]["firms"].set_index("firm").loc["topstep_50k"]
     assert spanned["pass_rate"] != whole["pass_rate"]
-    row = _row(text, "late", "development")  # stream, period, span from, trades, R/trade, P(pass), ...
-    assert row[2] == str(start.date()) and row[3] == str(int((ny_day(st) <= cut).sum())) and row[5] == f"{spanned['pass_rate']:.1%}"
-    assert _row(text, "late, whole calendar", "development")[2:6:3] == ["all", f"{whole['pass_rate']:.1%}"]
+    row = _row(text, "late", "development")  # stream, period, span from, trades, R/trade, total R, P(pass), ...
+    assert row[2] == str(start.date()) and row[3] == str(int((ny_day(st) <= cut).sum())) and row[6] == f"{spanned['pass_rate']:.1%}"
+    assert _row(text, "late, whole calendar", "development")[2:7:4] == ["all", f"{whole['pass_rate']:.1%}"]
+
+
+def test_stream_names_must_be_distinct(stream):
+    pre, cal, cut, start = stream
+    with pytest.raises(ValueError, match="distinct"):
+        scoring_sections([("a", pre, start), ("a", pre, None)], cal, cut)
 
 
 def test_every_section_has_a_row_per_stream_and_period(stream):
