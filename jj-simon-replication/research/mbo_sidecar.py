@@ -20,6 +20,7 @@ with the engine's exits; the engine's own entry must replay to its recorded R fi
 they are stored and never copied; everything derived is private.
 
 usage (on the GB10):
+  python research/mbo_sidecar.py check --mbo /path/glbx-mdp3-20261006.mbo.dbn.zst      (integrity only; no feature is read)
   python research/mbo_sidecar.py day --mbo /path/glbx-mdp3-20261006.mbo.dbn.zst --bars data/forward/nq_1min_forward.csv \\
       --out research/private/mbo_sidecar          (reference days: --bars data/nq_1min_databento.csv, the sealed file)
   python research/mbo_sidecar.py report --features research/private/mbo_sidecar --state research/private/forward_v1_state.json \\
@@ -185,7 +186,9 @@ def day_features(rec: np.ndarray, ids: dict, day: pd.Timestamp) -> tuple[pd.Data
     snap = (q["flags"] & F_SNAPSHOT != 0)[1 if clear else 0:]
     n_snap = int(np.argmin(snap)) if not snap.all() else len(snap)  # the snapshot records leading the day, after the clear
     counters = {"nq_records": int(len(q)), "starts_with_clear": clear,
-                "snapshot_records": n_snap, "maybe_bad_book_records": int((q["flags"] & F_MAYBE_BAD_BOOK != 0).sum()),
+                "snapshot_records": n_snap,
+                "maybe_bad_book_records": int(((q["flags"] & F_MAYBE_BAD_BOOK != 0) & (q["ts_recv"].astype(np.int64) < bnd_ns[-1] + 60 * PRICE_SCALE)).sum()),
+                "maybe_bad_book_records_all_day": int((q["flags"] & F_MAYBE_BAD_BOOK != 0).sum()),
                 "bad_ts_recv_records": int((q["flags"] & F_BAD_TS_RECV != 0).sum())}
     book = Book()
     rows, mid_event = [], 0
@@ -254,17 +257,46 @@ def admitted(match: dict, c: dict) -> bool:
     return bool(bars_ok and book_ok)
 
 
+def check_mode(a) -> int:
+    """Integrity only, before any book is read: the file's metadata, NQ's first records (action, side, flags, receive
+    and exchange times), whether receive times are in order, the clear and snapshot run, the possibly-bad-book flags,
+    and a pass of the book that counts cancels and modifies of unknown orders. No feature is computed."""
+    info, rec = read_dbn(a.mbo)
+    q = rec[rec["instrument_id"] == info["ids"].get("NQZ6", -1)]
+    snap = q["flags"] & F_SNAPSHOT != 0
+    book = Book()
+    for act, side, price, size, oid in zip(*(q[k].tolist() for k in ("action", "side", "price", "size", "order_id"))):
+        book.apply(act, side, price, size, oid)
+    ts = q["ts_recv"].astype(np.int64)
+    out = {"file": os.path.basename(a.mbo), "mbo_sha256": sha256(a.mbo), "start": str(pd.Timestamp(info["start"], unit="ns", tz="UTC")),
+           "end": str(pd.Timestamp(info["end"], unit="ns", tz="UTC")), "symbols": info["symbols"], "ids": info["ids"], "records": int(len(rec)),
+           "nq_records": int(len(q)), "nq_ts_recv_decreases": int((np.diff(ts) < 0).sum()), "first_is_clear": bool(len(q) and q["action"][0] == b"R"),
+           "snapshot_flagged": int(snap.sum()), "snapshot_flagged_in_first_run_after_clear": int(np.argmin(snap[1:])) if len(q) > 1 and not snap[1:].all() else int(snap[1:].sum()),
+           "maybe_bad_book": int((q["flags"] & F_MAYBE_BAD_BOOK != 0).sum()), "bad_ts_recv": int((q["flags"] & F_BAD_TS_RECV != 0).sum()),
+           "unknown_cancels": book.unknown_cancels, "unknown_modifies": book.unknown_modifies,
+           "first_records": [{"action": r["action"].decode(), "side": r["side"].decode(), "flags": hex(int(r["flags"])),
+                              "ts_recv": str(pd.Timestamp(int(r["ts_recv"]), unit="ns", tz="UTC")), "ts_event": str(pd.Timestamp(int(r["ts_event"]), unit="ns", tz="UTC"))}
+                             for r in q[:20]]}
+    print(json.dumps(out, indent=1))
+    return 0
+
+
 def day_mode(a) -> int:
     info, rec = read_dbn(a.mbo)
     if sorted(info["ids"]) != sorted(SYMBOLS):
         raise SystemExit(f"refusing: the file maps {sorted(info['ids'])}, not {list(SYMBOLS)}")
     start = pd.Timestamp(info["start"], unit="ns", tz="UTC")
     day = pd.Timestamp(start.date())
-    f, rebuilt, counters = day_features(rec, info["ids"], day)
-    bars = load_minute_bars(a.bars, source_tz="UTC")
-    match = {clock: bar_match(rb, bars, day, info["ids"]["NQZ6"]) for clock, rb in rebuilt.items()}
     os.makedirs(a.out, exist_ok=True)
     stem = os.path.join(a.out, day.strftime("%Y-%m-%d"))
+    try:
+        f, rebuilt, counters = day_features(rec, info["ids"], day)
+    except SystemExit as e:  # a refused day still leaves its record, not admitted
+        with open(stem + ".check.json", "w") as fh:
+            json.dump({"date": day.strftime("%Y-%m-%d"), "mbo_sha256": sha256(a.mbo), "refused": str(e), "admitted": False}, fh, indent=1, sort_keys=True)
+        raise
+    bars = load_minute_bars(a.bars, source_tz="UTC")
+    match = {clock: bar_match(rb, bars, day, info["ids"]["NQZ6"]) for clock, rb in rebuilt.items()}
     f.to_csv(stem + ".features.csv", index_label="boundary")
     check = {"date": day.strftime("%Y-%m-%d"), "mbo_sha256": sha256(a.mbo), "bars_sha256": sha256(a.bars), "ids": info["ids"], "bar_match": match,
              **counters, "admitted": admitted(match, counters)}
@@ -344,6 +376,10 @@ def annotate(trades: pd.DataFrame, feats: dict, cuts: dict, bars: pd.DataFrame) 
         near = row["bid"] if d > 0 else row["ask"]
         r1, _ = replay(day, i0, d, far, sp, tp, False)
         through = bool((row["next_lo"] < near) if d > 0 else (row["next_hi"] > near))
+        later = T + pd.Timedelta(minutes=1)
+        if not through and i0 + 1 < len(day) and day.index[i0 + 1] != later:
+            aside.append((t["candidate"], t["date"], "no bar a minute after the entry"))
+            continue
         if through:
             fill = near
             r2, _ = replay(day, i0, d, near, sp, tp, True)
@@ -401,6 +437,9 @@ def report_mode(a) -> int:
          "| date | admitted | bars matched (exchange time / receive time) | clear + snapshot | unknown cancels / modifies | possibly bad book | crossed or locked |",
          "|---|---|---|---|---|---|---|"]
     for c in checks:
+        if "refused" in c:
+            s.append(f"| {c['date']} | False ({c['refused']}) | | | | | |")
+            continue
         m = c["bar_match"]
         s.append(f"| {c['date']} | {c['admitted']} | {m['ts_event']['matched']}/{m['ts_event']['minutes']} / {m['ts_recv']['matched']}/{m['ts_recv']['minutes']} | "
                  f"{c['starts_with_clear']} + {c['snapshot_records']} | {c['unknown_cancels']} / {c['unknown_modifies']} | {c['maybe_bad_book_records']} | "
@@ -435,6 +474,8 @@ def report_mode(a) -> int:
 def main() -> int:
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="mode", required=True)
+    k = sub.add_parser("check")
+    k.add_argument("--mbo", required=True)
     d = sub.add_parser("day")
     d.add_argument("--mbo", required=True)
     d.add_argument("--bars", required=True, help="1-minute bars covering the day, prepared as the sealed file (symbol = instrument_id)")
@@ -447,7 +488,7 @@ def main() -> int:
     r.add_argument("--reference-bars", required=True, help="the sealed bar file, for the reference sessions")
     r.add_argument("--out", required=True)
     a = ap.parse_args()
-    return day_mode(a) if a.mode == "day" else report_mode(a)
+    return {"check": check_mode, "day": day_mode, "report": report_mode}[a.mode](a)
 
 
 if __name__ == "__main__":

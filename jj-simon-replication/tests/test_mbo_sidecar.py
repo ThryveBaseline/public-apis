@@ -145,6 +145,16 @@ def test_the_book_must_be_whole(tmp_path, monkeypatch):
         mbo_sidecar.day_features(rec, info["ids"], pd.Timestamp("2026-10-06"))
 
 
+def test_check_mode_reads_no_feature(tmp_path, monkeypatch, capsys):
+    write_day(tmp_path / "d.dbn", "2026-10-06", damage="unknown cancel")
+    monkeypatch.setattr("sys.argv", ["mbo_sidecar.py", "check", "--mbo", str(tmp_path / "d.dbn")])
+    assert mbo_sidecar.main() == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["first_is_clear"] and out["snapshot_flagged_in_first_run_after_clear"] == 4 and out["unknown_cancels"] == 1 and out["nq_ts_recv_decreases"] == 0
+    assert [r["action"] for r in out["first_records"][:2]] == ["R", "A"] and out["first_records"][1]["flags"] == "0x20"
+    assert not list(tmp_path.glob("*.csv"))
+
+
 def test_the_report(tmp_path, monkeypatch):
     write_bars(tmp_path / "bars.csv", ["2026-10-02", "2026-10-06"])
     _day(tmp_path, monkeypatch, "2026-10-06")
