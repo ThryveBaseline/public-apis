@@ -30,7 +30,9 @@ TopstepX (the frozen preset's soft daily limit is not usable below the sealed si
 All at caps 1 and 5, on development paths and on the benchmark path. Both phases share one calendar, so a period in
 which no trade fits one phase's budget still runs: that phase's account never trades. Every run is repeated with
 Topstep's call-up to a Live account at the path's 3rd payout request (amendment 10): every account closes, nothing more
-is bought, and the Live account counts for nothing, a lower bound. The reading needs both versions to qualify.
+is bought, and the Live account counts for nothing: a lower bound on what a called-up path is worth, not on B5's own
+numbers (stopping purchases can only lower P(ruin) and can raise the cash; clarification 12). The reading needs both
+versions to qualify at one cap.
 
 usage: python research/b5_paths.py <B3's arguments> --registration docs/research/preregistration_b5_bootstrap.md \
            --trend-registration docs/research/preregistration_trend_exit.md \
@@ -57,7 +59,7 @@ from research.ledger_filters import sequential_pass  # noqa: E402
 from research.lifetime import POLICIES, RUNS, STREAMS, TOPSTEP_XFA, LifetimeAccount, lifetime_rows, walk_forward_lifetime  # noqa: E402
 from research.stream_report import on_span  # noqa: E402
 
-REGISTRATION_SHA256 = "bdd8635616b27c07902ec3060a2990ee21004091a9e47430f400b4eacac5ac18"  # registered df2bc28, clarified 1995b2c 7465eed, amended eb01d37
+REGISTRATION_SHA256 = "10695c98305ba41c7d8b7d6f1c28c72bc90d203e0a33980d9efc7b3ff6eb877d"  # registered df2bc28, clarified 1995b2c 7465eed d2046ee, amended eb01d37
 START_CASH = 2000.0
 H_SELECT = 250
 PATH_DAYS = 365
@@ -65,7 +67,7 @@ PAYOUT_DELAY = 5
 CAPS = (1, 5)
 SIZINGS = ("fractional", "whole micros")
 TOPSTEPX = "topstep_50k_x"  # whole micros run on this preset only (clarification 5)
-CALLUP = 3  # the call-up to a Live account at the path's 3rd payout request, the lower bound (amendment 10)
+CALLUP = 3  # the call-up to a Live account at the path's 3rd payout request (amendment 10)
 CALLUPS = (None, CALLUP)
 
 
@@ -433,7 +435,10 @@ def verdict(ok: dict) -> str:
     both versions must qualify at one cap."""
     if any(ok.get((cap, None), False) and ok.get((cap, CALLUP), False) for cap in CAPS):
         return "**yes**"
-    if any(ok.get((cap, None), False) for cap in CAPS):
+    without = any(ok.get((cap, None), False) for cap in CAPS)
+    if without and any(ok.get((cap, CALLUP), False) for cap in CAPS):
+        return "no: the two versions qualify only at different caps"
+    if without:
         return "no: only without the call-up (depends on the Live account)"
     return "no"
 
@@ -444,7 +449,7 @@ def _f(x, fmt: str) -> str:
 
 def report(sel: list[dict], results: list[dict], notes: list[str], gate_note: str, reg_sha: str, cut: pd.Timestamp) -> str:
     s = ["# B5: the $2,000 bootstrap on replayed market paths\n", gate_note, "",
-         f"Implements docs/research/preregistration_b5_bootstrap.md as registered in df2bc28, clarified in 1995b2c and 7465eed and amended in eb01d37, all before any B5 number (sha256 of the file read: {reg_sha}, the pinned value). "
+         f"Implements docs/research/preregistration_b5_bootstrap.md as registered in df2bc28, clarified in 1995b2c, 7465eed and d2046ee and amended in eb01d37, all before any B5 number (sha256 of the file read: {reg_sha}, the pinned value). "
          f"Development: New York days through {cut.date()}; benchmark from {(cut + pd.Timedelta(days=1)).date()}, one path over the benchmark year, reported beside and never used. "
          f"From ${START_CASH:,.0f} of cash, each path runs Topstep 50K evaluations and Express Funded accounts for {PATH_DAYS} calendar days on the stream's own trading days, every live account taking the same trades on the same day: "
          "$49 an evaluation at purchase and every 30 calendar days it stays live, $149 to activate a pass, payouts net of the split credited five trading days after they are requested, at most one purchase a day, "
@@ -452,7 +457,8 @@ def report(sel: list[dict], results: list[dict], notes: list[str], gate_note: st
          "Gates, passed on every run: each evaluation compared (those cancelled for fees or cut off by the path's end are not) equals the frozen pass walk-forward for its start day in outcome and day, and each Express Funded account's first payout within 60 days "
          "equals the frozen payout walk-forward's (B4's walk-forward of the same policy under \"wait\") in outcome, day and amount; B4's own gate passed on every stream in the selection. "
          "Whole micros run on TopstepX only (clarification 5); a selected configuration on the frozen topstep_50k preset is shown at its B4 size for the record and decides nothing. "
-         f"Every run is shown twice (amendment 10): without a call-up, and with Topstep's call-up to a Live account at the path's {CALLUP}rd payout request, where every account closes, nothing more is bought and the Live account counts for nothing (a lower bound). "
+         f"Every run is shown twice (amendment 10): without a call-up, and with Topstep's call-up to a Live account at the path's {CALLUP}rd payout request, where every account closes, nothing more is bought and the Live account counts for nothing. "
+         "That bounds from below what a called-up path is worth, not B5's own numbers: stopping the purchases also stops the ones that ruin paths at cap 5, so with the call-up P(ruin) can only fall and the cash can rise (clarification 12). "
          "Not modelled: Topstep's limit of 20 account purchases a month, which binds on part of the paths at cap 5 (in the review's synthetic probe enforcing it moved P(ruin) by under a point).\n",
          "Streams: " + "; ".join(notes) + ".\n",
          f"## Which configurations run (B4's development lifetime EV per evaluation at H {H_SELECT})\n",

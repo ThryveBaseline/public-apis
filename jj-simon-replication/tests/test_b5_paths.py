@@ -273,5 +273,6 @@ def test_the_amended_reading_needs_both_versions_at_one_cap():
     from research.b5_paths import verdict
     assert verdict({(1, None): True, (1, 3): True}) == "**yes**"
     assert verdict({(5, None): True, (5, 3): True, (1, None): False}) == "**yes**"
-    assert verdict({(1, None): True, (1, 3): False, (5, None): False, (5, 3): True}).startswith("no: only without the call-up")
+    assert verdict({(1, None): True, (1, 3): False, (5, None): False, (5, 3): True}) == "no: the two versions qualify only at different caps"
+    assert verdict({(1, None): True, (1, 3): False, (5, None): True, (5, 3): False}).startswith("no: only without the call-up")
     assert verdict({(1, None): False, (1, 3): True}) == "no"
