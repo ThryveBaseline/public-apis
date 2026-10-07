@@ -250,6 +250,13 @@ def test_contract_switch_session_and_within_contract_trend():
     keys = list(ctx.index)
     nxt = keys[keys.index(sw) + 1]
     assert ctx.loc[sw, "contracts"] == 2 and (ctx["contracts"] == 2).sum() == 1
+    assert ctx.loc[sw, "switch"] == 1.0 and ctx["switch"].sum() == 1  # the switch session only
+    # the contract count is known by 09:30: re-stamping every bar from the next day's 09:31 leaves it unchanged
+    naive_all = bars.index.tz_convert(NY).tz_localize(None)
+    re = bars.copy()
+    re.loc[naive_all >= list(ctx.index)[list(ctx.index).index(sw) + 1] + pd.Timedelta(hours=9, minutes=31), "symbol"] = 1002
+    ctx_re = session_context(re)
+    assert ctx_re.loc[list(ctx.index)[list(ctx.index).index(sw) + 1], "contracts"] == 1
     assert np.isnan(ctx.loc[sw, "overnight_range"]) and ctx.loc[sw, ["prev_close", "prev_high", "prev_low"]].isna().all()
     naive, sess = _sessions(bars)
     new_part = bars[(sess == sw) & (bars["symbol"] == 1001)]
@@ -273,3 +280,7 @@ def test_trade_frame_refuses_entries_off_their_session(year_and_a_bit):
     late.loc[k, "entry_time"] = late.loc[k, "entry_time"].tz_convert(NY).normalize() + pd.Timedelta(hours=18, minutes=5)
     with pytest.raises(ValueError, match="not regular-session entries"):
         trade_frame(late, bars, rep, cut)
+    early = t.copy()
+    early.loc[k, "entry_time"] = early.loc[k, "entry_time"].tz_convert(NY).normalize() + pd.Timedelta(hours=9, minutes=30)
+    with pytest.raises(ValueError, match="not regular-session entries"):
+        trade_frame(early, bars, rep, cut)

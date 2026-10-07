@@ -58,7 +58,10 @@ def session_context(bars: pd.DataFrame) -> pd.DataFrame:
     through D-1, as registered), prev_close / prev_high / prev_low (the previous session's bars in that contract,
     undefined if it has none), open and body of D's 09:30 bar, overnight_range (D's bars before 09:30, undefined
     unless all in that contract), trend20 (sign of the within-contract change from the close of D-21 to the close of
-    D-1, clarification 2) and contracts (how many contracts D's bars hold)."""
+    D-1, clarification 2); plus, descriptive only: contracts (how many contracts D's bars hold through 09:30), switch
+    (D holds a contract switch, or its 09:30 contract has no bars in the previous session, as after a switch at a
+    Sunday open) and vol_prev_close (the previous session's last close, mixed contracts and all, as the anatomy uses
+    for its volatility ratio)."""
     idx = bars.index.tz_convert(NY)
     naive = idx.tz_localize(None)
     sess = (naive + pd.Timedelta(hours=6)).normalize()
@@ -67,9 +70,12 @@ def session_context(bars: pd.DataFrame) -> pd.DataFrame:
     same = np.r_[False, sym[1:] == sym[:-1]]
     step = np.where(same, c - np.r_[c[:1], c[:-1]], c - o)  # at the first bar and at a contract change only the bar's own move
     b = pd.DataFrame({"sess": sess, "naive": naive, "sym": sym, "open": o, "high": h, "low": lo, "close": c, "cum": np.cumsum(step)})
-    d = b.groupby("sess").agg(cum=("cum", "last"), contracts=("sym", "nunique"))
+    d = b.groupby("sess").agg(cum=("cum", "last"))
+    d["contracts"] = b[b["naive"] < b["sess"] + pd.Timedelta(hours=9, minutes=31)].groupby("sess")["sym"].nunique().reindex(d.index)
     out = pd.DataFrame(index=d.index)
-    out["atr"] = daily_context(bars)["daily_atr"].reindex(d.index)
+    dc = daily_context(bars)
+    out["atr"] = dc["daily_atr"].reindex(d.index)
+    out["vol_prev_close"] = dc["prev_close"].reindex(d.index)
     first = b[(b["naive"] - b["sess"]) == pd.Timedelta(hours=9, minutes=30)].drop_duplicates("sess").set_index("sess")
     out["open"] = first["open"].reindex(d.index)
     out["body"] = (first["close"] - first["open"]).abs().reindex(d.index)
@@ -83,6 +89,7 @@ def session_context(bars: pd.DataFrame) -> pd.DataFrame:
     out["overnight_range"] = (pre["high"] - pre["low"]).where((pre["n"] == 1) & (pre["sym"] == sym0930))
     out["trend20"] = np.sign(d["cum"].shift(1) - d["cum"].shift(21))
     out["contracts"] = d["contracts"]
+    out["switch"] = ((out["contracts"] > 1) | (prev_sess.notna() & sym0930.notna() & out["prev_close"].isna())).astype(float)
     return out
 
 
@@ -120,7 +127,7 @@ def trade_frame(trades: pd.DataFrame, bars: pd.DataFrame, replay: pd.DataFrame, 
     f["label"] = np.where(f["period"] == "development", f["year"].astype(str), "benchmark")
     f["direction"] = t["direction"].astype(int).to_numpy()
     f["r"] = variant_frame(t, replay, pd.Series("ledger_bracket", index=t.index))["r"].to_numpy()
-    for k in ("atr", "prev_close", "prev_high", "prev_low", "open", "body", "overnight_range", "trend20", "contracts"):
+    for k in ("atr", "prev_close", "prev_high", "prev_low", "open", "body", "overnight_range", "trend20", "contracts", "switch", "vol_prev_close"):
         f[k] = c[k].to_numpy(float)
     atr = f["atr"].where(f["atr"] > 0)
     gap = f["open"] - f["prev_close"]
@@ -159,9 +166,9 @@ def trade_frame(trades: pd.DataFrame, bars: pd.DataFrame, replay: pd.DataFrame, 
     f["H8"] = f["H1"]
     f["H9"] = flag(gap_ok, d == -np.sign(gap))
     f["thr_body"], f["thr_overnight"] = thr_body, thr_on
-    # descriptive only: volatility terciles (ATR / previous close) fitted on every development trading day
-    q = (days.loc[dev_day.to_numpy(), "atr"] / days.loc[dev_day.to_numpy(), "prev_close"]).quantile([1 / 3, 2 / 3]).to_numpy()
-    pct = f["atr"] / f["prev_close"]
+    # descriptive only: volatility terciles (ATR / the previous session's close, as the anatomy) fitted on every development trading day
+    q = (days.loc[dev_day.to_numpy(), "atr"] / days.loc[dev_day.to_numpy(), "vol_prev_close"]).quantile([1 / 3, 2 / 3]).to_numpy()
+    pct = f["atr"] / f["vol_prev_close"]
     f["vol_tier"] = np.select([pct <= q[0], pct <= q[1], pct > q[1]], ["low", "mid", "high"], default="n/a")
     return f
 
@@ -276,7 +283,7 @@ def report(f: pd.DataFrame, excess_atr: pd.Series, registration_sha: str, gate_n
         s.append(f"| {lab} | {first('thr_body')} | {first('thr_overnight')} | {first('H6_threshold', 'continuation')} | {first('H7_threshold', 'reversion A+')} |")
     s.append("")
     s.append("## Volatility regime, descriptive only (seen in the anatomy, not tested)\n")
-    s.append("Daily ATR as a share of the previous close, terciles fitted on every development trading day with a 09:30 bar; outcome the replayed bracket R flat at 16:00 on replayed entries. "
+    s.append("Daily ATR as a share of the previous session's close (as the anatomy computes it), terciles fitted on every development trading day with a 09:30 bar; outcome the replayed bracket R flat at 16:00 on replayed entries. "
              "The anatomy's figures (ledger R on every development entry, terciles on every development day) therefore differ slightly.\n")
     tier = f["vol_tier"]
     s.append("| population | period | low: n, R | mid: n, R | high: n, R |\n|---|---|---|---|---|")
@@ -340,10 +347,10 @@ def main() -> int:
         excess_atr = hold_drift(trades, bars, replay, cont, cut, rolls)["excess_atr"]
     except ValueError as e:
         raise SystemExit(f"refusing to report: {e}")
-    on_switch = f["contracts"] > 1
+    on_switch = f["switch"] == 1.0
     gate_note = (f"Data hygiene: {n_excl} trades on {len(rolls)} contract-roll dates excluded, as in the sealed report. Provenance: the trades and the bar file have the manifest's sha256. "
                  f"Replay join: checked on {n_checked} stop or target exits before 16:00 (R and exit time). Entries: {len(f)} replayed, of which {int((f['population'] == 'continuation').sum())} continuation and "
-                 f"{int((f['population'] == 'reversion A+').sum())} reversion A+; {int(on_switch.sum())} sit on a session holding a contract switch, where gap, the prior-session comparison and the overnight range are undefined (clarification 1).")
+                 f"{int((f['population'] == 'reversion A+').sum())} reversion A+; {int(on_switch.sum())} sit on a session holding a contract switch (or opening a contract the previous session did not trade), where gap, the prior-session comparison and the overnight range are undefined (clarification 1).")
     text, _ = report(f, excess_atr, reg_sha, gate_note, cut, registered_cut)
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
     with open(a.out, "w") as fh:
