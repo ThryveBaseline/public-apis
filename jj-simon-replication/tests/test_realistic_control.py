@@ -26,8 +26,7 @@ def test_the_nulls_have_no_dollar_edge_as_traded(setup, budget):
     zero = rc.shift_null(st, budget)
     assert abs(zero["r"].mean() * budget) < 1e-9 and (zero.index == st.index).all()  # exactly zero dollars, the same trades
     assert (zero["w"] <= zero["r"] + 1e-12).all()
-    charge = st["r"] - zero["r"]
-    assert (np.isclose(st["w"] - zero["w"], charge) | (zero["w"] == zero["r"])).all()  # the charge is taken at entry
+    assert np.allclose(zero["w"], np.minimum(st["w"], zero["r"]))  # the charge is taken at exit
     flip = rc.relabel_null(0)(st, budget)
     step = (st["r"].max() - st["r"].min()) / len(st)
     assert abs(flip["r"].mean()) <= step + 1e-12 and (flip.index == st.index).all()  # within one trade of zero
@@ -53,6 +52,6 @@ def test_control_rows(setup):
     for x in rows:
         assert x["actual"]["paths"] == x["shift"]["paths"] > 10
         assert x["relabel_range"][0] <= x["relabel"]["net_per_eval"] <= x["relabel_range"][1]
-        assert abs(x["relabel"]["eval_dollars_per_trade"]) < 20 and abs(x["shift"]["funded_dollars_per_trade"]) < 1e-6
+        assert abs(x["relabel"]["eval_dollars_per_trade"]) < 5 and abs(x["shift"]["funded_dollars_per_trade"]) < 1e-6
     text = rc.report(rows, "0" * 64)
     assert "edge's part" in text and text.count("| S4 | development | TopstepX fee, dips counted |") == 4

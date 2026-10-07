@@ -9,8 +9,10 @@ period's calendar. So each null keeps exactly the actual stream's trades, entrie
 dollar result per trade is zero in each phase:
 
   shift     every trade is charged the same amount per dollar of stop risk (micros x stop x $2), so the phase's
-            dollars sum to zero; the charge is taken at entry, so the worst excursion moves with it. Outcome sizes
-            move, so a stop-out can lose more than its stop.
+            dollars sum to zero. The charge is taken at exit: the worst excursion is the trade's own, or the new
+            result if lower. Charging at entry would deepen every winner's dip and make the null look worse, so
+            the edge's part bigger; at exit errs the other way. Outcome sizes move, so a stop-out can lose more
+            than its stop.
   re-label  winners take, in a seeded random order, the lower-median loss of the phase's own losers until the
             phase's mean is as close to zero as one more trade can bring it (feasible outcomes; read it first);
             ten orders, averaged, with their range.
@@ -46,13 +48,13 @@ FAR = pd.Timestamp("2100-01-01")  # every trade passed in counts as the stream w
 
 
 def shift_null(st: pd.DataFrame, budget: float) -> pd.DataFrame:
-    """The phase's dollars brought to exactly zero by one charge per dollar of stop risk, taken at entry."""
+    """The phase's dollars brought to exactly zero by one charge per dollar of stop risk, taken at exit."""
     risk = st["micros"].astype(float).to_numpy() * st["stop_points"].astype(float).to_numpy() * MNQ_POINT_VALUE
     dollars = st["r"].astype(float).to_numpy() * budget
     charge = dollars.sum() / risk.sum() * risk / budget
     out = st.copy()
     out["r"] = st["r"].astype(float).to_numpy() - charge
-    out["w"] = np.minimum(st["w"].astype(float).to_numpy() - charge, out["r"].to_numpy())
+    out["w"] = np.minimum(st["w"].astype(float).to_numpy(), out["r"].to_numpy())
     return out
 
 
@@ -99,7 +101,7 @@ def report(rows: list[dict], bars_sha: str) -> str:
          f"Sealed bars sha256 {bars_sha}. The paths of research/realistic_economics.py (from ${START_CASH:,.0f}, one Topstep 50K TopstepX account at "
          "a time, whole micros sized with the fee, 365 days), with TopstepX's $1.22 micro fee and dips counted and with B5's conventions ($0.50, dips "
          "ignored), for the forward protocol's frozen S3 and S4 and for two zero-edge copies of exactly the trades each phase's account takes (same "
-         "entries, timing, stops and sizes): shift (one charge per dollar of stop risk, taken at entry) and re-label (winners given the phase's "
+         "entries, timing, stops and sizes): shift (one charge per dollar of stop risk, taken at exit, the convention that errs against the edge) and re-label (winners given the phase's "
          "lower-median loss until its mean is zero; ten seeded orders averaged, range shown). Each null's dollars per trade, shown for each phase, "
          "are zero (re-label: within one trade). The edge's part is the stream's net per evaluation less the null's; read re-label first (its "
          "outcomes are feasible trades) and the gap between the nulls as uncertainty.\n",
