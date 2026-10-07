@@ -28,3 +28,24 @@ Once a month, refetch the whole forward range for both schemas. Transcode it and
 ## Cost
 
 Daily increments cost about $0.011 a trading day, about $2.85 a year. The monthly audit adds about $18.50 a year. Refetching the whole range every day would have cost the triangular sum, about $360 a year, and is not done.
+
+## Decisions, 2026-10-07 (Chris)
+
+- **Bars:** the forward NQ 1-minute and daily bars are approved, bought as above. The order is:
+  1. the runner's review clears;
+  2. the sealed-data baseline is run and pinned;
+  3. the bars are bought from 2026-10-06 on;
+  4. the daily paper runs start.
+- **MBO sidecar:** approved as a pilot for exactly the first 10 forward trading days, about $23 in total.
+  - **What:** `GLBX.MDP3` `mbo`, `ESZ6` and `NQZ6`, full session 00:00–21:00 UTC.
+  - **Purchase:** each complete day once, quoted before buying.
+  - **Storage:** raw files read-only and hashed, on the GB10 only.
+  - **Limits:** no long-term commitment, and no model files cleared.
+  - **Disk:** for the pilot only, the GB10's free-space floor is lowered from 35 GiB to 25 GiB. Free space is checked before each download, and the floor is revisited at day 10.
+- **At day 10, Chris asks four questions:**
+  - Did S3 and S4 behave as expected?
+  - Did the order book improve entries?
+  - Did it identify trades that should have been skipped?
+  - Is that worth $2.30 a day?
+
+  If the order book adds nothing obvious, the purchases stop.
