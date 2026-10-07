@@ -286,15 +286,15 @@ def test_whole_contracts_size_on_the_full_stop_out(engine):
     cut = (last - pd.DateOffset(months=2)).normalize()
     cal = trading_days_of(bars)
     wide = trades.assign(stop_pts=150.0)  # $301 a micro: 3 at $1,000 (0.9), 1 at $500 (0.6)
-    w = score_whole(wide, cal, cut)
+    w = score_whole(wide, cal, cut, "topstep_50k_x")
     assert w["development"]["eval_size"] == pytest.approx(0.9) and w["development"]["funded_size"] == pytest.approx(0.6)
     assert set(trades["stop_points"]) <= {25.0, 50.0}
-    whole = score_whole(trades, cal, cut)
+    whole = score_whole(trades, cal, cut, "topstep_50k_x")
     ev, fu = whole_contracts(trades, 1000.0, 50), whole_contracts(trades, 500.0, 50)
     assert set(ev["size"].round(4)) <= {0.95, 0.9} and set(fu["size"].round(4)) <= {0.9, 0.8}
     for per, m in (("development", lambda d: d <= cut), ("benchmark", lambda d: d > cut)):
         de, df_ = ev[m(ev["entry_time"].dt.tz_convert(NY).dt.normalize().dt.tz_localize(None))], fu[m(fu["entry_time"].dt.tz_convert(NY).dt.normalize().dt.tz_localize(None))]
-        want = firm_rows(de, cal[m(cal)], firms=("topstep_50k",), funded_part=df_)
+        want = firm_rows(de, cal[m(cal)], firms=("topstep_50k_x",), funded_part=df_)
         pd.testing.assert_frame_equal(whole[per]["firms"], want)
 
 
@@ -304,10 +304,12 @@ def test_score_sized_scales_both_phases(engine):
     cut = (last - pd.DateOffset(months=2)).normalize()
     cal = trading_days_of(bars)
     st = sequential_pass(trades)
-    got = score_sized(st, cal, cut, 0.98)
+    got = score_sized(st, cal, cut, 0.98, "topstep_50k_x")
     dev = st[st["entry_time"].dt.tz_convert(NY).dt.normalize().dt.tz_localize(None) <= cut].assign(r=lambda x: x["r"] * 0.98)
-    assert got["development"] == firm_rows(dev, cal[cal <= cut], firms=("topstep_50k",)).iloc[0].to_dict()
-    assert score_sized(st, cal, cut, 1.0)["benchmark"] == score(st, cal, cut)["benchmark"]["firms"].iloc[0].to_dict()
+    assert got["development"] == firm_rows(dev, cal[cal <= cut], firms=("topstep_50k_x",)).iloc[0].to_dict()
+    assert score_sized(st, cal, cut, 1.0, "topstep_50k")["benchmark"] == score(st, cal, cut)["benchmark"]["firms"].iloc[0].to_dict()
+    with pytest.raises(TypeError):
+        score_sized(st, cal, cut, 0.98)  # the preset must be named: no silent fall-back to the daily-limit preset
 
 
 def test_check_grid_refuses_an_incomplete_replay():

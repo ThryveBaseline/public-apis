@@ -34,13 +34,16 @@ Sizing. The frozen account books every trade at R x its risk budget whatever the
 that sizing a sealed stop-out costs 1.02 R with slippage and commission, so two of them cost $2,040 against Topstep
 50K's $2,000 drawdown and end the evaluation (on the frozen preset its $1,000 soft daily limit caps each at exactly
 $1,000 and the balance lands on the threshold, which also fails). Sized 2% smaller the account fails on the third
-stop-out instead, and two wins (2.96 R) no longer reach the target. Every Topstep number at the sealed sizing, the
-sealed report's included, sits on this edge, so B3 shows each stream at 1.00, 0.98 and 0.95 of the budget and in
+stop-out instead, and two wins (2.96 R) no longer reach the target. Every Topstep 50K rate and Topstep 100K's payout
+rates at the sealed sizing, the sealed report's included, sit on this edge (a Topstep 100K evaluation fails on two
+stop-outs at any size), so B3 shows each stream at 1.00, 0.98 and 0.95 of the budget and in
 whole micro NQ contracts (the largest count whose full stop-out, slippage and commission included, stays strictly
 within the budget; entries that round to zero skipped; R scaled by the risk carried). Both tables use the TopstepX
-preset, which has no daily limit: below the sealed sizing the frozen account's soft daily limit would credit a
-later trade on a day that has nearly reached the limit with a full win but a loss cut to the room left, which no
-real account allows.
+preset, which has no daily limit: below the sealed sizing (and, at it, after a day that started with a win) the
+frozen account's soft daily limit would credit a later trade on a day that has nearly reached the limit with a full
+win but a loss cut to the room left, which no real account allows. That also slightly favours the streams that
+trade more than once a day on the frozen preset at the sealed sizing, so streams are best compared in the TopstepX
+1.00 column.
 
 Plus a direction split (long / short) of continuation under the sealed bracket, S3's brackets and the hold-to-16:00
 control, and a drift control for the hold: each trade held to 16:00 against the same-direction trade from the same
@@ -81,9 +84,10 @@ FIRMS = ("topstep_50k", "fundednext_50k_flex", "topstep_100k", "tradeify_100k_gr
 PRESETS = {**FIRM_PRESETS, "topstep_50k_x": FIRM_PRESETS["topstep_50k"].with_(
     plan="50K Trading Combine -> Express Funded, TopstepX (no daily loss limit)", daily_loss_limit=None, verified=False,
     notes="research variant of topstep_50k without the daily loss limit, as TopstepX accounts since 2024-08-25; everything else as topstep_50k")}
-# below the sealed sizing the frozen account's soft daily limit credits a later trade on a day that has nearly reached
-# the limit with a full win but a loss cut to the room left, which no real account allows; the sizing tables therefore
-# use only the preset without a daily limit (the frozen topstep_50k appears at the sealed sizing only)
+# below the sealed sizing (and, at it, after a day that started with a win) the frozen account's soft daily limit
+# credits a later trade on a day that has nearly reached the limit with a full win but a loss cut to the room left,
+# which no real account allows; the sizing tables therefore use only the preset without a daily limit (the frozen
+# topstep_50k appears at the sealed sizing only)
 SIZING_FIRMS = ("topstep_50k_x",)
 MAX_EVAL_DAYS, MAX_FUNDED_DAYS, FUNDED_RISK = 30, 60, 500.0
 START_CASH = (500.0, 1000.0, 2000.0, 5000.0)  # the frozen report's bootstrap rows
@@ -205,7 +209,7 @@ def whole_contracts(pre: pd.DataFrame, budget: float, cap: int) -> pd.DataFrame:
     return sequential_pass(t)
 
 
-def score_whole(pre: pd.DataFrame, cal: pd.DatetimeIndex, cut: pd.Timestamp, firm: str = "topstep_50k") -> dict:
+def score_whole(pre: pd.DataFrame, cal: pd.DatetimeIndex, cut: pd.Timestamp, firm: str) -> dict:
     """One firm's row per period with whole micro contracts: the evaluation trades the stream sized to the two-trade
     evaluation risk, the funded phase the stream sized to the funded risk."""
     rules = PRESETS[firm]
@@ -222,7 +226,7 @@ def score_whole(pre: pd.DataFrame, cal: pd.DatetimeIndex, cut: pd.Timestamp, fir
     return out
 
 
-def score_sized(stream: pd.DataFrame, cal: pd.DatetimeIndex, cut: pd.Timestamp, size: float, firm: str = "topstep_50k") -> dict:
+def score_sized(stream: pd.DataFrame, cal: pd.DatetimeIndex, cut: pd.Timestamp, size: float, firm: str) -> dict:
     """One firm's row per period with every trade's R scaled by `size` (fractional), in both phases."""
     t = stream.copy()
     t["r"] = t["r"].astype(float) * size
@@ -469,7 +473,7 @@ def report(streams: dict, pre: dict, chain: dict, cal: pd.DatetimeIndex, cut: pd
     s.append("## Position size at Topstep's drawdown, topstep_50k_x\n")
     s.append("At the sealed sizing a stop-out costs 1.02 R with slippage and commission ($1,020 in a Topstep 50K evaluation), so two stop-outs cost $2,040 and breach the $2,000 drawdown; on the frozen topstep_50k preset its $1,000 soft daily limit caps each at exactly $1,000 and the balance lands on the threshold, which fails too (the help centre: an account fails when its balance hits the limit). "
              "Sized 0.98 the account fails on the third stop-out instead of the second, and two wins (2 x 1.51 R x 0.98 = 2.96 R) no longer reach the $3,000 target; the funded phase has the same kind of edge at four stop-outs. 0.98 clears the edge only for stops of about 25 points or more (the edge is 1 / (1 + 0.5 / stop): 0.965 at 14 points). "
-             "This table and the next use topstep_50k_x (TopstepX: no daily loss limit for accounts created or reset since 2024-08-25; everything else as topstep_50k), because below the sealed sizing the frozen account's soft daily limit credits a later trade on a day that has nearly reached the limit with a full win but a loss cut to the room left, which no real account allows; the frozen topstep_50k preset is shown at the sealed sizing only. Fractional sizes, both phases scaled alike.\n")
+             "This table and the next use topstep_50k_x (TopstepX: no daily loss limit for accounts created or reset since 2024-08-25; everything else as topstep_50k), because below the sealed sizing (and, at it, after a day that started with a win) the frozen account's soft daily limit credits a later trade on a day that has nearly reached the limit with a full win but a loss cut to the room left, which no real account allows; the frozen topstep_50k preset is shown at the sealed sizing only, where this slightly favours the streams that trade more than once a day, so compare streams in this table's 1.00 column. Fractional sizes, both phases scaled alike.\n")
     s.append("| preset | stream | period | P(pass) at " + " / ".join(f"{z:.2f}" for z in SIZES) + " | P(payout) at " + " / ".join(f"{z:.2f}" for z in SIZES) + " | EV net of all fees at " + " / ".join(f"{z:.2f}" for z in SIZES) + " |")
     s.append("|---|---|---|---|---|---|")
     for firm in SIZING_FIRMS:
