@@ -48,6 +48,16 @@ When forward evidence reveals a weakness or an opportunity:
 - Preserve every version and its forward record. A superseded version is kept, not rewritten.
 - Version 1's checkpoint thresholds come from history. They answer one question only: is the implementation behaving as designed? A later version's thresholds may come from history for the same purpose, never to justify the change.
 
+## The three forward streams (from 2026-10-07)
+
+| Stream | Rules | Protocol | Runner |
+|---|---|---|---|
+| S3 | continuation only | `forward_protocol_v1.md` | `research/forward.py` |
+| S4 | continuation and A+ reversion | `forward_protocol_v1.md` | `research/forward.py` |
+| JJ full rules, B0 | Baseline 0, exactly as frozen | `forward_protocol_b0.md` | `research/forward_b0.py` |
+
+All three use the same bars and gate, each with its own ledger, state and paper account. They are compared only on new trades, and none is ranked or dropped on history.
+
 ## Notes on version 1
 
 - **S4** stays in version 1's runner. Removing it would change frozen code. It has no role in decisions.
