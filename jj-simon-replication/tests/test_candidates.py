@@ -7,8 +7,9 @@ from fpt.evaluate import evaluate_trades, trading_days_of
 from fpt.strategy import StrategyConfig, generate_trades
 from research.anatomy import load_trades
 from research.bracket_replay import dropped_rows, grid, replay, walk_forward
-from research.candidates import (ATR_NAMES, FIRMS, START_CASH, bootstrap, build_streams, format_bootstrap, format_row, hold_drift, mean_se,
-                                 pooled_choices, score, sealed_firm_rows, variant_frame)
+from research.candidates import (ATR_NAMES, FIRMS, NEEDED_VARIANTS, START_CASH, bootstrap, build_streams, check_grid, firm_rows, format_bootstrap,
+                                 format_row, hold_drift, mean_se, pooled_choices, s3_bracket, score, score_whole, sealed_firm_rows, variant_frame,
+                                 whole_contracts)
 from research.ledger_filters import sequential_pass
 
 NY = "America/New_York"
@@ -78,7 +79,8 @@ def _consistent(tmp_path):
 def test_streams_and_variant_frame(tmp_path):
     t, bars, days, rep = _consistent(tmp_path)
     cut = pd.Timestamp(days[30].strftime("%Y-%m-%d")) - pd.Timedelta(days=1)
-    streams, chain, s3_choice = build_streams(t, bars, rep, cut)
+    pre, streams, chain, s3_choice = build_streams(t, bars, rep, cut)
+    assert set(pre) == set(streams) and all(len(streams[k]) <= len(pre[k]) for k in pre)
     assert set(s3_choice) <= {"ledger_bracket", *ATR_NAMES}
     assert (s3_choice[t.loc[s3_choice.index, "setup"] == "reversion"] == "ledger_bracket").all()
     s1 = streams["S1 continuation only, sealed bracket"]
@@ -93,17 +95,20 @@ def test_streams_and_variant_frame(tmp_path):
         variant_frame(t, rep, pd.Series("no_such_bracket", index=t.index[:1]))
 
 
-def test_hold_drift_is_the_direction_call_beyond_the_drift(engine):
-    bars, trades = engine
+def _check_drift(bars, trades, min_trades=20):
+    """hold_drift against a brute force: the replay's hold is the engine's fill to the last close before 16:00, and
+    the excess is d x (move - the mean move of the same minute over the same label's other non-roll days) / 25."""
+    from research.anatomy import daily_context
     rep = replay(trades, bars, [v for v in grid() if v["name"] in ("hold_to_1600", "ledger_bracket")])
     cont = sorted(set(rep["trade"]) & set(trades.index[trades["setup"].astype(str) == "continuation"]))
-    assert len(cont) > 20
+    assert len(cont) > min_trades
     days = trading_days_of(bars)
     cut = days[len(days) // 2]
     roll = [trades.loc[cont[0], "entry_time"].tz_convert(NY).date()]  # treated as a roll date: no baseline, no trades
     ids = [k for k in cont if trades.loc[k, "entry_time"].tz_convert(NY).date() not in roll]
     dr = hold_drift(trades, bars, rep, ids, cut, roll)
     assert set(dr.loc[dr["period"] == "benchmark", "label"]) == {"benchmark"} and set(dr["period"]) == {"development", "benchmark"}
+    atr = daily_context(bars)["daily_atr"]
     ny = bars.index.tz_convert(NY)
     mins = ny.hour * 60 + ny.minute
     rth = bars[(mins >= 570) & (mins < 960)]
@@ -123,8 +128,30 @@ def test_hold_drift_is_the_direction_call_beyond_the_drift(engine):
         opens = pd.Series(rth.loc[at, "open"].to_numpy(), index=rny[at].normalize())
         moves = [last[D] - o for D, o in opens.items() if D.date() not in roll and label(D) == label(e.normalize())]
         assert dr.loc[k, "excess_r"] == pytest.approx(d * (move - np.mean(moves)) / 25)
+        a = atr.get(e.normalize().tz_localize(None), np.nan)
+        if np.isfinite(a):
+            assert dr.loc[k, "excess_atr"] == pytest.approx(d * (move - np.mean(moves)) / a)
+        else:
+            assert np.isnan(dr.loc[k, "excess_atr"])
     with pytest.raises(ValueError, match="fall on roll dates"):
         hold_drift(trades, bars, rep, [cont[0]], cut, roll)
+    return dr
+
+
+def test_hold_drift_is_the_direction_call_beyond_the_drift(engine):
+    bars, trades = engine
+    _check_drift(bars, trades)
+
+
+def test_hold_drift_on_globex_hours_closes_at_the_last_bar_before_1600(tmp_path):
+    """Globex bars run to 16:59 and from 18:00 (and cross a DST change): the hold and its drift end at the last bar
+    before 16:00, never at the day's last bar."""
+    from tests.test_engine import _globex_bars
+    bars = _globex_bars(days=40)
+    p = tmp_path / "t.csv"
+    generate_trades(bars, StrategyConfig()).to_csv(p, index=False)
+    dr = _check_drift(bars, load_trades(str(p)), min_trades=8)
+    assert dr["excess_atr"].notna().sum() >= 8
 
 
 def test_mean_se_clusters_by_day():
@@ -160,8 +187,10 @@ def test_cli_gate_reproduces_the_sealed_rows_and_refuses_a_changed_one(tmp_path,
     (tmp_path / "report.md").write_text(rep.text)
     kept, n_excl = exclude_roll_trades(trades, rolls)
     assert n_excl > 0
-    (tmp_path / "manifest.json").write_text(json.dumps({"data": {"roll_dates_excluded": [str(d) for d in rolls]},
-                                                        "outputs": {"n_trades": len(trades)}, "hygiene": {"trades_excluded": n_excl}}))
+    man = {"data": {"roll_dates_excluded": [str(d) for d in rolls], "sha256": candidates.sha256(str(csv))},
+           "outputs": {"n_trades": len(trades), "trades_sha256": candidates.sha256(str(led)), "report_sha256": candidates.sha256(str(tmp_path / "report.md"))},
+           "hygiene": {"trades_excluded": n_excl}}
+    (tmp_path / "manifest.json").write_text(json.dumps(man))
     day = kept["entry_time"].dt.tz_convert(NY).dt.normalize().dt.tz_localize(None)
     oos = ((day.max() - pd.DateOffset(months=2)).normalize() + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
     common = ["--trades", str(led), "--csv", str(csv), "--source-tz", "UTC", "--oos-start", oos, "--manifest", str(tmp_path / "manifest.json")]
@@ -171,14 +200,25 @@ def test_cli_gate_reproduces_the_sealed_rows_and_refuses_a_changed_one(tmp_path,
     monkeypatch.setattr("sys.argv", ["candidates.py", *args])
     assert candidates.main() == 0
     text = (tmp_path / "b3.md").read_text()
-    assert "reproduces all 8 firm rows of sealed/run1/report.md character for character" in text
-    assert "## Continuation by direction" in text and "| benchmark |" in text
+    assert f"reproduces all 8 firm rows of {tmp_path / 'report.md'} character for character" in text
+    assert "## Continuation by direction" in text and "| benchmark |" in text and "## Whole contracts, topstep_50k" in text
     row = next(x for x in rep.text.splitlines() if x.startswith("| topstep_50k |"))
     cells = row.split(" | ")
     cells[4] = str(int(cells[4]) + 1)  # days to pass, in sample: one character's worth of difference
     (tmp_path / "report.md").write_text(rep.text.replace(row, " | ".join(cells), 1))
+    with pytest.raises(SystemExit, match="the report given .* is not the sealed run's"):
+        candidates.main()  # a changed report is not the sealed one
+    man["outputs"]["report_sha256"] = candidates.sha256(str(tmp_path / "report.md"))
+    (tmp_path / "manifest.json").write_text(json.dumps(man))
     with pytest.raises(SystemExit, match="refusing to report: the development firm rows"):
-        candidates.main()
+        candidates.main()  # and were its hash on record, its rows would still fail the gate
+    rp = pd.read_csv(tmp_path / "replay.csv")
+    rp[rp["variant"] != ATR_NAMES[-1]].to_csv(tmp_path / "replay.csv", index=False)
+    (tmp_path / "report.md").write_text(rep.text)
+    man["outputs"]["report_sha256"] = candidates.sha256(str(tmp_path / "report.md"))
+    (tmp_path / "manifest.json").write_text(json.dumps(man))
+    with pytest.raises(SystemExit, match="lacks 1 of the variants"):
+        candidates.main()  # a replay file without the whole grid would silently change the chain
 
 
 def test_bootstrap_rows_reproduce_the_frozen_report(engine):
@@ -192,3 +232,56 @@ def test_bootstrap_rows_reproduce_the_frozen_report(engine):
         r["firm"] = "topstep_50k"
         for c in START_CASH:
             assert format_bootstrap(c, bootstrap(r, c)) in text.splitlines()
+
+
+def test_s3_bracket_maps_years_and_the_benchmark():
+    """Development continuation trades take their calendar year's link (sealed before the chain), benchmark trades
+    the all-development link whatever their calendar year, reversion the sealed bracket."""
+    when = ["2010-03-01", "2012-11-01", "2013-05-02", "2014-06-02", "2014-09-30", "2014-10-01", "2014-12-30", "2015-02-02", "2014-06-03"]
+    setup = ["continuation"] * 8 + ["reversion"]
+    t = pd.DataFrame({"setup": setup, "entry_time": [pd.Timestamp(f"{w} 09:35", tz=NY) for w in when]}, index=range(10, 19))
+    got = s3_bracket(t, {2013: "x", 2014: "y", "benchmark": "z"}, pd.Timestamp("2014-09-30"))
+    assert list(got) == ["ledger_bracket", "ledger_bracket", "x", "y", "y", "z", "z", "z", "ledger_bracket"]
+    assert list(got.index) == list(t.index)
+    assert (s3_bracket(t, {}, pd.Timestamp("2014-09-30")) == "ledger_bracket").all()
+
+
+def test_whole_contracts_size_in_micros_and_leave_the_sealed_brackets_unchanged(engine):
+    bars, trades = engine
+    # sizes: 25 points is 20 micros at $1,000 and 10 at $500; 207 points is 2 and 1 micros (83%); 300 points cannot
+    # be taken at $500 and is 1 micro (60%) at $1,000; 4 points hits the 50-micro cap (40%) at $1,000
+    t = trades.head(4).copy()
+    t["stop_pts"] = [25.0, 207.0, 300.0, 4.0]
+    t["r"] = 1.0
+    t["entry_time"] = [pd.Timestamp(f"2025-01-0{i + 6} 09:35", tz=NY) for i in range(4)]
+    t["exit_time"] = t["entry_time"] + pd.Timedelta(minutes=5)
+    ev, fu = whole_contracts(t, 1000.0, 50), whole_contracts(t, 500.0, 50)
+    assert list(ev["size"].round(4)) == [1.0, 0.828, 0.6, 0.4] and list(ev["r"].round(4)) == [1.0, 0.828, 0.6, 0.4]
+    assert list(fu["size"].round(4)) == [1.0, 0.828, 0.8]  # 300 points: zero micros at $500, not taken
+    t.loc[t.index[0], "stop_pts"] = np.nan
+    with pytest.raises(ValueError, match="no positive stop"):
+        whole_contracts(t, 500.0, 50)
+    # the sealed ledger's 25 and 50-point stops size exactly, so the whole-contract rows equal the frozen ones
+    last = trades["entry_time"].dt.tz_convert(NY).dt.normalize().dt.tz_localize(None).max()
+    cut = (last - pd.DateOffset(months=2)).normalize()
+    cal = trading_days_of(bars)
+    assert set(trades["stop_points"]) <= {25.0, 50.0}
+    frac = score(sequential_pass(trades), cal, cut)
+    whole = score_whole(trades, cal, cut)
+    for per in ("development", "benchmark"):
+        assert whole[per]["eval_size"] == 1.0 and whole[per]["funded_size"] == 1.0
+        pd.testing.assert_frame_equal(whole[per]["firms"], frac[per]["firms"].iloc[:1])
+    # and a split evaluation / funded stream is scored on its own two streams
+    d = trades["entry_time"].dt.tz_convert(NY).dt.normalize().dt.tz_localize(None) <= cut
+    st = sequential_pass(trades)
+    sd = st[st["entry_time"].dt.tz_convert(NY).dt.normalize().dt.tz_localize(None) <= cut]
+    half = sd.iloc[: len(sd) // 2]
+    mixed = firm_rows(sd, cal[cal <= cut], firms=("topstep_50k",), funded_part=half)
+    assert mixed.iloc[0]["n_eval_starts"] == frac["development"]["firms"].iloc[0]["n_eval_starts"] and d.any()
+
+
+def test_check_grid_refuses_an_incomplete_replay():
+    full = pd.DataFrame({"variant": NEEDED_VARIANTS})
+    check_grid(full)
+    with pytest.raises(ValueError, match="lacks 2 of the variants"):
+        check_grid(full[~full["variant"].isin(["hold_to_1600", ATR_NAMES[3]])])
