@@ -40,4 +40,6 @@ def test_control_rows(setup):
         assert x["actual"]["paths"] == x["shift"]["paths"] > 10
         assert x["relabel_range"][0] <= x["relabel"]["net_per_eval"] <= x["relabel_range"][1]
     text = rc.report(rows, "0" * 64)
-    assert "edge's part" in text and text.count("| S4 | development |") == 4
+    assert "edge's part" in text and text.count("| S4 | development | TopstepX fee, dips counted |") == 4
+    b5 = rc.control_rows("S4", pre, sessions, sessions[-1], "development", rc.VARIANTS[1])
+    assert all(x["variant"].startswith("B5") for x in b5) and b5[0]["shift"]["paths"] == rows[0]["shift"]["paths"]

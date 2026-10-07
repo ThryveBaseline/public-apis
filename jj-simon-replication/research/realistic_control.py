@@ -38,6 +38,7 @@ from research.realistic_economics import CHAIN_FROM, FEES, POLICIES, mae_points,
 from research.structure_control import relabelled  # noqa: E402
 
 FEE = FEES["TopstepX"]
+VARIANTS = (("TopstepX fee, dips counted", FEES["TopstepX"], True), ("B5: $0.50 fee, dips ignored", FEES["B5"], False))
 SEEDS = tuple(range(10))
 FAR = pd.Timestamp("2100-01-01")  # every trade passed in counts as the period whose mean is removed
 
@@ -69,7 +70,11 @@ def relabel_null(pre: pd.DataFrame, seed: int) -> tuple[pd.DataFrame, float]:
     return with_net_r(pre, st["r"].to_numpy()), share
 
 
-def control_rows(name: str, pre: pd.DataFrame, cal: pd.DatetimeIndex, last: pd.Timestamp | None, period: str) -> list[dict]:
+def control_rows(name: str, pre: pd.DataFrame, cal: pd.DatetimeIndex, last: pd.Timestamp | None, period: str,
+                 variant: tuple = VARIANTS[0]) -> list[dict]:
+    """The stream and its two nulls through the same paths, under one variant (label, fee, dips). The nulls remove the
+    mean net of the real fee in both variants, so they are the same trades in each."""
+    label, fee, dips = variant
     day = pd.DatetimeIndex(pre["entry_time"]).tz_convert("America/New_York").tz_localize(None).normalize()
     part = pre[(day >= cal[0]) & (day <= cal[-1])]
     zero, m = shift_null(part)
@@ -77,14 +82,14 @@ def control_rows(name: str, pre: pd.DataFrame, cal: pd.DatetimeIndex, last: pd.T
     rows = []
     for policy in POLICIES:
         for callup in (None, CALLUP):
-            act = run_variant(part, cal, last, policy, callup, FEE, dips=True)
-            sh = run_variant(zero, cal, last, policy, callup, FEE, dips=True)
-            rl = [run_variant(f, cal, last, policy, callup, FEE, dips=True) for f, _ in flips]
-            rows.append({"candidate": name, "period": period, "policy": policy, "callup": callup, "trades": int(len(part)), "mean_net_r": m,
+            act = run_variant(part, cal, last, policy, callup, fee, dips=dips)
+            sh = run_variant(zero, cal, last, policy, callup, fee, dips=dips)
+            rl = [run_variant(f, cal, last, policy, callup, fee, dips=dips) for f, _ in flips]
+            rows.append({"candidate": name, "period": period, "variant": label, "policy": policy, "callup": callup, "trades": int(len(part)), "mean_net_r": m,
                          "relabel_share": float(np.mean([s for _, s in flips])), "actual": act, "shift": sh,
                          "relabel": {k: float(np.mean([x[k] for x in rl])) for k in ("net_per_eval", "cash_p50", "cash_mean", "p_ruin", "p_above_2000")},
                          "relabel_range": (float(min(x["net_per_eval"] for x in rl)), float(max(x["net_per_eval"] for x in rl)))})
-            print(name, period, policy, callup, f"actual {act['net_per_eval']:+.0f} shift {sh['net_per_eval']:+.0f} "
+            print(name, period, label, policy, callup, f"actual {act['net_per_eval']:+.0f} shift {sh['net_per_eval']:+.0f} "
                   f"relabel {rows[-1]['relabel']['net_per_eval']:+.0f}", flush=True)
     return rows
 
@@ -92,18 +97,19 @@ def control_rows(name: str, pre: pd.DataFrame, cal: pd.DatetimeIndex, last: pd.T
 def report(rows: list[dict], bars_sha: str) -> str:
     s = ["# S3 and S4, realistic: what the structure pays a zero-edge stream, and what the edge adds\n",
          f"Sealed bars sha256 {bars_sha}. The paths of research/realistic_economics.py (from ${START_CASH:,.0f}, one Topstep 50K TopstepX account at "
-         f"a time, whole micros sized with the fee, 365 days) with TopstepX's ${FEE:.2f} micro fee and dips counted, for the forward protocol's frozen "
+         f"a time, whole micros sized with the fee, 365 days), both with TopstepX's ${FEE:.2f} micro fee and dips counted and with B5's conventions "
+         "($0.50, dips ignored), for the forward protocol's frozen "
          "S3 and S4 and for two zero-edge copies of the same trades (same entries, timing, stops and sizes): shift (every trade's net R per micro moved "
          "by the period's mean) and re-label (winners given the period's lower-median loss until the mean is zero; ten seeded orders averaged, "
          "range shown). Each period's own mean is removed. The edge's part is the stream's net per evaluation less the null's.\n",
          "Which rows to read: 'development, in-sample' flatters the candidates (the bracket was chosen on those years); 'development from 2021' is out "
          "of sample for the bracket; the benchmark is a single path.\n",
-         "| candidate | period | policy | call-up | trades | mean net R | actual: net per eval / median / ruin | shift null: net / median / ruin | "
+         "| candidate | period | fee and dips | policy | call-up | trades | mean net R | actual: net per eval / median / ruin | shift null: net / median / ruin | "
          "re-label null: net (range) / median / ruin | edge's part (vs shift / vs re-label) |",
-         "|---|---|---|---|---|---|---|---|---|---|"]
+         "|---|---|---|---|---|---|---|---|---|---|---|"]
     for x in rows:
         a, sh, rl, lo_hi = x["actual"], x["shift"], x["relabel"], x["relabel_range"]
-        s.append(f"| {x['candidate']} | {x['period']} | {x['policy']} | {'3rd payout' if x['callup'] else 'none'} | {x['trades']} | {x['mean_net_r']:+.3f} | "
+        s.append(f"| {x['candidate']} | {x['period']} | {x['variant']} | {x['policy']} | {'3rd payout' if x['callup'] else 'none'} | {x['trades']} | {x['mean_net_r']:+.3f} | "
                  f"{a['net_per_eval']:+,.0f} / {a['cash_p50']:,.0f} / {a['p_ruin']:.1%} | {sh['net_per_eval']:+,.0f} / {sh['cash_p50']:,.0f} / {sh['p_ruin']:.1%} | "
                  f"{rl['net_per_eval']:+,.0f} ({lo_hi[0]:+,.0f} to {lo_hi[1]:+,.0f}) / {rl['cash_p50']:,.0f} / {rl['p_ruin']:.1%} | "
                  f"{a['net_per_eval'] - sh['net_per_eval']:+,.0f} / {a['net_per_eval'] - rl['net_per_eval']:+,.0f} |")
@@ -134,7 +140,8 @@ def main() -> int:
         for period, cal, last in (("development, in-sample", sessions[sessions <= DEV_END], DEV_END),
                                   ("development from 2021", sessions[(sessions >= CHAIN_FROM) & (sessions <= DEV_END)], DEV_END),
                                   ("benchmark", sessions[(sessions > DEV_END) & (sessions < FIRST_UNSEEN)], None)):
-            rows += control_rows(name, pre, cal, last, period)
+            for variant in VARIANTS:
+                rows += control_rows(name, pre, cal, last, period, variant)
     text = report(rows, bars_sha)
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
     with open(a.out, "w") as fh:
