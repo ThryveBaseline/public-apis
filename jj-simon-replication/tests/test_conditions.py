@@ -8,7 +8,7 @@ from fpt.data import NY
 from fpt.strategy import StrategyConfig, generate_trades
 from research.anatomy import daily_context, load_trades
 from research.bracket_replay import grid, replay
-from research.conditions import HYPOTHESES, holm, session_context, evaluate_hypothesis, trade_frame, walk_forward_threshold
+from research.conditions import HYPOTHESES, decide, evaluate_hypothesis, holm, session_context, trade_frame, walk_forward_threshold
 from tests.test_engine import _globex_bars
 
 
@@ -72,7 +72,7 @@ def test_holm_counts_the_whole_registered_family():
     assert holm([0.5, 0.9]) == pytest.approx([1.0, 1.0])
 
 
-def test_test_one_difference_se_p_and_years():
+def test_evaluate_hypothesis_difference_se_p_and_years():
     rng = np.random.default_rng(4)
     rows = []
     for y in (2011, 2012, 2013, 2014, 2015):
@@ -97,7 +97,7 @@ def test_trade_frame_flags_match_an_independent_computation(year_and_a_bit):
     bars, t, rep = year_and_a_bit
     days = sorted(set(t["entry_time"].dt.tz_convert(NY).dt.normalize().dt.tz_localize(None)))
     cut = days[int(len(days) * 0.75)]
-    f = trade_frame(t, bars, rep, cut, [])
+    f = trade_frame(t, bars, rep, cut)
     assert {"continuation", "reversion A+"} <= set(f["population"]) and set(f["period"]) == {"development", "benchmark"}
     ctx = session_context(bars)
     ok_days = ctx[ctx["open"].notna() & (ctx["atr"] > 0)]
@@ -171,15 +171,25 @@ def test_cli_end_to_end_and_its_refusals(tmp_path, monkeypatch):
     common = ["--trades", str(led), "--csv", str(csv), "--source-tz", "UTC", "--oos-start", oos, "--manifest", str(tmp_path / "manifest.json")]
     monkeypatch.setattr("sys.argv", ["bracket_replay.py", *common, "--out", str(tmp_path / "b1.md"), "--private-out", str(tmp_path / "replay.csv")])
     assert bracket_replay.main() in (0, None)
-    reg = tmp_path / "registration.md"
-    reg.write_text("registered text")
-    args = [*common, "--replay-csv", str(tmp_path / "replay.csv"), "--registration", str(reg), "--out", str(tmp_path / "c.md"), "--private-out", str(tmp_path / "private" / "c.csv")]
+    import os
+    reg = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "docs", "research", "preregistration_conditional_edge.md")
+    args = [*common, "--replay-csv", str(tmp_path / "replay.csv"), "--registration", reg, "--out", str(tmp_path / "c.md"), "--private-out", str(tmp_path / "private" / "c.csv")]
     monkeypatch.setattr("sys.argv", ["conditions.py", *args])
+    with pytest.raises(SystemExit, match="the registered cut is --oos-start 2025-10-06"):
+        conditions.main()  # the synthetic tape ends in 2025: its own cut needs the test-only flag
+    monkeypatch.setattr("sys.argv", ["conditions.py", *args, "--allow-other-cut"])
     assert conditions.main() == 0
     text = (tmp_path / "c.md").read_text()
-    assert sha256(str(reg)) in text and "Passing conditions:" in text
+    assert conditions.REGISTRATION_SHA256 in text and "Passing conditions:" in text and "NOT THE REGISTERED RUN" in text
+    assert "a contract switch" in text and "days with both sides" in text
     assert all(f"| {h} | " in text for h, *_ in HYPOTHESES)
     assert (tmp_path / "private" / "c.csv").exists()
+    fake = tmp_path / "registration.md"
+    fake.write_text("an edited registration")
+    monkeypatch.setattr("sys.argv", ["conditions.py", *[str(fake) if x == reg else x for x in args], "--allow-other-cut"])
+    with pytest.raises(SystemExit, match="is not the pinned one"):
+        conditions.main()
+    monkeypatch.setattr("sys.argv", ["conditions.py", *args, "--allow-other-cut"])
     rp = pd.read_csv(tmp_path / "replay.csv")
     rp[rp["variant"] != "hold_to_1600"].to_csv(tmp_path / "replay.csv", index=False)
     with pytest.raises(SystemExit, match="lacks hold_to_1600"):
@@ -188,3 +198,78 @@ def test_cli_end_to_end_and_its_refusals(tmp_path, monkeypatch):
     (tmp_path / "manifest.json").write_text(json.dumps(man))
     with pytest.raises(SystemExit, match="the trades given .* is not the sealed run's"):
         conditions.main()
+
+
+def test_clustered_standard_error_and_shared_days():
+    """Two trades a day on one side: the side's standard error is clustered by day; both sides on one day is counted."""
+    rows = []
+    for k in range(40):
+        day = pd.Timestamp("2015-01-05") + pd.Timedelta(days=k)
+        rows += [{"population": "continuation", "period": "development", "year": 2015, "day": day, "H1": 1.0, "r": 1.0 if k % 2 else -1.0},
+                 {"population": "continuation", "period": "development", "year": 2015, "day": day, "H1": 1.0, "r": 1.0 if k % 2 else -1.0},
+                 {"population": "continuation", "period": "development", "year": 2015, "day": day + pd.Timedelta(hours=12), "H1": 0.0, "r": 0.5 if k % 3 else -1.0}]
+    rows.append({"population": "continuation", "period": "development", "year": 2015, "day": pd.Timestamp("2015-01-05"), "H1": 0.0, "r": 0.0})
+    f = pd.DataFrame(rows)
+    dev = evaluate_hypothesis(f, "H1", "continuation")["development"]
+    fav = f[f["H1"] == 1.0]
+    per_day = fav.groupby("day")["r"].mean()
+    assert dev["n_fav"] == 80 and dev["shared_days"] == 1
+    se_fav = per_day.std(ddof=1) / np.sqrt(len(per_day))  # identical twins on a day: the clustered SE is the SE of the day means
+    oth = f[f["H1"] == 0.0]
+    from research.candidates import mean_se
+    assert dev["se"] == pytest.approx(np.sqrt(se_fav ** 2 + mean_se(oth["r"], oth["day"])[2] ** 2))
+
+
+def test_decide_applies_holm_and_the_consistency_rule():
+    base = {"dev_delta": 0.1, "dev_years_pos": 9, "dev_years_n": 12}
+    rows = [{**base, "dev_p": 0.001}, {**base, "dev_p": 0.004}, {**base, "dev_p": 0.004, "dev_years_pos": 7},  # 7 of 12 is 58%: fails consistency
+            {**base, "dev_p": 0.02}, {**base, "dev_p": float("nan")}, {**base, "dev_p": 0.001, "dev_delta": -0.1},
+            {**base, "dev_p": 0.3}, {**base, "dev_p": 0.5}, {**base, "dev_p": 0.9}]
+    decide(rows)
+    assert [r["passes"] for r in rows] == [True, True, False, False, False, False, False, False, False]
+    # family of nine: 0.001 ranks first (x 9); 0.02 ranks fifth (x 5), after the two 0.001s and the two 0.004s
+    assert rows[0]["holm"] == pytest.approx(0.009) and rows[3]["holm"] == pytest.approx(0.02 * 5)
+    assert np.isnan(rows[4]["holm"])
+
+
+def _switched(jump):
+    """Globex bars whose contract changes at 00:00 UTC on one evening, with every later price shifted by `jump`."""
+    bars = _globex_bars(days=60)
+    at = bars.index[(bars.index.tz_convert("UTC").hour == 0) & (bars.index.tz_convert("UTC").minute == 0)][30]
+    later = bars.index >= at
+    bars["symbol"] = np.where(later, 1001, 1000)
+    for c in ("open", "high", "low", "close"):
+        bars.loc[later, c] = bars.loc[later, c] + jump
+    return bars, at
+
+
+def test_contract_switch_session_and_within_contract_trend():
+    bars, at = _switched(2000.0)
+    ctx = session_context(bars)
+    sw = (at.tz_convert(NY).tz_localize(None) + pd.Timedelta(hours=6)).normalize()  # the session holding the switch
+    keys = list(ctx.index)
+    nxt = keys[keys.index(sw) + 1]
+    assert ctx.loc[sw, "contracts"] == 2 and (ctx["contracts"] == 2).sum() == 1
+    assert np.isnan(ctx.loc[sw, "overnight_range"]) and ctx.loc[sw, ["prev_close", "prev_high", "prev_low"]].isna().all()
+    naive, sess = _sessions(bars)
+    new_part = bars[(sess == sw) & (bars["symbol"] == 1001)]
+    assert ctx.loc[nxt, "prev_close"] == new_part["close"].iloc[-1]
+    assert ctx.loc[nxt, "prev_high"] == new_part["high"].max() and ctx.loc[nxt, "prev_low"] == new_part["low"].min()
+    assert np.isfinite(ctx.loc[nxt, "overnight_range"])
+    # the trend never sees the jump: identical to the same switch without the jump, while the naive close-to-close sign flips
+    flat, _ = _switched(0.0)
+    pd.testing.assert_series_equal(ctx["trend20"], session_context(flat)["trend20"])
+    closes = pd.Series(bars["close"].to_numpy(), index=sess).groupby(level=0).last()
+    naive_trend = np.sign(closes.shift(1) - closes.shift(21)).reindex(ctx.index)
+    assert (naive_trend != ctx["trend20"]).sum() > 0
+
+
+def test_trade_frame_refuses_entries_off_their_session(year_and_a_bit):
+    bars, t, rep = year_and_a_bit
+    days = sorted(set(t["entry_time"].dt.tz_convert(NY).dt.normalize().dt.tz_localize(None)))
+    cut = days[int(len(days) * 0.75)]
+    late = t.copy()
+    k = int(rep["trade"].iloc[0])
+    late.loc[k, "entry_time"] = late.loc[k, "entry_time"].tz_convert(NY).normalize() + pd.Timedelta(hours=18, minutes=5)
+    with pytest.raises(ValueError, match="not regular-session entries"):
+        trade_frame(late, bars, rep, cut)

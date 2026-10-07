@@ -1,16 +1,18 @@
 """Research step 4: conditional edge, exactly as pre-registered in docs/research/preregistration_conditional_edge.md
-(registered in commit c0c7a15, before this tool existed and before any of these splits was computed).
+(registered in commit c0c7a15 and clarified in 26cb07a, both before this tool ran on any real data).
 
 Nine one-sided hypotheses on the sealed entries the B2 replay covers, outcome the sealed bracket replayed and flat at
 16:00 (`ledger_bracket`): H1-H6 on continuation (every grade), H7-H9 on reversion A+. Context comes only from what is
-known before the entry (session_context); continuous conditions split at walk-forward medians from earlier
-development years; each test is the development difference in mean R, favoured minus other side, with day-clustered
-standard errors, a one-sided normal p-value, Holm's step-down across all nine at 0.05, and year consistency. A
-condition passes only if Holm-significant and positive in at least 60% of eligible development years. The benchmark
-year is reported beside and never used. The report carries the sha256 of the registration file it implements.
+known before the entry, every cross-session comparison in the contract of the day's 09:30 bar (session_context);
+continuous conditions split at walk-forward medians from earlier development years; each test is the development
+difference in mean R, favoured minus other side, with day-clustered standard errors, a one-sided normal p-value,
+Holm's step-down across all nine at 0.05, and year consistency. A condition passes only if Holm-significant and
+positive in at least 60% of eligible development years. The benchmark year is reported beside and never used.
 
-Gates: the trades and bars are the sealed run's (sha256 against the manifest), roll dates and population as sealed,
-and the replay file aligns with the ledger (research/ledger_filters.check_alignment).
+Gates: the registration file is the pinned one (sha256) and the cut is the registered one (a test-only flag allows
+another and stamps the report); the trades and bars are the sealed run's (sha256 against the manifest), roll dates
+and population as sealed; the replay file aligns with the ledger (research/ledger_filters.check_alignment); every
+entry is a regular-session entry whose Globex session is its New York date.
 
 usage: python research/conditions.py --trades sealed/run1/trades.csv --csv data/nq_1min_databento.csv --source-tz UTC \
            --oos-start 2025-10-06 --manifest sealed/run1/manifest.json --replay-csv research/private/run1_bracket_replay_b2.csv \
@@ -34,6 +36,8 @@ from research.anatomy import daily_context, exclude_roll_trades, load_trades  # 
 from research.candidates import hold_drift, mean_se, ny_day, sha256, variant_frame  # noqa: E402
 from research.ledger_filters import check_alignment  # noqa: E402
 
+REGISTRATION_SHA256 = "d32040ce4f453e52cfcefba92ceb9012d2121522c414fdc8f5a9548a2d5399a3"  # the file as clarified in 26cb07a
+REGISTERED_OOS_START = "2025-10-06"
 ALPHA, MIN_YEAR_SIDE, CONSISTENCY = 0.05, 10, 0.60
 HYPOTHESES = [  # id, population, condition, favoured side (as registered)
     ("H1", "continuation", "trend", "with the 20-session trend"),
@@ -50,24 +54,35 @@ HYPOTHESES = [  # id, population, condition, favoured side (as registered)
 
 def session_context(bars: pd.DataFrame) -> pd.DataFrame:
     """Per Globex session D (18:00 on D-1 to 17:00 on D, keyed by D as a naive date), only what is known before D's
-    09:31: atr (daily ATR(14) through D-1), prev_close / prev_high / prev_low (the session ending on D-1), open and
-    body of D's 09:30 bar, overnight_range (D's bars before 09:30) and trend20 (sign of prev_close minus the close
-    of the session 20 sessions before D-1)."""
+    09:31, every cross-session comparison in the contract of D's 09:30 bar (clarification 1): atr (daily ATR(14)
+    through D-1, as registered), prev_close / prev_high / prev_low (the previous session's bars in that contract,
+    undefined if it has none), open and body of D's 09:30 bar, overnight_range (D's bars before 09:30, undefined
+    unless all in that contract), trend20 (sign of the within-contract change from the close of D-21 to the close of
+    D-1, clarification 2) and contracts (how many contracts D's bars hold)."""
     idx = bars.index.tz_convert(NY)
     naive = idx.tz_localize(None)
     sess = (naive + pd.Timedelta(hours=6)).normalize()
-    b = pd.DataFrame({"sess": sess, "naive": naive, "open": bars["open"].to_numpy(float), "high": bars["high"].to_numpy(float),
-                      "low": bars["low"].to_numpy(float), "close": bars["close"].to_numpy(float)})
-    d = b.groupby("sess").agg(high=("high", "max"), low=("low", "min"), close=("close", "last"))
+    sym = bars["symbol"].astype(str).to_numpy() if "symbol" in bars.columns else np.full(len(bars), "")
+    o, h, lo, c = (bars[k].to_numpy(float) for k in ("open", "high", "low", "close"))
+    same = np.r_[False, sym[1:] == sym[:-1]]
+    step = np.where(same, c - np.r_[c[:1], c[:-1]], c - o)  # at the first bar and at a contract change only the bar's own move
+    b = pd.DataFrame({"sess": sess, "naive": naive, "sym": sym, "open": o, "high": h, "low": lo, "close": c, "cum": np.cumsum(step)})
+    d = b.groupby("sess").agg(cum=("cum", "last"), contracts=("sym", "nunique"))
     out = pd.DataFrame(index=d.index)
     out["atr"] = daily_context(bars)["daily_atr"].reindex(d.index)
-    out["prev_close"], out["prev_high"], out["prev_low"] = d["close"].shift(), d["high"].shift(), d["low"].shift()
-    first = b[(b["naive"] - b["sess"]) == pd.Timedelta(hours=9, minutes=30)].set_index("sess")
+    first = b[(b["naive"] - b["sess"]) == pd.Timedelta(hours=9, minutes=30)].drop_duplicates("sess").set_index("sess")
     out["open"] = first["open"].reindex(d.index)
     out["body"] = (first["close"] - first["open"]).abs().reindex(d.index)
-    pre = b[b["naive"] < b["sess"] + pd.Timedelta(hours=9, minutes=30)].groupby("sess")
-    out["overnight_range"] = (pre["high"].max() - pre["low"].min()).reindex(d.index)
-    out["trend20"] = np.sign(out["prev_close"] - out["prev_close"].shift(20))
+    sym0930 = first["sym"].reindex(d.index)
+    per = b.groupby(["sess", "sym"]).agg(high=("high", "max"), low=("low", "min"), close=("close", "last"))
+    prev_sess = pd.Series(d.index, index=d.index).shift()
+    p = per.reindex(pd.MultiIndex.from_arrays([prev_sess.to_numpy(), sym0930.to_numpy()]))
+    out["prev_close"], out["prev_high"], out["prev_low"] = p["close"].to_numpy(), p["high"].to_numpy(), p["low"].to_numpy()
+    pre = b[b["naive"] < b["sess"] + pd.Timedelta(hours=9, minutes=30)].groupby("sess").agg(high=("high", "max"), low=("low", "min"),
+                                                                                           n=("sym", "nunique"), sym=("sym", "first")).reindex(d.index)
+    out["overnight_range"] = (pre["high"] - pre["low"]).where((pre["n"] == 1) & (pre["sym"] == sym0930))
+    out["trend20"] = np.sign(d["cum"].shift(1) - d["cum"].shift(21))
+    out["contracts"] = d["contracts"]
     return out
 
 
@@ -83,12 +98,16 @@ def walk_forward_threshold(values: pd.Series, year: pd.Series, dev: pd.Series, l
     return labels.map(cache).astype(float)
 
 
-def trade_frame(trades: pd.DataFrame, bars: pd.DataFrame, replay: pd.DataFrame, cut: pd.Timestamp, rolls) -> pd.DataFrame:
+def trade_frame(trades: pd.DataFrame, bars: pd.DataFrame, replay: pd.DataFrame, cut: pd.Timestamp) -> pd.DataFrame:
     """One row per replayed entry: population, period, year, label, outcome R, the registered context and the
     favoured flag of each hypothesis (NaN where the registered quantity is undefined)."""
     replayed = sorted(set(int(x) for x in replay.loc[replay["variant"] != "_dropped", "trade"]))
     t = trades.loc[replayed]
     day = ny_day(t)
+    entry = t["entry_time"].dt.tz_convert(NY).dt.tz_localize(None)
+    bad = ((entry + pd.Timedelta(hours=6)).dt.normalize() != day) | ((entry - day) < pd.Timedelta(hours=9, minutes=31))
+    if bad.any():
+        raise ValueError(f"{int(bad.sum())} entries are not regular-session entries whose Globex session is their New York date")
     ctx = session_context(bars)
     c = ctx.reindex(day.to_numpy())
     c.index = t.index
@@ -101,7 +120,7 @@ def trade_frame(trades: pd.DataFrame, bars: pd.DataFrame, replay: pd.DataFrame, 
     f["label"] = np.where(f["period"] == "development", f["year"].astype(str), "benchmark")
     f["direction"] = t["direction"].astype(int).to_numpy()
     f["r"] = variant_frame(t, replay, pd.Series("ledger_bracket", index=t.index))["r"].to_numpy()
-    for k in ("atr", "prev_close", "prev_high", "prev_low", "open", "body", "overnight_range", "trend20"):
+    for k in ("atr", "prev_close", "prev_high", "prev_low", "open", "body", "overnight_range", "trend20", "contracts"):
         f[k] = c[k].to_numpy(float)
     atr = f["atr"].where(f["atr"] > 0)
     gap = f["open"] - f["prev_close"]
@@ -167,7 +186,8 @@ def holm(p: list[float]) -> list[float]:
 
 def evaluate_hypothesis(f: pd.DataFrame, h: str, pop: str) -> dict:
     """The registered statistic for one hypothesis: development difference in mean R, favoured minus other, with
-    day-clustered standard errors per side, one-sided p, year consistency; the benchmark beside."""
+    day-clustered standard errors per side, one-sided p, year consistency; the benchmark beside; and the number of
+    days on which both sides trade (reported, not tested)."""
     g = f[(f["population"] == pop) & f[h].notna()]
     res = {}
     for per in ("development", "benchmark"):
@@ -177,7 +197,8 @@ def evaluate_hypothesis(f: pd.DataFrame, h: str, pop: str) -> dict:
         no, mo, so = mean_se(oth["r"], oth["day"])
         delta = mf - mo
         se = math.sqrt(sf ** 2 + so ** 2) if np.isfinite(sf) and np.isfinite(so) else float("nan")
-        res[per] = {"n_fav": nf, "r_fav": mf, "n_oth": no, "r_oth": mo, "delta": delta, "se": se}
+        res[per] = {"n_fav": nf, "r_fav": mf, "n_oth": no, "r_oth": mo, "delta": delta, "se": se,
+                    "shared_days": len(set(fav["day"]) & set(oth["day"]))}
     dev = res["development"]
     dev["p"] = one_sided_p(dev["delta"] / dev["se"]) if dev["se"] and np.isfinite(dev["se"]) and dev["se"] > 0 else float("nan")
     d = g[g["period"] == "development"]
@@ -191,6 +212,16 @@ def evaluate_hypothesis(f: pd.DataFrame, h: str, pop: str) -> dict:
     return res
 
 
+def decide(rows: list[dict]) -> list[dict]:
+    """Holm across the whole family and the registered pass rule, in place."""
+    adj = holm([r["dev_p"] for r in rows])
+    for r, a in zip(rows, adj):
+        r["holm"] = a
+        cons = r["dev_years_pos"] / r["dev_years_n"] if r["dev_years_n"] else float("nan")
+        r["passes"] = bool(np.isfinite(a) and a <= ALPHA and r["dev_delta"] > 0 and np.isfinite(cons) and cons >= CONSISTENCY)
+    return rows
+
+
 def secondary(f: pd.DataFrame, h: str, excess_atr: pd.Series) -> dict:
     """Continuation only: the hold-minus-drift per daily ATR on each side, per period (reported, not tested)."""
     g = f[(f["population"] == "continuation") & f[h].notna()].join(excess_atr.rename("excess_atr"))
@@ -201,29 +232,29 @@ def secondary(f: pd.DataFrame, h: str, excess_atr: pd.Series) -> dict:
     return out
 
 
-def report(f: pd.DataFrame, excess_atr: pd.Series, registration_sha: str, gate_note: str) -> tuple[str, list[dict]]:
+def report(f: pd.DataFrame, excess_atr: pd.Series, registration_sha: str, gate_note: str, cut: pd.Timestamp, registered_cut: bool) -> tuple[str, list[dict]]:
     rows = []
     for h, pop, cond, fav in HYPOTHESES:
         res = evaluate_hypothesis(f, h, pop)
         rows.append({"id": h, "pop": pop, "cond": cond, "fav": fav, **{f"dev_{k}": v for k, v in res["development"].items()},
                      **{f"bm_{k}": v for k, v in res["benchmark"].items()}})
-    adj = holm([r["dev_p"] for r in rows])
-    for r, a in zip(rows, adj):
-        r["holm"] = a
-        cons = r["dev_years_pos"] / r["dev_years_n"] if r["dev_years_n"] else float("nan")
-        r["passes"] = bool(np.isfinite(a) and a <= ALPHA and r["dev_delta"] > 0 and np.isfinite(cons) and cons >= CONSISTENCY)
-    s = ["# Conditional edge: the pre-registered tests (research step 4)\n", gate_note, "",
-         f"Implements docs/research/preregistration_conditional_edge.md as registered in commit c0c7a15 (sha256 of the registration file read: {registration_sha}). "
-         "Outcome: R of the sealed bracket replayed, flat at 16:00. Each test is the development difference in mean R, favoured minus other side, with day-clustered standard errors, "
-         f"a one-sided normal p-value and Holm's step-down across all nine at {ALPHA}; a condition passes only if Holm-significant and positive in at least {CONSISTENCY:.0%} of the development years "
-         f"with at least {MIN_YEAR_SIDE} trades on each side. The benchmark year is reported beside and never used.\n",
-         "## Tests\n",
-         "| id | population | condition (favoured side) | development: favoured n, R | other n, R | difference (se) | p | Holm p | years positive | passes | benchmark: favoured n, R | other n, R | difference |",
-         "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    decide(rows)
+    s = ["# Conditional edge: the pre-registered tests (research step 4)\n"]
+    if not registered_cut:
+        s.append("**NOT THE REGISTERED RUN: the cut differs from the registered one (a test-only flag).**\n")
+    s += [gate_note, "",
+          f"Implements docs/research/preregistration_conditional_edge.md as registered in commit c0c7a15 and clarified in 26cb07a, both before any run on real data (sha256 of the file read: {registration_sha}, the pinned value). "
+          f"Development: New York days through {cut.date()}; benchmark: from {(cut + pd.Timedelta(days=1)).date()}. "
+          "Outcome: R of the sealed bracket replayed, flat at 16:00. Each test is the development difference in mean R, favoured minus other side, with day-clustered standard errors combined across the two sides as registered, "
+          f"a one-sided normal p-value and Holm's step-down across all nine at {ALPHA}; a condition passes only if Holm-significant and positive in at least {CONSISTENCY:.0%} of the development years "
+          f"with at least {MIN_YEAR_SIDE} trades on each side. The benchmark year is reported beside and never used. Days with both sides counts the development days on which both sides trade, where the registered standard error ignores their covariance.\n",
+          "## Tests\n",
+          "| id | population | condition (favoured side) | development: favoured n, R | other n, R | difference (se) | p | Holm p | years positive | days with both sides | passes | benchmark: favoured n, R | other n, R | difference (se) |",
+          "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for r in rows:
         s.append(f"| {r['id']} | {r['pop']} | {r['cond']} ({r['fav']}) | {r['dev_n_fav']}, {r['dev_r_fav']:+.3f} | {r['dev_n_oth']}, {r['dev_r_oth']:+.3f} | "
-                 f"{r['dev_delta']:+.3f} ({r['dev_se']:.3f}) | {r['dev_p']:.4f} | {r['holm']:.4f} | {r['dev_years_pos']} of {r['dev_years_n']} | {'yes' if r['passes'] else 'no'} | "
-                 f"{r['bm_n_fav']}, {r['bm_r_fav']:+.3f} | {r['bm_n_oth']}, {r['bm_r_oth']:+.3f} | {r['bm_delta']:+.3f} |")
+                 f"{r['dev_delta']:+.3f} ({r['dev_se']:.3f}) | {r['dev_p']:.4f} | {r['holm']:.4f} | {r['dev_years_pos']} of {r['dev_years_n']} | {r['dev_shared_days']} | {'yes' if r['passes'] else 'no'} | "
+                 f"{r['bm_n_fav']}, {r['bm_r_fav']:+.3f} | {r['bm_n_oth']}, {r['bm_r_oth']:+.3f} | {r['bm_delta']:+.3f} ({r['bm_se']:.3f}) |")
     s.append("")
     passing = [r["id"] for r in rows if r["passes"]]
     s.append(f"Passing conditions: {', '.join(passing) if passing else 'none'}. Per the registration, a passing condition becomes a candidate filter (B3 firm scoring on its favoured side, then re-simulation); a failing one is dropped and not re-cut on these data.\n")
@@ -245,7 +276,8 @@ def report(f: pd.DataFrame, excess_atr: pd.Series, registration_sha: str, gate_n
         s.append(f"| {lab} | {first('thr_body')} | {first('thr_overnight')} | {first('H6_threshold', 'continuation')} | {first('H7_threshold', 'reversion A+')} |")
     s.append("")
     s.append("## Volatility regime, descriptive only (seen in the anatomy, not tested)\n")
-    s.append("Daily ATR as a share of the previous close, terciles fitted on all development trading days.\n")
+    s.append("Daily ATR as a share of the previous close, terciles fitted on every development trading day with a 09:30 bar; outcome the replayed bracket R flat at 16:00 on replayed entries. "
+             "The anatomy's figures (ledger R on every development entry, terciles on every development day) therefore differ slightly.\n")
     tier = f["vol_tier"]
     s.append("| population | period | low: n, R | mid: n, R | high: n, R |\n|---|---|---|---|---|")
     for pop in ("continuation", "reversion A+"):
@@ -265,16 +297,27 @@ def main() -> int:
     ap.add_argument("--trades", required=True)
     ap.add_argument("--csv", required=True)
     ap.add_argument("--source-tz", default="UTC")
-    ap.add_argument("--oos-start", default="2025-10-06")
+    ap.add_argument("--oos-start", default=REGISTERED_OOS_START)
     ap.add_argument("--manifest", required=True)
     ap.add_argument("--replay-csv", required=True)
     ap.add_argument("--registration", required=True, help="docs/research/preregistration_conditional_edge.md")
     ap.add_argument("--out", required=True)
     ap.add_argument("--private-out", default=None, help="per-trade conditions (private: research/private/)")
+    ap.add_argument("--allow-other-cut", action="store_true", help="tests only: run at another cut; the report says it is not the registered run")
     a = ap.parse_args()
+    reg_sha = sha256(a.registration)
+    if reg_sha != REGISTRATION_SHA256:
+        raise SystemExit(f"refusing to report: the registration file ({a.registration}) is not the pinned one (sha256 {reg_sha})")
+    registered_cut = a.oos_start == REGISTERED_OOS_START
+    if not registered_cut and not a.allow_other_cut:
+        raise SystemExit(f"refusing to report: the registered cut is --oos-start {REGISTERED_OOS_START}")
     with open(a.manifest) as fh:
         m = json.load(fh)
-    for what, path, want in (("trades", a.trades, m["outputs"]["trades_sha256"]), ("bar file", a.csv, m["data"]["sha256"])):
+    try:
+        wanted = (("trades", a.trades, m["outputs"]["trades_sha256"]), ("bar file", a.csv, m["data"]["sha256"]))
+    except KeyError as e:
+        raise SystemExit(f"refusing to report: the manifest has no {e} hash to check provenance against")
+    for what, path, want in wanted:
         if sha256(path) != want:
             raise SystemExit(f"refusing to report: the {what} given ({path}) is not the sealed run's (sha256 differs from the manifest)")
     bars = load_minute_bars(a.csv, source_tz=a.source_tz)
@@ -292,15 +335,16 @@ def main() -> int:
         if missing:
             raise ValueError(f"the replay file lacks {', '.join(missing)}")
         n_checked = check_alignment(trades, replay)
-        f = trade_frame(trades, bars, replay, cut, rolls)
+        f = trade_frame(trades, bars, replay, cut)
         cont = f.index[f["population"] == "continuation"]
         excess_atr = hold_drift(trades, bars, replay, cont, cut, rolls)["excess_atr"]
     except ValueError as e:
         raise SystemExit(f"refusing to report: {e}")
+    on_switch = f["contracts"] > 1
     gate_note = (f"Data hygiene: {n_excl} trades on {len(rolls)} contract-roll dates excluded, as in the sealed report. Provenance: the trades and the bar file have the manifest's sha256. "
                  f"Replay join: checked on {n_checked} stop or target exits before 16:00 (R and exit time). Entries: {len(f)} replayed, of which {int((f['population'] == 'continuation').sum())} continuation and "
-                 f"{int((f['population'] == 'reversion A+').sum())} reversion A+.")
-    text, _ = report(f, excess_atr, sha256(a.registration), gate_note)
+                 f"{int((f['population'] == 'reversion A+').sum())} reversion A+; {int(on_switch.sum())} sit on a session holding a contract switch, where gap, the prior-session comparison and the overnight range are undefined (clarification 1).")
+    text, _ = report(f, excess_atr, reg_sha, gate_note, cut, registered_cut)
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
     with open(a.out, "w") as fh:
         fh.write(text)
