@@ -73,6 +73,9 @@ Written 2026-10-07, after the runner's independent review and before any bar aft
    - The forward bars must continue the sealed file within 30 minutes. The sealed file ends at 2026-10-05 23:59 UTC; the forward request starts at 2026-10-06 00:00 UTC.
    - A stretch of over 30 minutes without a bar is a gap. A gap stops the run if it misses bars inside a weekday's 09:30–16:00 session. It also stops the run if it spans 00:00 UTC, the instant the continuous series rolls, where a roll date could be misplaced.
    - **Exempt:** a gap from a scheduled halt to the 18:00 ET reopen. The scheduled halts are the 17:00 daily break, a 13:00 holiday halt and a 13:15 early close, with the last bar within 10 minutes before each. In the sealed bars from October 2023 to October 2026, the only regular-session ends other than 16:00 were 12:59 ET (holidays with a partial session) and 13:14 ET (early closes). Holiday halts and early closes are listed in the status.
+   - **The calendar.** A holiday halt or early close is exempt only on a date in the runner's committed calendar: CME's equity-index schedule for the benchmark and forward years, through 2027-10-05. A halt that runs past a weekday is exempt only when that weekday is a listed full closure.
+     - A date the calendar misses stops the run. It can pass only through the recorded acceptance below.
+     - Extending the calendar past 2027-10-05 is version 2.
    - Other overnight gaps can be genuine, since a one-minute bar exists only when a trade occurred. They are reported, not refused.
    - A gap that stops the run passes only when a person records it as an exchange halt rather than missing data, with what happened and a source. 2025-01-09, the national day of mourning, was one such day. The record is public and stays with the test.
    - The baseline reports how often each kind of gap would have occurred in the benchmark year.

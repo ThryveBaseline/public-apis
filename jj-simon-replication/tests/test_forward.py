@@ -50,19 +50,30 @@ def test_the_gap_rule():
     assert _kinds(classify_gaps(_cut(idx, "2026-10-07 11:00", "2026-10-07 17:00"))) == {"halts": 8, "session": 1}
     # across 00:00 UTC (20:00 ET in October), where the continuous series rolls
     assert _kinds(classify_gaps(_cut(idx, "2026-10-07 19:30", "2026-10-07 20:30"))) == {"halts": 9, "roll": 1}
-    # a holiday halt at 13:00 and an early close at 13:15, each to the 18:00 reopen
-    hol = classify_gaps(_cut(idx, "2026-10-12 13:00", "2026-10-12 17:00"))
-    assert _kinds(hol) == {"halts": 9} and ("2026-10-12 12:59:00-04:00", "2026-10-12 18:00:00-04:00", "holiday halt") in hol["halts"]
-    early = classify_gaps(_cut(idx, "2026-10-09 13:15", "2026-10-11 18:00"))
-    assert ("2026-10-09 13:14:00-04:00", "2026-10-11 18:00:00-04:00", "early close") in early["halts"] and not early["session"]
+    # 13:00 and 13:15 ends are exempt only on their listed dates (the third review's finding): Columbus Day is a normal session
+    assert _kinds(classify_gaps(_cut(idx, "2026-10-12 13:00", "2026-10-12 17:00"))) == {"halts": 8, "session": 1}
+    assert _kinds(classify_gaps(_cut(idx, "2026-10-14 13:15", "2026-10-14 17:00"))) == {"halts": 8, "session": 1}
     # exactly 30 minutes without a bar is not a gap; 31 is
     assert not classify_gaps(_cut(idx, "2026-10-07 10:00", "2026-10-07 10:30"))["session"]
     assert classify_gaps(_cut(idx, "2026-10-07 10:00", "2026-10-07 10:31"))["session"]
-    # a whole lost session from one daily break to the next reopen: caught by the missing 09:30 bar
-    lost_day = _cut(idx, "2026-10-07 18:00", "2026-10-08 18:00")
-    assert not classify_gaps(lost_day)["session"]
-    _, skipped = scorable_dates(lost_day, pd.Timestamp("2026-10-06"), [])
-    assert (pd.Timestamp("2026-10-08"), "no 09:30 bar (market closed or data missing)") in skipped
+    # a lost session from one daily break to the next day's reopen is not a halt: Thursday is not a listed closure
+    assert _kinds(classify_gaps(_cut(idx, "2026-10-07 18:00", "2026-10-08 18:00"))) == {"halts": 7, "session": 1}  # two daily breaks merge into the gap
+
+
+def test_the_listed_holidays():
+    idx = _globex("2026-11-22 18:00", "2027-01-09 00:00")
+    real = _cut(idx, "2026-11-26 13:00", "2026-11-26 18:00")  # Thanksgiving: a 13:00 halt, reopening that evening
+    real = _cut(real, "2026-11-27 13:15", "2026-11-29 18:00")  # the Friday after: a 13:15 close to the Sunday reopen
+    real = _cut(real, "2026-12-24 13:15", "2026-12-27 18:00")  # Christmas Eve's early close, then Christmas closed
+    real = _cut(real, "2026-12-31 17:00", "2027-01-03 18:00")  # New Year's Day closed
+    g = classify_gaps(real)
+    assert not g["session"] and not g["roll"] and not g["overnight"]
+    kinds = {x[:10]: k for x, _, k in g["halts"] if k != "daily break"}
+    assert kinds == {"2026-11-26": "holiday halt", "2026-11-27": "early close", "2026-12-24": "early close"}
+    _, skipped = scorable_dates(real, pd.Timestamp("2026-11-23"), [])
+    assert {d.strftime("%Y-%m-%d") for d, _ in skipped} == {"2026-12-25", "2027-01-01"}
+    # the same Christmas shape on a weekday that is not a listed closure stops the run
+    assert classify_gaps(_cut(idx, "2026-12-17 13:15", "2026-12-20 18:00"))["session"]
 
 
 def test_a_date_is_scored_once_a_later_date_has_a_bar():
@@ -242,3 +253,54 @@ def test_cli_baseline_then_days(history, tmp_path, monkeypatch):
     assert json.loads(state.read_text())["accepted_gaps"][0]["from"] == bad[0] and "CME halted" in pub.read_text()
     monkeypatch.setattr("sys.argv", ["forward.py", "day", *day_args])
     assert forward.main() == 0  # once recorded, it stays accepted
+
+
+def test_day_mode_on_globex_shaped_bars(history, tmp_path, monkeypatch):
+    """The real gap rule end to end: forward bars with every Globex minute (flat outside the synthetic regular session)."""
+    first = pd.Timestamp("2026-10-06", tz=NY)
+    sealed = history[history.index < first]
+    _csv(sealed, tmp_path / "sealed.csv")
+    (tmp_path / "manifest.json").write_text(json.dumps({"data": {"sha256": forward.sha256(str(tmp_path / "sealed.csv"))}}))
+    common = ["--csv", str(tmp_path / "sealed.csv"), "--source-tz", "UTC", "--manifest", str(tmp_path / "manifest.json")]
+    monkeypatch.setattr(forward, "TAIL_SESSIONS", 90)
+    monkeypatch.setattr(forward, "TAIL_WARMUP", 30)
+    monkeypatch.setattr(forward, "BASELINE_PIN", str(tmp_path / "pin"))
+    monkeypatch.setattr("sys.argv", ["forward.py", "baseline", *common, "--out", str(tmp_path / "base.md")])
+    assert forward.main() == 0
+    (tmp_path / "pin").write_text(forward.sha256(str(tmp_path / "base.md")))
+    idx = _globex("2026-10-05 16:00", "2026-10-17 00:00")
+    rth = history[(history.index >= idx[0]) & (history.index <= idx[-1])]
+    g = rth.reindex(idx)
+    g["close"] = g["close"].ffill()
+    for c in ("open", "high", "low"):
+        g[c] = g[c].fillna(g["close"])
+    g = g.assign(volume=g["volume"].fillna(1.0), symbol="1001")
+    state, pub = tmp_path / "state.json", tmp_path / "status.md"
+    args = ["forward.py", "day", *common, "--baseline", str(tmp_path / "base.md"), "--state", str(state), "--out", str(pub),
+            "--forward-csv", str(tmp_path / "fwd.csv")]
+    monkeypatch.setattr("sys.argv", args)
+    _csv(g[g.index < pd.Timestamp("2026-10-13", tz=NY)], tmp_path / "fwd.csv")
+    assert forward.main() == 0
+    st = json.loads(state.read_text())
+    assert len(st["dates"]) == 4 and {k for _, _, k in st["runs"][0]["new_halts"]} == {"daily break"} and "Scheduled early ends: none" in pub.read_text()
+    # an hour missing inside an unscored session stops the run; a person records it; a longer gap from the same minute stops it again
+    hole = _cut(g.index, "2026-10-14 11:00", "2026-10-14 12:00")
+    _csv(g.loc[hole], tmp_path / "fwd.csv")
+    with pytest.raises(SystemExit, match="inside a 09:30-16:00 session"):
+        forward.main()
+    monkeypatch.setattr("sys.argv", args + ["--accept-gap", "2026-10-14 10:59", "--accept-reason", "test: an exchange halt"])
+    assert forward.main() == 0 and json.loads(state.read_text())["accepted_gaps"][0]["to"].startswith("2026-10-14 12:00")
+    assert len(json.loads(state.read_text())["dates"]) == 8
+    monkeypatch.setattr("sys.argv", args)
+    assert forward.main() == 0
+    _csv(g.loc[_cut(g.index, "2026-10-14 11:00", "2026-10-14 13:00")], tmp_path / "fwd.csv")
+    with pytest.raises(SystemExit, match="inside a 09:30-16:00 session"):
+        forward.main()
+    # the complete bars now: the scored 2026-10-14 was taken with its hole, so a trade there would come out differently or not at all
+    _csv(g, tmp_path / "fwd.csv")
+    scored = json.loads(state.read_text())
+    try:
+        forward.main()
+        assert json.loads(state.read_text())["dates"] == scored["dates"]  # no trade touched the hole: nothing changes
+    except SystemExit as e:
+        assert "history is never rewritten" in str(e)

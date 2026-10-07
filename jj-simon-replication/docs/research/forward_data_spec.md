@@ -26,7 +26,7 @@ This is for the forward paper test (`docs/research/forward_protocol_v1.md`). It 
      - with a bar whose symbol is not its instrument_id;
      - with a gap of over 30 minutes inside a 09:30–16:00 session, or across 00:00 UTC.
 
-     A gap running from a scheduled halt (17:00 daily break, 13:00 holiday halt, 13:15 early close) to the 18:00 reopen is exempt. So is a gap a person records as an exchange halt, with its source (`--accept-gap`).
+     A gap running from a scheduled halt (the 17:00 daily break, or a 13:00 holiday halt or 13:15 early close on a date in the runner's calendar) to the 18:00 reopen is exempt. So is a gap a person records as an exchange halt, with its source (`--accept-gap`).
    - The prepared file and the increments stay under `data/forward/`, which git ignores.
 4. **The daily bar** (`NQ.n.0`, `ohlcv-1d`) is fetched the same way, for the roll cross-check only. Its absence does not hold up the daily run: it is published on another path and may lag a day.
 

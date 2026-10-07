@@ -57,7 +57,7 @@ from research.bracket_replay import SLIPPAGE  # noqa: E402
 from research.candidates import MICRO_COMMISSION_RT, MNQ_POINT_VALUE, mean_se  # noqa: E402
 from research.engine import ResearchConfig, generate_trades  # noqa: E402
 
-PROTOCOL_SHA256 = "3dfd4d2c75a1b7e30790e4eb92b810616493479e174616e8aaceced29291734e"  # docs/research/forward_protocol_v1.md with its clarifications before the first forward day
+PROTOCOL_SHA256 = "4b41f1bc82499f39f224a4bd342271c61f29eeb4ebfac83b16065c778852e0de"  # docs/research/forward_protocol_v1.md with its clarifications before the first forward day
 BASELINE_PIN = os.path.join(os.path.dirname(os.path.abspath(__file__)), "forward_v1_baseline.sha256")  # the baseline report's sha256, committed
 # after the baseline run (a file, so that this runner, whose own hash the baseline records, never changes); until then the day mode refuses
 CANDIDATES = {
@@ -76,6 +76,15 @@ REOPEN_GRACE_MIN = 5  # the 18:00 ET Globex reopen: the first bar within this ma
 HALT_GRACE = pd.Timedelta(minutes=10)  # a scheduled halt: the last bar within this long before it
 SCHEDULED_HALTS = {"daily break": (17, 0), "holiday halt": (13, 0), "early close": (13, 15)}  # ET; the only session ends in the sealed bars
 # 2023-10 to 2026-10 besides the daily break (12:59 and 13:14 ET last bars)
+# The CME equity-index holiday schedule, benchmark and forward years (the benchmark's from the sealed bars; the forward year's from the
+# exchange's rules as understood here). A holiday halt or early close is exempt only on its listed date, and a halt that runs past a
+# weekday only when that weekday is a listed full closure. A date missing from these lists stops the run (fail safe: a person records
+# it with --accept-gap); extending them past CALENDAR_END is protocol version 2.
+HOLIDAY_HALTS = {"2025-11-27", "2026-01-19", "2026-02-16", "2026-05-25", "2026-06-19", "2026-07-03", "2026-09-07",
+                 "2026-11-26", "2027-01-18", "2027-02-15", "2027-05-31", "2027-06-18", "2027-07-05", "2027-09-06"}  # 13:00 ET halt
+EARLY_CLOSES = {"2025-11-28", "2025-12-24", "2026-11-27", "2026-12-24"}  # 13:15 ET close
+FULL_CLOSURES = {"2025-12-25", "2026-01-01", "2026-04-03", "2026-12-25", "2027-01-01", "2027-03-26"}
+CALENDAR_END = pd.Timestamp("2027-10-05")
 TRADE_MODULES = ("research.forward", "research.engine", "research.anatomy", "research.bracket_replay", "research.candidates", "fpt.strategy",
                  "fpt.fair_value", "fpt.indicators", "fpt.structure", "fpt.risk", "fpt.data", "fpt.evaluate")  # frozen from the baseline: a change stops the test
 LEDGER_KEY = ["candidate", "date", "signal_time", "entry_time", "setup", "grade", "direction", "entry", "stop", "target", "exit_time", "exit", "exit_reason",
@@ -187,10 +196,20 @@ def rth_sessions(index: pd.DatetimeIndex) -> pd.DatetimeIndex:
     return pd.DatetimeIndex(sorted(set(ny[opening].normalize().tz_localize(None))))
 
 
-def _halt(a: pd.Timestamp) -> str | None:
+def _halt(a: pd.Timestamp, b: pd.Timestamp) -> str | None:
+    """The scheduled halt a gap from bar a to bar b runs from, if any: a is within HALT_GRACE before the halt (a
+    holiday halt or early close only on its listed date), b is the 18:00 reopen, and every weekday the gap covers
+    after a's date is a listed full closure."""
+    if not (b.hour == 18 and b.minute <= REOPEN_GRACE_MIN):
+        return None
+    covered = pd.date_range(a.normalize() + pd.Timedelta(days=1), b.normalize(), freq="D")
+    if any(d.weekday() < 5 and d.strftime("%Y-%m-%d") not in FULL_CLOSURES for d in covered):
+        return None
+    day = a.strftime("%Y-%m-%d")
+    listed = {"daily break": True, "holiday halt": day in HOLIDAY_HALTS, "early close": day in EARLY_CLOSES}
     for name, (h, m) in SCHEDULED_HALTS.items():
         at = a.normalize() + pd.Timedelta(hours=h, minutes=m)
-        if at - HALT_GRACE <= a < at:
+        if at - HALT_GRACE <= a < at and listed[name]:
             return name
     return None
 
@@ -198,8 +217,8 @@ def _halt(a: pd.Timestamp) -> str | None:
 def classify_gaps(index: pd.DatetimeIndex) -> dict:
     """Every stretch of more than MAX_GAP without a bar, between consecutive bars a and b (bars missing over
     [a + 1 min, b)), by kind:
-      halts      a scheduled halt: a is within HALT_GRACE before the 17:00 daily break, a 13:00 holiday halt or a
-                 13:15 early close, and b is the 18:00 reopen (weekends and closed holidays end there too);
+      halts      a scheduled halt: a is within HALT_GRACE before the 17:00 daily break, a listed 13:00 holiday halt or
+                 a listed 13:15 early close, b is the 18:00 reopen, and any weekday in between is a listed closure;
       session    anything else missing bars inside a weekday's 09:30-16:00 session: missing data, stops the run;
       roll       anything else spanning 00:00 UTC, the instant the continuous series rolls: the roll date would be
                  misplaced, stops the run;
@@ -211,8 +230,8 @@ def classify_gaps(index: pd.DatetimeIndex) -> dict:
         return out
     long = np.asarray((ny[1:] - ny[:-1]) - pd.Timedelta(minutes=1) > MAX_GAP)
     for a, b in zip(ny[:-1][long], ny[1:][long]):
-        halt = _halt(a)
-        if halt and b.hour == 18 and b.minute <= REOPEN_GRACE_MIN:
+        halt = _halt(a, b)
+        if halt:
             out["halts"].append((str(a), str(b), halt))
             continue
         first = a + pd.Timedelta(minutes=1)
@@ -528,20 +547,22 @@ def day(a) -> int:
     fwd = load_minute_bars(io.BytesIO(data), source_tz=a.source_tz)
     if fwd.index.min() <= sealed.index.max():
         raise SystemExit("refusing: the forward bars must start after the sealed bars")
+    if fwd.index.max().tz_convert(NY).tz_localize(None) > CALENDAR_END + pd.Timedelta(days=1):
+        raise SystemExit(f"refusing: the holiday calendar ends {CALENDAR_END.date()}; extending it is protocol version 2")
     if fwd.index.min() - sealed.index.max() - pd.Timedelta(minutes=1) > MAX_GAP:
         raise SystemExit(f"refusing: the forward bars must continue the sealed ones (last sealed bar {sealed.index.max()}, first forward bar {fwd.index.min()})")
     gaps = classify_gaps(sealed.index[-1:].append(fwd.index))
-    accepted = {g["from"][:16] for g in state["accepted_gaps"]}
+    accepted = {(g["from"], g["to"]) for g in state["accepted_gaps"]}
     blocking = [(x, y, kind) for kind in ("session", "roll") for x, y in gaps[kind]]
     for when in a.accept_gap or []:
         hit = [g for g in blocking if g[0][:16] == when[:16]]
         if not hit or not a.accept_reason:
             raise SystemExit(f"refusing: --accept-gap {when} needs --accept-reason and must name the first bar time of a gap that stops this run")
-        if when[:16] not in accepted:
+        if (hit[0][0], hit[0][1]) not in accepted:
             state["accepted_gaps"].append({"from": hit[0][0], "to": hit[0][1], "kind": hit[0][2], "reason": a.accept_reason,
                                            "at": datetime.now(timezone.utc).isoformat(timespec="seconds")})
-            accepted.add(when[:16])
-    open_ = [g for g in blocking if g[0][:16] not in accepted]
+            accepted.add((hit[0][0], hit[0][1]))
+    open_ = [g for g in blocking if (g[0], g[1]) not in accepted]
     if open_:
         x, y, kind = open_[0]
         what = "inside a 09:30-16:00 session" if kind == "session" else "across 00:00 UTC, where the continuous series rolls"
@@ -558,10 +579,12 @@ def day(a) -> int:
     except ValueError as e:
         raise SystemExit(f"refusing: {e}")
     added = sorted(set(scored) - set(state["dates"]))
+    since = pd.Timestamp(state["runs"][-1]["last_bar"]) if state["runs"] else None
     state["dates"], state["trades"] = scored, json.loads(led.to_json(orient="records"))
     state["runs"].append({"at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "forward_sha256": fwd_sha, "forward_rows": int(len(fwd)),
-                          "dates_added": added, "skipped": [[d.strftime("%Y-%m-%d"), why] for d, why in skipped], "overnight_gaps": gaps["overnight"],
-                          "halts": gaps["halts"], "previous_state_sha256": prev})
+                          "last_bar": str(fwd.index.max()), "dates_added": added, "skipped": [[d.strftime("%Y-%m-%d"), why] for d, why in skipped],
+                          "new_overnight_gaps": [g for g in gaps["overnight"] if since is None or pd.Timestamp(g[0]) >= since],
+                          "new_halts": [g for g in gaps["halts"] if since is None or pd.Timestamp(g[0]) >= since], "previous_state_sha256": prev})
     body = json.dumps(state, sort_keys=True, indent=1)
     _write(a.state, body)
     state_sha = hashlib.sha256(body.encode()).hexdigest()
