@@ -105,3 +105,12 @@ The benchmark path is reported beside and decides nothing. Clean proof comes onl
 - Overlapping paths share most of their days. Development covers about a dozen independent years.
 - Topstep may move an Express Funded trader to a Live account. B5 does not model this, and neither does B4.
 - TopstepX's lack of a daily loss limit dates from 2024-08-25. Earlier paths apply today's rules to past markets.
+
+## Clarifications, 2026-10-07, before any B5 number
+
+These were written while building the tool on synthetic data, before B5 had touched real data. They settle four points the text left open; nothing else changes.
+
+1. **The funded gate under "wait".** The frozen payout walk-forward has no wait policy. Under "wait", each Express Funded account's first payout is therefore compared with B4's walk-forward of the same policy (`research.lifetime.walk_forward_lifetime`). That walk-forward is itself checked against a one-account scalar reference. Under "ask" the gate is the frozen walk-forward, as registered.
+2. **A pass that cash cannot activate.** If cash is below $149 at a pass, the account is not activated and the pass is lost. It is counted and reported as a lost pass. Cash never goes below zero.
+3. **The end of a path.** On the path's last day, accounts still live are cut off: their balances are not cash and count for nothing. Payouts already earned but not yet credited count in the final cash. Cut-off accounts are left out of the gates.
+4. **Days.** The payout delay and the 30-day limit on an evaluation count the stream's own trading days (New York dates with bars, as every walk-forward here). The monthly fee and the path's 365 days count calendar days.
