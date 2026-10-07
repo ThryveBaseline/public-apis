@@ -20,7 +20,13 @@ This is for the forward paper test (`docs/research/forward_protocol_v1.md`). It 
 
    Record the file's sha256, its row count, and its first and last `ts_event`.
    - The first increment's request starts at exactly 2026-10-06T00:00:00Z, the minute after the sealed file's last bar.
-   - The runner refuses a file whose first bar comes more than 30 minutes after the sealed file's last bar, one that repeats or reorders a timestamp, one with a bar lacking its instrument, and one missing bars for over 30 minutes inside a 09:30–16:00 session.
+   - The runner refuses a file:
+     - whose first bar comes more than 30 minutes after the sealed file's last bar;
+     - that repeats or reorders a timestamp;
+     - with a bar whose symbol is not its instrument_id;
+     - with a gap of over 30 minutes inside a 09:30–16:00 session, or across 00:00 UTC.
+
+     A gap running from a scheduled halt (17:00 daily break, 13:00 holiday halt, 13:15 early close) to the 18:00 reopen is exempt. So is a gap a person records as an exchange halt, with its source (`--accept-gap`).
    - The prepared file and the increments stay under `data/forward/`, which git ignores.
 4. **The daily bar** (`NQ.n.0`, `ohlcv-1d`) is fetched the same way, for the roll cross-check only. Its absence does not hold up the daily run: it is published on another path and may lag a day.
 
@@ -44,7 +50,10 @@ Daily increments cost about $0.011 a trading day, about $2.85 a year. The monthl
   - **Purchase:** each complete day once, quoted before buying.
   - **Storage:** raw files read-only and hashed, on the GB10 only.
   - **Limits:** no long-term commitment, and no model files cleared.
-  - **Disk:** for the pilot only, the GB10's free-space floor is lowered from 35 GiB to 25 GiB. Free space is checked before each download, and the floor is revisited at day 10.
+  - **Disk:** for the pilot only, 25 GiB of free space on the GB10 is a reported line, not a hard stop. Chris chose warn-and-proceed in the bridge window.
+    - The tooling reports the projected free space before each download.
+    - It refuses to start, and aborts mid-stream, only if a download would take the root filesystem under 2 GiB.
+    - Nothing is ever deleted, and the line is revisited at day 10.
 - **At day 10, Chris asks four questions:**
   - Did S3 and S4 behave as expected?
   - Did the order book improve entries?

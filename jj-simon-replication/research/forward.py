@@ -8,16 +8,22 @@ fixed hooks; nothing here chooses anything. Two modes:
             trades by period, and the checkpoint thresholds fixed from development trades (windows of consecutive
             sessions or trades, every start counted). Writes a public report with the thresholds as a JSON block, and
             the per-trade history privately.
-  day       each trading day: the sealed bars plus the forward bars (prepared exactly as the sealed file, continuing it
-            within 30 minutes, with no bar missing for over 30 minutes inside a 09:30-16:00 session), both candidates
-            rerun over a tail long enough for every indicator. A forward trading session (a New York date with a 09:30 bar) is scored once the file
-            holds a bar on a later date, so its evening roll, if any, is visible; roll dates are excluded as in the
-            sealed run. The scored dates and their trades are appended to a private state file written atomically,
-            with a run log and the hashes of the trade-producing code; any scored date that would come out
-            differently, or changed code, stops the run (history is never rewritten; a change is protocol version 2).
-            The public status gives counts, hashes and the checkpoint results when reached; a private status adds the
-            forward record and a paper Topstep 50K account from $2,000, one at a time, whole micros, both payout
-            policies (research/b5_paths mechanics; bookkeeping, not a test).
+  day       each trading day: the sealed bars plus the forward bars (prepared exactly as the sealed file, symbol equal to
+            instrument_id on every bar, continuing it within 30 minutes), both candidates rerun over a tail long
+            enough for every indicator. A stretch of over 30 minutes without a bar stops the run if it misses bars
+            inside a 09:30-16:00 session or spans 00:00 UTC (the continuous series' roll instant), unless it runs
+            from a scheduled halt (the 17:00 daily break, a 13:00 holiday halt, a 13:15 early close) to the 18:00
+            reopen, or a person has recorded it as an exchange halt (--accept-gap, with a reason). A forward trading
+            session (a New York date with a 09:30 bar) is scored once the file holds a bar on a later date, so its
+            evening roll, if any, is visible; roll dates are excluded as in the sealed run. The scored dates and
+            their trades are appended to a private state file written atomically, with a run log chained by the
+            state file's sha256; a scored date that would come out differently stops the run, and so does any change
+            to the code that produces the trades (this runner included) or to the configurations since the baseline
+            (history is never rewritten; a change is protocol version 2). The baseline report must match the sha256
+            committed in research/forward_v1_baseline.sha256. The public status gives counts, hashes, dates and the
+            checkpoint results when reached; a private status adds the values, the forward record and a paper
+            Topstep 50K account from $2,000, one at a time, whole micros, both payout policies (research/b5_paths
+            mechanics; bookkeeping, not a test).
 
 usage:
   python research/forward.py baseline --csv data/nq_1min_databento.csv --source-tz UTC --manifest sealed/run1/manifest.json \\
@@ -32,10 +38,13 @@ from __future__ import annotations
 import argparse
 import ast
 import hashlib
+import importlib
+import io
 import json
 import os
 import sys
 import tempfile
+from dataclasses import asdict
 from datetime import datetime, timezone
 
 import numpy as np
@@ -48,8 +57,9 @@ from research.bracket_replay import SLIPPAGE  # noqa: E402
 from research.candidates import MICRO_COMMISSION_RT, MNQ_POINT_VALUE, mean_se  # noqa: E402
 from research.engine import ResearchConfig, generate_trades  # noqa: E402
 
-PROTOCOL_SHA256 = "3905d133d8e8e34b78098e60cf3a147d1e604c73413891eeefa2c09d91044af1"  # docs/research/forward_protocol_v1.md with its clarifications before the first forward day
-BASELINE_SHA256 = None  # pinned in the commit after the baseline run; until then the day mode refuses
+PROTOCOL_SHA256 = "3dfd4d2c75a1b7e30790e4eb92b810616493479e174616e8aaceced29291734e"  # docs/research/forward_protocol_v1.md with its clarifications before the first forward day
+BASELINE_PIN = os.path.join(os.path.dirname(os.path.abspath(__file__)), "forward_v1_baseline.sha256")  # the baseline report's sha256, committed
+# after the baseline run (a file, so that this runner, whose own hash the baseline records, never changes); until then the day mode refuses
 CANDIDATES = {
     "S3": ResearchConfig(reversion_end="09:30", continuation_atr_k=0.4, continuation_rr=2.0, flat_time="16:00", one_contract=True),
     "S4": ResearchConfig(allow_grade_a_reversion=False, continuation_atr_k=0.4, continuation_rr=2.0, flat_time="16:00", one_contract=True),
@@ -61,11 +71,13 @@ SETUP_CHECKS = (20, 30)
 EVAL_BUDGET, FUNDED_BUDGET, MICRO_CAP = 1000.0, 500.0, 50
 TAIL_SESSIONS = 120  # the day mode reruns this many calendar days before the first unseen day, plus the forward days
 TAIL_WARMUP = 60  # calendar days of that tail before which indicators may still differ from the full run
-REOPEN_GRACE_MIN = 5  # a gap longer than MAX_GAP must end at the 18:00 ET Globex reopen, within this many minutes
-MAX_GAP = pd.Timedelta(minutes=30)
-
-TRADE_CODE = ["research/engine.py", "research/anatomy.py", "research/bracket_replay.py", "research/candidates.py", "fpt/strategy.py", "fpt/fair_value.py",
-              "fpt/indicators.py", "fpt/structure.py", "fpt/risk.py", "fpt/data.py", "fpt/evaluate.py"]  # what produces the trades; a change stops the test
+MAX_GAP = pd.Timedelta(minutes=30)  # longer without a bar is a gap
+REOPEN_GRACE_MIN = 5  # the 18:00 ET Globex reopen: the first bar within this many minutes of it
+HALT_GRACE = pd.Timedelta(minutes=10)  # a scheduled halt: the last bar within this long before it
+SCHEDULED_HALTS = {"daily break": (17, 0), "holiday halt": (13, 0), "early close": (13, 15)}  # ET; the only session ends in the sealed bars
+# 2023-10 to 2026-10 besides the daily break (12:59 and 13:14 ET last bars)
+TRADE_MODULES = ("research.forward", "research.engine", "research.anatomy", "research.bracket_replay", "research.candidates", "fpt.strategy",
+                 "fpt.fair_value", "fpt.indicators", "fpt.structure", "fpt.risk", "fpt.data", "fpt.evaluate")  # frozen from the baseline: a change stops the test
 LEDGER_KEY = ["candidate", "date", "signal_time", "entry_time", "setup", "grade", "direction", "entry", "stop", "target", "exit_time", "exit", "exit_reason",
               "ambiguous_bar", "r"]
 
@@ -175,31 +187,63 @@ def rth_sessions(index: pd.DatetimeIndex) -> pd.DatetimeIndex:
     return pd.DatetimeIndex(sorted(set(ny[opening].normalize().tz_localize(None))))
 
 
-def unscheduled_gaps(index: pd.DatetimeIndex) -> tuple[list, list]:
-    """Gaps longer than MAX_GAP between consecutive bars that do not end at the 18:00 ET Globex reopen (the daily
-    break, weekends, holidays and early closes all end there). Those reaching into a weekday's 09:30-16:00 session
-    mean missing data and stop the run; overnight ones can be genuine (a 1-minute bar exists only when a trade did)
-    and are reported. Returns (session gaps, overnight gaps) as (from, to) strings."""
+def _halt(a: pd.Timestamp) -> str | None:
+    for name, (h, m) in SCHEDULED_HALTS.items():
+        at = a.normalize() + pd.Timedelta(hours=h, minutes=m)
+        if at - HALT_GRACE <= a < at:
+            return name
+    return None
+
+
+def classify_gaps(index: pd.DatetimeIndex) -> dict:
+    """Every stretch of more than MAX_GAP without a bar, between consecutive bars a and b (bars missing over
+    [a + 1 min, b)), by kind:
+      halts      a scheduled halt: a is within HALT_GRACE before the 17:00 daily break, a 13:00 holiday halt or a
+                 13:15 early close, and b is the 18:00 reopen (weekends and closed holidays end there too);
+      session    anything else missing bars inside a weekday's 09:30-16:00 session: missing data, stops the run;
+      roll       anything else spanning 00:00 UTC, the instant the continuous series rolls: the roll date would be
+                 misplaced, stops the run;
+      overnight  the rest: can be genuine (a bar exists only when a trade did), reported.
+    Each as (a, b) strings, halts with their kind."""
+    out = {"halts": [], "session": [], "roll": [], "overnight": []}
     ny = index.tz_convert(NY)
     if len(ny) < 2:
-        return [], []
-    gaps = ny[1:] - ny[:-1]
-    long = np.asarray(gaps > MAX_GAP)
-    before, after = ny[:-1][long], ny[1:][long]
-    reopen = np.asarray((after.hour == 18) & (after.minute <= REOPEN_GRACE_MIN))
-    session, overnight = [], []
-    for a, b, ok in zip(before, after, reopen):
-        if ok:
+        return out
+    long = np.asarray((ny[1:] - ny[:-1]) - pd.Timedelta(minutes=1) > MAX_GAP)
+    for a, b in zip(ny[:-1][long], ny[1:][long]):
+        halt = _halt(a)
+        if halt and b.hour == 18 and b.minute <= REOPEN_GRACE_MIN:
+            out["halts"].append((str(a), str(b), halt))
             continue
-        days = pd.date_range(a.normalize(), b.normalize(), freq="D")
-        open_ = [d + pd.Timedelta(hours=9, minutes=30) for d in days if d.weekday() < 5]
-        hit = any(a + pd.Timedelta(minutes=1) < o + pd.Timedelta(hours=6, minutes=30) and b > o for o in open_)  # missing: [a + 1 min, b)
-        (session if hit else overnight).append((str(a), str(b)))
-    return session, overnight
+        first = a + pd.Timedelta(minutes=1)
+        days = pd.date_range(first.normalize(), b.normalize(), freq="D")
+        opens = [d + pd.Timedelta(hours=9, minutes=30) for d in days if d.weekday() < 5]
+        if any(first < o + pd.Timedelta(hours=6, minutes=30) and b > o for o in opens):
+            out["session"].append((str(a), str(b)))
+        elif first.tz_convert("UTC").normalize() != b.tz_convert("UTC").normalize():
+            out["roll"].append((str(a), str(b)))
+        else:
+            out["overnight"].append((str(a), str(b)))
+    return out
 
 
-def code_hashes(root: str) -> dict:
-    return {f: sha256(os.path.join(root, f)) for f in TRADE_CODE}
+def code_hashes() -> dict:
+    """The sha256 of each module that produces the trades, as imported (not as found on some other path)."""
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    out = {}
+    for m in TRADE_MODULES:
+        f = os.path.abspath(importlib.import_module(m).__file__)
+        out[os.path.relpath(f, root)] = sha256(f)
+    return out
+
+
+def candidate_configs() -> dict:
+    return {name: asdict(cfg) for name, cfg in CANDIDATES.items()}
+
+
+def tail_start(first_unseen: pd.Timestamp) -> pd.Timestamp:
+    """Where the day mode's rerun starts: TAIL_SESSIONS calendar days before the first unseen day, at New York midnight."""
+    return (first_unseen - pd.Timedelta(days=TAIL_SESSIONS)).tz_localize(NY)
 
 
 def baseline(a) -> int:
@@ -223,24 +267,28 @@ def baseline(a) -> int:
     thr = {name: thresholds(t[t["date"] <= DEV_END], dev_sessions) for name, t in trades.items()}
     tail_ok = tail_check(bars, rolls, trades)
     bench = bars.index[bars.index >= (DEV_END + pd.Timedelta(days=1)).tz_localize(NY)]
-    g_session, g_night = unscheduled_gaps(bench)
+    g = classify_gaps(bench)
+    code = code_hashes()
+    early = sorted({(x[0][:10], x[0][11:16], x[2]) for x in g["halts"] if x[2] != "daily break"})
     s = ["# Forward paper test v1: the baseline\n",
          f"Sealed bars (sha256 {man['data']['sha256']}, the manifest's), {len(rolls)} roll dates excluded (the manifest's). Protocol: docs/research/forward_protocol_v1.md (sha256 {PROTOCOL_SHA256}). "
          f"Both candidates rerun through research/engine.py exactly as frozen; development through {DEV_END.date()}, benchmark to {(FIRST_UNSEEN - pd.Timedelta(days=1)).date()}. "
          "A session is a trading day: a New York date with a 09:30 bar. R is per contract (one_contract); whole micros at a full stop-out within $1,000 (evaluation) and $500 (funded) beside it. "
-         f"Tail check: rerunning only the last {TAIL_SESSIONS} calendar days of the sealed bars, as the day mode does, reproduces the full run's trades on the last "
-         f"{TAIL_SESSIONS - TAIL_WARMUP} of them for both candidates ({tail_ok} trades compared). Code that produces the trades: "
-         + "; ".join(f"{k} {v[:12]}" for k, v in code_hashes(a.root).items()) + ". "
-         f"The day mode's gap rule on the benchmark year's bars: {len(g_session)} stretches over {_span(MAX_GAP)} without a bar inside a 09:30-16:00 session "
-         f"(each would stop a daily run), {len(g_night)} overnight (reported only)"
-         + (f"; the session ones: {'; '.join(f'{x} to {y}' for x, y in g_session[:10])}" if g_session else "") + ".\n",
+         f"Tail check: rerunning from {TAIL_SESSIONS} calendar days before the day after the sealed bars, as the day mode does, reproduces the full run's "
+         f"trades after the first {TAIL_WARMUP} days of that tail for both candidates ({tail_ok} trades compared). "
+         "The code that produces the trades, this runner included, is frozen from here (its sha256 and both configurations are in the JSON block below).\n",
+         f"The day mode's gap rule applied to the benchmark year's bars: {len(g['halts'])} scheduled halts, of which {len(early)} early ends "
+         + (f"({', '.join(f'{d} {t} {k}' for d, t, k in early)})" if early else "") + f"; {len(g['session'])} gaps inside a 09:30-16:00 session and "
+         f"{len(g['roll'])} across 00:00 UTC (each would stop a daily run)"
+         + (f": {'; '.join(f'{x} to {y}' for x, y in (g['session'] + g['roll'])[:10])}" if g["session"] or g["roll"] else "")
+         + f"; {len(g['overnight'])} overnight (reported only).\n",
          "| candidate | period | trades | sessions | trades per session | R per trade (se, by day) | target | stop | flat 16:00 | long | micros: evaluation / funded |",
          "|---|---|---|---|---|---|---|---|---|---|---|"]
     for name, t in trades.items():
         s += period_rows(name, t, sessions)
     s += ["", "## Checkpoint thresholds, from development trades (fixed before any forward day is scored)\n",
           "S3's 20- and 30-setup checks decide; S4's are computed at S4's own 20th and 30th setups and reported beside.\n",
-          "```json", json.dumps(thr, indent=1, sort_keys=True), "```", ""]
+          "```json", json.dumps({"thresholds": thr, "code": code, "candidates": candidate_configs()}, indent=1, sort_keys=True), "```", ""]
     text = "\n".join(s)
     _write(a.out, text)
     if a.private_out:
@@ -251,13 +299,12 @@ def baseline(a) -> int:
 
 
 def tail_check(bars: pd.DataFrame, rolls, full: dict) -> int:
-    """The day mode reruns only a tail of the history. On the sealed bars, a run from TAIL_SESSIONS calendar days
-    before the end must give the full run's trades on every date after the warm-up, and there must be trades to
-    compare. Refuses otherwise; returns the number of trades compared."""
-    end = bars.index.max().tz_convert(NY).normalize().tz_localize(None)
-    start = end - pd.Timedelta(days=TAIL_SESSIONS)
-    tail = candidate_trades(bars[bars.index >= start.tz_localize(NY)], rolls)
-    after = start + pd.Timedelta(days=TAIL_WARMUP)
+    """The day mode reruns only a tail of the history, from tail_start(the first unseen day). On the sealed bars, a
+    run from tail_start(the day after them) must give the full run's trades on every date after the warm-up, and
+    there must be trades to compare. Refuses otherwise; returns the number of trades compared."""
+    start = tail_start(bars.index.max().tz_convert(NY).normalize().tz_localize(None) + pd.Timedelta(days=1))
+    tail = candidate_trades(bars[bars.index >= start], rolls)
+    after = start.tz_localize(None) + pd.Timedelta(days=TAIL_WARMUP)
     n = 0
     for name in CANDIDATES:
         a = ledger_rows({name: full[name][full[name]["date"] >= after]}, sorted(full[name]["date"].unique()))
@@ -284,9 +331,16 @@ def same_rows(a: pd.DataFrame, b: pd.DataFrame) -> bool:
     return bool(np.allclose(a[num].astype(float).to_numpy(), b[num].astype(float).to_numpy(), atol=1e-6, rtol=0))
 
 
-def read_thresholds(path: str) -> dict:
-    text = open(path).read()
+def read_baseline(text: str) -> dict:
     return json.loads(text.split("```json", 1)[1].split("```", 1)[0])
+
+
+def read_pin(path: str) -> str | None:
+    if not os.path.exists(path):
+        return None
+    with open(path) as fh:
+        words = fh.read().split()
+    return words[0].lower() if words else None
 
 
 def scorable_dates(index: pd.DatetimeIndex, start: pd.Timestamp, rolls) -> tuple[list, list]:
@@ -420,15 +474,19 @@ def _write(path: str, text: str) -> None:
     os.replace(tmp, path)
 
 
-def check_forward_file(path: str) -> None:
-    """The raw forward file, before loading (the loader silently sorts and keeps the last duplicate): a ts_event
-    column, strictly increasing, and a symbol column with no gap."""
-    raw = pd.read_csv(path, usecols=lambda c: c.strip().lower() in ("ts_event", "symbol"))
+def check_forward_file(data: bytes) -> None:
+    """The raw forward file, before loading (the loader silently sorts and keeps the last duplicate): ts_event
+    strictly increasing, and a symbol on every bar equal to its instrument_id (the preparation symbol :=
+    instrument_id, without which rolls cannot be seen)."""
+    raw = pd.read_csv(io.BytesIO(data), usecols=lambda c: c.strip().lower() in ("ts_event", "symbol", "instrument_id"), dtype=str)
     cols = {c.strip().lower(): c for c in raw.columns}
     if "ts_event" not in cols:
         raise SystemExit("refusing: the forward file has no ts_event column")
-    if "symbol" not in cols or raw[cols["symbol"]].isna().any() or (raw[cols["symbol"]].astype(str).str.strip() == "").any():
-        raise SystemExit("refusing: the forward file needs a symbol (instrument_id) on every bar")
+    if "symbol" not in cols or "instrument_id" not in cols:
+        raise SystemExit("refusing: the forward file needs symbol and instrument_id columns")
+    sym, iid = raw[cols["symbol"]].fillna("").str.strip(), raw[cols["instrument_id"]].fillna("").str.strip()
+    if (sym == "").any() or not sym.equals(iid):
+        raise SystemExit("refusing: the forward file needs a symbol on every bar equal to its instrument_id (prepare it as the sealed file)")
     ts = pd.to_datetime(raw[cols["ts_event"]], utc=True)
     if not ts.is_monotonic_increasing or ts.duplicated().any():
         raise SystemExit("refusing: the forward bars repeat or are out of order")
@@ -441,32 +499,55 @@ def day(a) -> int:
         raise SystemExit("refusing: the bar file is not the sealed run's")
     if sha256(a.protocol) != PROTOCOL_SHA256:
         raise SystemExit("refusing: the protocol file is not the frozen one")
-    if BASELINE_SHA256 is None or sha256(a.baseline) != BASELINE_SHA256:
-        raise SystemExit("refusing: the baseline report is not the pinned one (run the baseline and pin its sha256 first)")
-    code = code_hashes(a.root)
-    fresh = {"protocol": PROTOCOL_SHA256, "baseline": BASELINE_SHA256, "code": code, "dates": [], "trades": [], "runs": []}
+    pin = read_pin(BASELINE_PIN)
+    with open(a.baseline) as fh:
+        base_text = fh.read()
+    if pin is None or hashlib.sha256(base_text.encode()).hexdigest() != pin:
+        raise SystemExit(f"refusing: the baseline report is not the pinned one ({BASELINE_PIN}; run the baseline and commit its sha256 there first)")
+    base = read_baseline(base_text)
+    code = code_hashes()
+    if base["code"] != code or base["candidates"] != json.loads(json.dumps(candidate_configs())):
+        changed = sorted(k for k in set(code) | set(base["code"]) if base["code"].get(k) != code.get(k))
+        raise SystemExit(f"refusing: the code or configurations that produce the trades changed since the baseline ({', '.join(changed) or 'configurations'}): "
+                         "that is protocol version 2")
+    prev = None
     if os.path.exists(a.state):
-        with open(a.state) as fh:
-            state = json.load(fh)
+        with open(a.state, "rb") as fh:
+            raw_state = fh.read()
+        prev = hashlib.sha256(raw_state).hexdigest()
+        state = json.loads(raw_state)
     else:
-        state = fresh
-    if state["protocol"] != PROTOCOL_SHA256 or state["baseline"] != BASELINE_SHA256:
-        raise SystemExit("refusing: the state file belongs to another protocol or baseline")
-    if state["code"] != code:
-        changed = sorted(k for k in code if state["code"].get(k) != code[k])
-        raise SystemExit(f"refusing: the code that produces the trades changed since the first run ({', '.join(changed)}): that is protocol version 2")
-    check_forward_file(a.forward_csv)
+        state = {"protocol": PROTOCOL_SHA256, "baseline": pin, "code": code, "dates": [], "trades": [], "runs": [], "accepted_gaps": []}
+    if state["protocol"] != PROTOCOL_SHA256 or state["baseline"] != pin or state["code"] != code:
+        raise SystemExit("refusing: the state file belongs to another protocol, baseline or code")
+    with open(a.forward_csv, "rb") as fh:
+        data = fh.read()
+    fwd_sha = hashlib.sha256(data).hexdigest()
+    check_forward_file(data)
     sealed = load_minute_bars(a.csv, source_tz=a.source_tz)
-    fwd = load_minute_bars(a.forward_csv, source_tz=a.source_tz)
+    fwd = load_minute_bars(io.BytesIO(data), source_tz=a.source_tz)
     if fwd.index.min() <= sealed.index.max():
         raise SystemExit("refusing: the forward bars must start after the sealed bars")
-    if fwd.index.min() - sealed.index.max() > MAX_GAP:
+    if fwd.index.min() - sealed.index.max() - pd.Timedelta(minutes=1) > MAX_GAP:
         raise SystemExit(f"refusing: the forward bars must continue the sealed ones (last sealed bar {sealed.index.max()}, first forward bar {fwd.index.min()})")
-    session_gaps, overnight_gaps = unscheduled_gaps(fwd.index)
-    if session_gaps:
-        raise SystemExit(f"refusing: bars missing for more than {_span(MAX_GAP)} inside a 09:30-16:00 session (the first: {session_gaps[0][0]} to {session_gaps[0][1]})")
-    tail_start = (FIRST_UNSEEN - pd.Timedelta(days=TAIL_SESSIONS)).tz_localize(NY)
-    bars = pd.concat([sealed[sealed.index >= tail_start], fwd[sealed.columns.intersection(fwd.columns)]])
+    gaps = classify_gaps(sealed.index[-1:].append(fwd.index))
+    accepted = {g["from"][:16] for g in state["accepted_gaps"]}
+    blocking = [(x, y, kind) for kind in ("session", "roll") for x, y in gaps[kind]]
+    for when in a.accept_gap or []:
+        hit = [g for g in blocking if g[0][:16] == when[:16]]
+        if not hit or not a.accept_reason:
+            raise SystemExit(f"refusing: --accept-gap {when} needs --accept-reason and must name the first bar time of a gap that stops this run")
+        if when[:16] not in accepted:
+            state["accepted_gaps"].append({"from": hit[0][0], "to": hit[0][1], "kind": hit[0][2], "reason": a.accept_reason,
+                                           "at": datetime.now(timezone.utc).isoformat(timespec="seconds")})
+            accepted.add(when[:16])
+    open_ = [g for g in blocking if g[0][:16] not in accepted]
+    if open_:
+        x, y, kind = open_[0]
+        what = "inside a 09:30-16:00 session" if kind == "session" else "across 00:00 UTC, where the continuous series rolls"
+        raise SystemExit(f"refusing: no bar for more than {_span(MAX_GAP)} {what}, from {x} to {y} ({len(open_)} such gaps). If the exchange itself halted "
+                         f"(not missing data), rerun with --accept-gap '{x[:16]}' --accept-reason '<what happened, with a source>'; it is recorded")
+    bars = pd.concat([sealed[sealed.index >= tail_start(FIRST_UNSEEN)], fwd[sealed.columns.intersection(fwd.columns)]])
     rolls = roll_days(pd.concat([sealed.iloc[-1:], fwd]))
     dates, skipped = scorable_dates(fwd.index, FIRST_UNSEEN, rolls)
     try:
@@ -476,26 +557,27 @@ def day(a) -> int:
         led, scored = merge_ledger(old, state["dates"], new, dates)
     except ValueError as e:
         raise SystemExit(f"refusing: {e}")
-    fwd_sha = sha256(a.forward_csv)
-    prev = hashlib.sha256(json.dumps(state, sort_keys=True).encode()).hexdigest()
     added = sorted(set(scored) - set(state["dates"]))
     state["dates"], state["trades"] = scored, json.loads(led.to_json(orient="records"))
     state["runs"].append({"at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "forward_sha256": fwd_sha, "forward_rows": int(len(fwd)),
-                          "dates_added": added, "skipped": [[d.strftime("%Y-%m-%d"), why] for d, why in skipped], "overnight_gaps": overnight_gaps,
-                          "previous_state_sha256": prev,
-                          "runner_sha256": sha256(os.path.abspath(__file__))})
+                          "dates_added": added, "skipped": [[d.strftime("%Y-%m-%d"), why] for d, why in skipped], "overnight_gaps": gaps["overnight"],
+                          "halts": gaps["halts"], "previous_state_sha256": prev})
     body = json.dumps(state, sort_keys=True, indent=1)
     _write(a.state, body)
     state_sha = hashlib.sha256(body.encode()).hexdigest()
-    thr = read_thresholds(a.baseline)
+    thr = base["thresholds"]
+    early = [(x, k) for x, _, k in gaps["halts"] if k != "daily break" and x[:10] >= FIRST_UNSEEN.strftime("%Y-%m-%d")]
     flags = checkpoint_flags(led, thr, [pd.Timestamp(d) for d in scored])
     pub = ["# Forward paper test v1: status\n",
-           f"Run {len(state['runs'])} at {state['runs'][-1]['at']}. Protocol sha256 {PROTOCOL_SHA256}; baseline sha256 {BASELINE_SHA256}; forward bars sha256 {fwd_sha}; "
+           f"Run {len(state['runs'])} at {state['runs'][-1]['at']}. Protocol sha256 {PROTOCOL_SHA256}; baseline sha256 {pin}; forward bars sha256 {fwd_sha}; "
            f"state sha256 {state_sha} (its run log chains each run to the previous state). Sessions scored: {len(scored)}"
            + (f", {scored[0]} to {scored[-1]}" if scored else "") + f"; added in this run: {', '.join(added) or 'none'}.",
            "Unscored forward weekdays: " + ("; ".join(f"{d.date()} ({why})" for d, why in skipped) or "none") + ". "
-           f"Overnight stretches over {_span(MAX_GAP)} without a bar, not ending at the 18:00 ET reopen: {len(overnight_gaps)}"
-           + (f" (the last: {overnight_gaps[-1][0]} to {overnight_gaps[-1][1]})" if overnight_gaps else "") + ".\n",
+           "Scheduled early ends: " + ("; ".join(f"{x[:16]} ({k})" for x, k in early) or "none") + ". "
+           f"Overnight stretches of over {_span(MAX_GAP)} without a bar: {len(gaps['overnight'])}"
+           + (f" (the last: {gaps['overnight'][-1][0]} to {gaps['overnight'][-1][1]})" if gaps["overnight"] else "") + ". "
+           "Gaps accepted as exchange halts: " + ("; ".join(f"{g['from'][:16]} to {g['to'][:16]} ({g['reason']})" for g in state["accepted_gaps"]) or "none")
+           + ".\n",
            "| candidate | trades so far |", "|---|---|"]
     pub += [f"| {name} | {int((led['candidate'] == name).sum())} |" for name in CANDIDATES]
     pub += ["", "## Checkpoints (protocol v1)\n"] + ([f"- {x}" for x, _ in flags] or ["- none reached yet"])
@@ -537,12 +619,13 @@ def main() -> int:
         p.add_argument("--manifest", required=True)
         p.add_argument("--out", required=True)
         p.add_argument("--protocol", default=os.path.join(root, "docs", "research", "forward_protocol_v1.md"))
-        p.add_argument("--root", default=root, help="the repository folder holding the trade-producing code")
         p.add_argument("--private-out")
     d.add_argument("--forward-csv", required=True)
     d.add_argument("--baseline", required=True)
     d.add_argument("--state", required=True)
     d.add_argument("--ledger-csv", help="optional: also write the ledger as CSV (private)")
+    d.add_argument("--accept-gap", action="append", help="the first bar time (New York, 'YYYY-MM-DD HH:MM') of a gap checked to be an exchange halt")
+    d.add_argument("--accept-reason", help="what happened, with a source; recorded with the gap")
     a = ap.parse_args()
     return baseline(a) if a.mode == "baseline" else day(a)
 

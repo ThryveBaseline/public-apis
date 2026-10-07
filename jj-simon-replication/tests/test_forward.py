@@ -1,3 +1,4 @@
+import io
 import json
 
 import numpy as np
@@ -6,8 +7,8 @@ import pytest
 
 from fpt.data import synthetic_minute_bars
 from research import forward
-from research.forward import (candidate_trades, ledger_rows, merge_ledger, micros, rth_sessions, same_rows, scorable_dates, tail_check, thresholds,
-                              unscheduled_gaps)
+from research.forward import (candidate_trades, classify_gaps, ledger_rows, merge_ledger, micros, rth_sessions, same_rows, scorable_dates, tail_check,
+                              thresholds)
 
 NY = "America/New_York"
 
@@ -31,20 +32,37 @@ def test_sessions_are_dates_with_a_0930_bar():
     assert [d.strftime("%a") for d in s] == ["Mon", "Tue", "Wed", "Thu", "Fri"]  # Sunday evening is not a session
 
 
+def _cut(idx, a, b):
+    return idx[(idx < pd.Timestamp(a, tz=NY)) | (idx >= pd.Timestamp(b, tz=NY))]
+
+
+def _kinds(g):
+    return {k: len(v) for k, v in g.items() if v}
+
+
 def test_the_gap_rule():
     idx = _globex("2026-10-04 18:00", "2026-10-17 00:00")
-    assert unscheduled_gaps(idx) == ([], [])  # the daily break and the weekend end at the 18:00 reopen
-    session_hole = idx[(idx < pd.Timestamp("2026-10-07 10:00", tz=NY)) | (idx >= pd.Timestamp("2026-10-07 11:00", tz=NY))]
-    s, n = unscheduled_gaps(session_hole)
-    assert len(s) == 1 and n == [] and s[0][0].startswith("2026-10-07 09:59")
-    night_hole = idx[(idx < pd.Timestamp("2026-10-07 01:00", tz=NY)) | (idx >= pd.Timestamp("2026-10-07 02:00", tz=NY))]
-    assert unscheduled_gaps(night_hole)[0] == [] and len(unscheduled_gaps(night_hole)[1]) == 1  # reported, not refused
-    lost_day = idx[(idx < pd.Timestamp("2026-10-07 18:00", tz=NY)) | (idx >= pd.Timestamp("2026-10-08 18:00", tz=NY))]
-    assert unscheduled_gaps(lost_day) == ([], [])  # ends at a reopen: caught by the missing 09:30 bar instead
+    g = classify_gaps(idx)
+    assert _kinds(g) == {"halts": 9} and {k for _, _, k in g["halts"]} == {"daily break"}  # eight daily breaks and the weekend
+    assert _kinds(classify_gaps(_cut(idx, "2026-10-07 10:00", "2026-10-07 11:00"))) == {"halts": 9, "session": 1}
+    assert _kinds(classify_gaps(_cut(idx, "2026-10-07 01:00", "2026-10-07 02:00"))) == {"halts": 9, "overnight": 1}  # reported, not refused
+    # an outage from mid-session to the evening reopen is not a scheduled halt (the second review's finding)
+    assert _kinds(classify_gaps(_cut(idx, "2026-10-07 11:00", "2026-10-07 17:00"))) == {"halts": 8, "session": 1}
+    # across 00:00 UTC (20:00 ET in October), where the continuous series rolls
+    assert _kinds(classify_gaps(_cut(idx, "2026-10-07 19:30", "2026-10-07 20:30"))) == {"halts": 9, "roll": 1}
+    # a holiday halt at 13:00 and an early close at 13:15, each to the 18:00 reopen
+    hol = classify_gaps(_cut(idx, "2026-10-12 13:00", "2026-10-12 17:00"))
+    assert _kinds(hol) == {"halts": 9} and ("2026-10-12 12:59:00-04:00", "2026-10-12 18:00:00-04:00", "holiday halt") in hol["halts"]
+    early = classify_gaps(_cut(idx, "2026-10-09 13:15", "2026-10-11 18:00"))
+    assert ("2026-10-09 13:14:00-04:00", "2026-10-11 18:00:00-04:00", "early close") in early["halts"] and not early["session"]
+    # exactly 30 minutes without a bar is not a gap; 31 is
+    assert not classify_gaps(_cut(idx, "2026-10-07 10:00", "2026-10-07 10:30"))["session"]
+    assert classify_gaps(_cut(idx, "2026-10-07 10:00", "2026-10-07 10:31"))["session"]
+    # a whole lost session from one daily break to the next reopen: caught by the missing 09:30 bar
+    lost_day = _cut(idx, "2026-10-07 18:00", "2026-10-08 18:00")
+    assert not classify_gaps(lost_day)["session"]
     _, skipped = scorable_dates(lost_day, pd.Timestamp("2026-10-06"), [])
     assert (pd.Timestamp("2026-10-08"), "no 09:30 bar (market closed or data missing)") in skipped
-    early = idx[~((idx >= pd.Timestamp("2026-10-09 13:15", tz=NY)) & (idx < pd.Timestamp("2026-10-11 18:00", tz=NY)))]
-    assert unscheduled_gaps(early) == ([], [])  # an early close: the gap runs to the Sunday reopen
 
 
 def test_a_date_is_scored_once_a_later_date_has_a_bar():
@@ -113,6 +131,7 @@ def _csv(bars: pd.DataFrame, path):
     out = bars.copy()
     out.index = out.index.tz_convert("UTC")
     out.index.name = "ts_event"
+    out["instrument_id"] = out["symbol"]
     out.to_csv(path)
 
 
@@ -128,10 +147,16 @@ def test_cli_baseline_then_days(history, tmp_path, monkeypatch):
     monkeypatch.setattr(forward, "TAIL_SESSIONS", 90)
     monkeypatch.setattr(forward, "TAIL_WARMUP", 30)
     monkeypatch.setattr(forward, "MAX_GAP", pd.Timedelta(hours=18))  # the synthetic bars hold the regular session only
+    pin = tmp_path / "baseline.sha256"
+    monkeypatch.setattr(forward, "BASELINE_PIN", str(pin))
     monkeypatch.setattr("sys.argv", ["forward.py", "baseline", *common, "--out", str(tmp_path / "base.md"), "--private-out", str(tmp_path / "base.csv")])
     assert forward.main() == 0
     base = (tmp_path / "base.md").read_text()
-    assert "Tail check" in base and "| S3 | development |" in base and "| S4 | benchmark |" in base and "```json" in base and "gap rule" in base
+    assert "Tail check" in base and "| S3 | development |" in base and "| S4 | benchmark |" in base and "gap rule" in base
+    block = forward.read_baseline(base)
+    assert set(block) == {"thresholds", "code", "candidates"} and "research/forward.py" in block["code"] and "fpt/strategy.py" in block["code"]
+    # the synthetic bars have no Globex hours, so every night would be a gap across 00:00 UTC: the rule itself is tested above
+    monkeypatch.setattr(forward, "classify_gaps", lambda idx: {"halts": [], "session": [], "roll": [], "overnight": []})
     state, pub, prv = tmp_path / "state.json", tmp_path / "status.md", tmp_path / "status_private.md"
     day_args = [*common, "--baseline", str(tmp_path / "base.md"), "--state", str(state), "--out", str(pub), "--private-out", str(prv),
                 "--ledger-csv", str(tmp_path / "ledger.csv"), "--forward-csv", str(tmp_path / "fwd.csv")]
@@ -139,23 +164,26 @@ def test_cli_baseline_then_days(history, tmp_path, monkeypatch):
     _csv(fwd[fwd.index < days[5]], tmp_path / "fwd.csv")
     with pytest.raises(SystemExit, match="baseline report is not the pinned one"):
         forward.main()
-    monkeypatch.setattr(forward, "BASELINE_SHA256", forward.sha256(str(tmp_path / "base.md")))
+    pin.write_text(forward.sha256(str(tmp_path / "base.md")) + "  research/forward_v1_baseline.md\n")
     # six days, the sixth cut at noon: the first five are scored (each has a bar on a later date), the sixth is not
     _csv(fwd[fwd.index < days[5] + pd.Timedelta(hours=12)], tmp_path / "fwd.csv")
     assert forward.main() == 0
     s5 = json.loads(state.read_text())
-    assert len(s5["dates"]) == 5 and s5["dates"][-1] == days[4].strftime("%Y-%m-%d") and len(s5["runs"]) == 1
-    assert set(s5["code"]) == set(forward.TRADE_CODE)
+    assert len(s5["dates"]) == 5 and s5["dates"][-1] == days[4].strftime("%Y-%m-%d") and len(s5["runs"]) == 1 and s5["runs"][0]["previous_state_sha256"] is None
+    assert s5["code"] == block["code"]
     led5 = pd.DataFrame(s5["trades"])
     full = candidate_trades(history, [])  # the full history's trades on those dates: the forward run must match them
     want = ledger_rows(full, [pd.Timestamp(d) for d in s5["dates"]])
     assert same_rows(led5[forward.LEDGER_KEY].astype({"date": str}), want[forward.LEDGER_KEY])
     assert len(pd.read_csv(tmp_path / "ledger.csv")) == len(led5)
+    published = pub.read_text().split("state sha256 ")[1].split(" ")[0]
+    assert published == forward.sha256(str(state))
     # thirteen days: the state extends, the first five are unchanged, and the ten-session checkpoint is reported
     _csv(fwd[fwd.index < days[13]], tmp_path / "fwd.csv")
     assert forward.main() == 0
     s12 = json.loads(state.read_text())
     assert len(s12["dates"]) == 12 and len(s12["runs"]) == 2 and s12["runs"][1]["dates_added"] == s12["dates"][5:]
+    assert s12["runs"][1]["previous_state_sha256"] == published  # the chain matches the published hashes
     led12 = pd.DataFrame(s12["trades"])
     assert same_rows(led12[led12["date"].isin(s5["dates"])][forward.LEDGER_KEY].reset_index(drop=True), led5[forward.LEDGER_KEY])
     public, private = pub.read_text(), prv.read_text()
@@ -177,24 +205,40 @@ def test_cli_baseline_then_days(history, tmp_path, monkeypatch):
     if len(led12):
         refuses("history is never rewritten", lambda st: st["trades"][0].update(exit=st["trades"][0]["exit"] + 1.0))
     refuses("missing from this run", lambda st: st["dates"].append("2026-12-31"))
-    refuses("protocol version 2", lambda st: st["code"].update({"research/engine.py": "0" * 64}))
-    refuses("another protocol or baseline", lambda st: st.update(baseline="0" * 64))
-    good = (tmp_path / "fwd.csv").read_text()
+    refuses("another protocol, baseline or code", lambda st: st["code"].update({"research/engine.py": "0" * 64}))
+    refuses("another protocol, baseline or code", lambda st: st.update(baseline="0" * 64))
+    with monkeypatch.context() as m:  # the code differs from the baseline's
+        m.setattr(forward, "code_hashes", lambda: {**block["code"], "research/engine.py": "0" * 64})
+        refuses("changed since the baseline")
+    with monkeypatch.context() as m:
+        m.setattr(forward, "CANDIDATES", {**forward.CANDIDATES, "S3": forward.CANDIDATES["S4"]})
+        refuses("changed since the baseline")
+    good = (tmp_path / "fwd.csv").read_bytes()
     # forward bars that overlap the sealed ones, or leave a hole after them
     _csv(history[history.index >= first - pd.Timedelta(days=3)], tmp_path / "fwd.csv")
     refuses("must start after the sealed bars")
     _csv(fwd[fwd.index >= days[1]], tmp_path / "fwd.csv")
     refuses("must continue the sealed ones")
-    # a raw file with a repeated bar, or a bar without its instrument
-    lines = good.splitlines()
+    # a raw file with a repeated bar, a bar without its instrument, or a symbol that is not the instrument_id
+    lines = good.decode().splitlines()
     (tmp_path / "fwd.csv").write_text("\n".join(lines[:50] + [lines[49]] + lines[50:]) + "\n")
     refuses("repeat or are out of order")
-    raw = pd.read_csv(pd.io.common.StringIO(good))
+    raw = pd.read_csv(io.BytesIO(good))
     raw.loc[10, "symbol"] = np.nan
     raw.to_csv(tmp_path / "fwd.csv", index=False)
-    refuses("symbol")
-    # bars missing from 10:00 on one day to 11:00 the next (longer than the test's 18-hour limit), inside sessions
-    hole = fwd[fwd.index < days[13]]
-    hole = hole[(hole.index < days[7] + pd.Timedelta(hours=10)) | (hole.index >= days[8] + pd.Timedelta(hours=11))]
-    _csv(hole, tmp_path / "fwd.csv")
+    refuses("equal to its instrument_id")
+    raw = pd.read_csv(io.BytesIO(good)).assign(symbol="NQ.n.0")
+    raw.to_csv(tmp_path / "fwd.csv", index=False)
+    refuses("equal to its instrument_id")
+    # a gap that stops the run, then recorded as an exchange halt by a person
+    (tmp_path / "fwd.csv").write_bytes(good)
+    bad = ("2026-10-14 11:00:00-04:00", "2026-10-14 18:00:00-04:00")
+    monkeypatch.setattr(forward, "classify_gaps", lambda idx: {"halts": [], "session": [bad], "roll": [], "overnight": []})
     refuses("inside a 09:30-16:00 session")
+    monkeypatch.setattr("sys.argv", ["forward.py", "day", *day_args, "--accept-gap", "2026-10-14 11:00"])
+    refuses("needs --accept-reason")
+    monkeypatch.setattr("sys.argv", ["forward.py", "day", *day_args, "--accept-gap", "2026-10-14 11:00", "--accept-reason", "CME halted equity futures (notice)"])
+    assert forward.main() == 0
+    assert json.loads(state.read_text())["accepted_gaps"][0]["from"] == bad[0] and "CME halted" in pub.read_text()
+    monkeypatch.setattr("sys.argv", ["forward.py", "day", *day_args])
+    assert forward.main() == 0  # once recorded, it stays accepted

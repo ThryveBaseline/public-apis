@@ -71,17 +71,18 @@ Written 2026-10-07, after the runner's independent review and before any bar aft
    - Every forward weekday that is not scored is listed with its reason: a roll date, or no 09:30 bar (market closed or data missing).
 3. **Continuity.**
    - The forward bars must continue the sealed file within 30 minutes. The sealed file ends at 2026-10-05 23:59 UTC; the forward request starts at 2026-10-06 00:00 UTC.
-   - A stretch of over 30 minutes without a bar inside a weekday's 09:30–16:00 session stops the run as missing data.
-   - Overnight stretches can be genuine, since a one-minute bar exists only when a trade occurred. They are reported, not refused.
-   - The baseline reports how often each kind would have occurred in the benchmark year.
-   - The raw forward file must have unique, increasing timestamps and an instrument on every bar.
+   - A stretch of over 30 minutes without a bar is a gap. A gap stops the run if it misses bars inside a weekday's 09:30–16:00 session. It also stops the run if it spans 00:00 UTC, the instant the continuous series rolls, where a roll date could be misplaced.
+   - **Exempt:** a gap from a scheduled halt to the 18:00 ET reopen. The scheduled halts are the 17:00 daily break, a 13:00 holiday halt and a 13:15 early close, with the last bar within 10 minutes before each. In the sealed bars from October 2023 to October 2026, the only regular-session ends other than 16:00 were 12:59 ET (holidays with a partial session) and 13:14 ET (early closes). Holiday halts and early closes are listed in the status.
+   - Other overnight gaps can be genuine, since a one-minute bar exists only when a trade occurred. They are reported, not refused.
+   - A gap that stops the run passes only when a person records it as an exchange halt rather than missing data, with what happened and a source. 2025-01-09, the national day of mourning, was one such day. The record is public and stays with the test.
+   - The baseline reports how often each kind of gap would have occurred in the benchmark year.
+   - The raw forward file must have unique, increasing timestamps, and on every bar a symbol equal to its instrument_id, as the sealed file was prepared.
 4. **The record.** The forward ledger is a private state file, written atomically. It holds:
    - the scored dates;
    - every trade, with its signal time and the ambiguous-bar flag;
-   - a run log, each entry carrying the previous state's hash;
-   - the sha256 of the code that produces the trades: `research/engine.py`, `anatomy.py`, `bracket_replay.py`, `candidates.py` and the `fpt` modules they use.
+   - a run log, each entry carrying the sha256 of the state file it replaced (the hash the previous status published).
 
-   A change to that code stops the test. It would be version 2.
+   The code that produces the trades and both configurations are recorded in the baseline: `research/forward.py` itself, `research/engine.py`, `anatomy.py`, `bracket_replay.py`, `candidates.py` and the `fpt` modules they use, each as imported. The baseline report's sha256 is committed in `research/forward_v1_baseline.sha256`. Any change to that code or those configurations stops the test; it would be version 2.
 5. **Public and private.**
    - The public status gives counts, hashes, scored and unscored dates and, at each checkpoint, which checks were flagged.
    - A private status holds the values behind the checks, the forward R, the exit mix and the paper account.
