@@ -79,13 +79,15 @@ def scoring_sections(streams: list[tuple[str, pd.DataFrame, pd.Timestamp | None]
           "|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for name, (st, pre, cal_s) in seqs.items():
         w = score_whole(pre, cal_s, cut, TOPSTEPX)
-        for per in ("development", "benchmark"):
-            q = w[per]
-            if not q["eval_trades"] and not q["funded_trades"]:
+        dpre = ny_day(pre)
+        for per, has in (("development", (dpre <= cut).any()), ("benchmark", (dpre > cut).any())):
+            if not has:  # no entry in the period at all, as the other sections skip it
                 continue
+            q = w[per]
             head = f"| {name} | {per} | {q['eval_trades']}, {_cell(q['eval_size'], '.2f')} |"
             if q["firms"].empty:
-                s.append(head + " n/a | n/a | " + f"{q['funded_trades']}, {_cell(q['funded_size'], '.2f')} | n/a (no funded trade fits) | n/a | n/a | n/a | n/a | n/a |")
+                why = "no trade fits the evaluation budget" if not q["eval_trades"] else "no funded trade fits"
+                s.append(head + " n/a | n/a | " + f"{q['funded_trades']}, {_cell(q['funded_size'], '.2f')} | n/a ({why}) | n/a | n/a | n/a | n/a | n/a |")
                 continue
             r = q["firms"].iloc[0].to_dict()
             ok = np.isfinite(r["pass_rate"]) and np.isfinite(r["payout_rate"])

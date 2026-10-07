@@ -86,3 +86,14 @@ def test_every_section_has_a_row_per_stream_and_period(stream):
     assert len(row) == 6 + len(HORIZONS) + 2 and row[2] == "ask"
     assert not any(c.strip() in ("nan", "+nan") for c in text.replace("|", "\n").split("\n"))  # missing values print as n/a
     assert np.isfinite(float(row[3].rstrip("%")))
+
+
+def test_a_period_whose_trades_fit_no_micro_still_has_its_row(stream):
+    """Entries whose stops are too wide for one micro within the budget: the period keeps a row that says so."""
+    pre, cal, cut, start = stream
+    wide = pre.copy()
+    wide["stop_points"] = 600.0
+    text = "\n".join(scoring_sections([("wide", wide, start)], cal, cut))
+    micro = text[text.index("### Whole micro contracts"):text.index("### Lifetime (B4)")]
+    for per in ("development", "benchmark"):
+        assert f"| wide | {per} | 0, n/a |" in micro and "n/a (no trade fits the evaluation budget)" in micro

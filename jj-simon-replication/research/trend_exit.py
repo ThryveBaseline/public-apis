@@ -129,6 +129,45 @@ def check_against_b2(trend_rep: pd.DataFrame, b2_replay: pd.DataFrame) -> int:
     return n
 
 
+def build_trend(trades: pd.DataFrame, bars: pd.DataFrame, b2: pd.DataFrame, cut: pd.Timestamp) -> dict:
+    """Everything the registered test needs, behind its gates (a ValueError when one fails): the trend replay and its
+    consistency with B2, both chains, the choices, the test, and the per-entry frames of the trend exit, S3 and S1 on
+    the entries the trend chain takes (from its first year). Shared with research/b5_paths.py."""
+    trend_rep = replay_trend(trades, bars, b2)
+    n_same = check_against_b2(trend_rep, b2)
+    _, _, s3_chain, s3_choice = build_streams(trades, bars, b2, cut)
+    t = trades.loc[s3_choice.index]
+    cont = t["setup"].astype(str) == "continuation"
+    day = ny_day(t)
+    year = t["entry_time"].dt.tz_convert(NY).dt.year
+    dev_years = sorted(int(y) for y in year[day <= cut].unique())
+    chain = pooled_choices(trend_rep, t, "continuation", TREND_NAMES, dev_years, cut)
+    if not any(k != "benchmark" for k in chain):
+        raise ValueError("the trend chain has no year: the walk-forward needs four development years")
+    first = min(k for k in chain if k != "benchmark")
+    if first != dev_years[3]:
+        raise ValueError(f"the chain starts in {first}, not the fourth development year {dev_years[3]}")
+    if min((k for k in s3_chain if k != "benchmark"), default=None) != first:
+        raise ValueError(f"S3's chain does not start in {first}: the paired test needs both chains on the same years")
+    tchoice = trend_choice(t[cont], chain, cut)
+    test = paired_test(t, trend_rep, b2, s3_choice, tchoice, cut)
+    took = tchoice.dropna()
+    return {"trend_rep": trend_rep, "n_same": n_same, "s3_chain": s3_chain, "s3_choice": s3_choice, "t": t, "cont": cont, "chain": chain,
+            "first": first, "test": test, "took": took, "trend_frame": variant_frame(t, trend_rep, took),
+            "s3_frame": variant_frame(t, b2, s3_choice.loc[took.index]), "s1_frame": variant_frame(t, b2, pd.Series("ledger_bracket", index=took.index))}
+
+
+def with_reversion(trades: pd.DataFrame, bars: pd.DataFrame, b2: pd.DataFrame, x: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """S4 and S6 before the sequential pass: S3's and the trend exit's continuation entries (build_trend's frames)
+    with every reversion A+ entry at the sealed bracket (B3's B2a filter)."""
+    gates = build_gates(trades, bars)
+    t, cont = x["t"], x["cont"]
+    rev_frame = variant_frame(t, b2, pd.Series("ledger_bracket", index=t.index[~cont.to_numpy()]))
+    s4 = apply_filter(pd.concat([x["s3_frame"], rev_frame]).sort_values("entry_time", kind="stable"), "B2a", gates)
+    s6 = apply_filter(pd.concat([x["trend_frame"], rev_frame]).sort_values("entry_time", kind="stable"), "B2a", gates)
+    return s4, s6
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     add_gate_args(ap)
@@ -141,30 +180,11 @@ def main() -> int:
     g = gated_inputs(a)
     trades, bars, b2, cut, cal = g["trades"], g["bars"], g["replay"], g["cut"], g["cal"]
     try:
-        trend_rep = replay_trend(trades, bars, b2)
-        n_same = check_against_b2(trend_rep, b2)
-        pre, streams, s3_chain, s3_choice = build_streams(trades, bars, b2, cut)
-        t = trades.loc[s3_choice.index]
-        cont = t["setup"].astype(str) == "continuation"
-        day = ny_day(t)
-        year = t["entry_time"].dt.tz_convert(NY).dt.year
-        dev_years = sorted(int(y) for y in year[day <= cut].unique())
-        chain = pooled_choices(trend_rep, t, "continuation", TREND_NAMES, dev_years, cut)
-        if not any(k != "benchmark" for k in chain):
-            raise ValueError("the trend chain has no year: the walk-forward needs four development years")
-        first = min(k for k in chain if k != "benchmark")
-        if first != dev_years[3]:
-            raise ValueError(f"the chain starts in {first}, not the fourth development year {dev_years[3]}")
-        if min((k for k in s3_chain if k != "benchmark"), default=None) != first:
-            raise ValueError(f"S3's chain does not start in {first}: the paired test needs both chains on the same years")
-        tchoice = trend_choice(t[cont], chain, cut)
-        test = paired_test(t, trend_rep, b2, s3_choice, tchoice, cut)
-        took = tchoice.dropna()
-        trend_frame = variant_frame(t, trend_rep, took)
-        s3_frame = variant_frame(t, b2, s3_choice.loc[took.index])
-        s1_frame = variant_frame(t, b2, pd.Series("ledger_bracket", index=took.index))
+        x = build_trend(trades, bars, b2, cut)
     except ValueError as e:
         raise SystemExit(f"refusing to report: {e}")
+    trend_rep, n_same, s3_chain, chain, first, test = x["trend_rep"], x["n_same"], x["s3_chain"], x["chain"], x["first"], x["test"]
+    t, took, trend_frame, s3_frame, s1_frame = x["t"], x["took"], x["trend_frame"], x["s3_frame"], x["s1_frame"]
     start = pd.Timestamp(first, 1, 1)
     exits = trend_rep.set_index(["trade", "variant"]).loc[pd.MultiIndex.from_arrays([took.index.astype(int), took.to_numpy()]), "exit_reason"].to_numpy()
     tday = ny_day(t.loc[took.index]).to_numpy()
@@ -192,11 +212,7 @@ def main() -> int:
           + "S4 and S6 keep the reversion A+ entries of the same span.\n"]
     _write(a.out, "\n".join(s + ["", "(The streams' firm scoring follows; if this line is the last, it did not finish.)\n"]))
     try:
-        gates = build_gates(trades, bars)
-        rev = t.index[~cont.to_numpy()]
-        rev_frame = variant_frame(t, b2, pd.Series("ledger_bracket", index=rev))
-        s6_pre = apply_filter(pd.concat([trend_frame, rev_frame]).sort_values("entry_time", kind="stable"), "B2a", gates)
-        s4_pre = apply_filter(pd.concat([s3_frame, rev_frame]).sort_values("entry_time", kind="stable"), "B2a", gates)
+        s4_pre, s6_pre = with_reversion(trades, bars, b2, x)
         s += scoring_sections([(f"S3 from {first}", s3_frame, start), ("S5 continuation, walk-forward trend exit", trend_frame, start),
                                (f"S4 from {first}", s4_pre, start), (f"S6 S5 + A+ reversion, from {first}", s6_pre, start)], cal, cut)
     except Exception as e:  # noqa: BLE001 - whatever stops the scoring, the registered test above stands
