@@ -40,7 +40,7 @@ def test_the_relabel_null_keeps_outcome_sizes_and_zeroes_the_development_mean(st
         r0, r1 = s["r"].to_numpy(float), flip["r"].to_numpy(float)
         m = r0[dev].mean()
         side = r0 < 0 if m < 0 else r0 > 0
-        target = np.median(r0[dev & ((r0 > 0) if m < 0 else (r0 < 0))])
+        target = np.quantile(r0[dev & ((r0 > 0) if m < 0 else (r0 < 0))], 0.5, method="lower")
         moved = r1 != r0
         assert moved.any() and (side[moved]).all() and np.allclose(r1[moved], target)  # only the mean's side moves, to the other side's median
         step = abs(target - r0[side & dev]).max()
@@ -54,21 +54,32 @@ def test_rows_pair_the_stream_with_both_nulls_on_topstepx(stream, monkeypatch):
     from research import structure_control
     st, cal, cut = stream
     monkeypatch.setattr(structure_control, "RUNS_X", (("topstep_50k_x", 0.95),))
+    monkeypatch.setattr(structure_control, "SEEDS", (0, 1, 2))
     rows = rows_for("s", st, cal, cut)
     real = lifetime_rows(st, cal, cut, "topstep_50k_x", 0.95, policies=("ask", "wait"))
     null = lifetime_rows(shifted(st, cut)[0], cal, cut, "topstep_50k_x", 0.95, policies=("ask", "wait"))
-    null2 = lifetime_rows(relabelled(st, cut)[0], cal, cut, "topstep_50k_x", 0.95, policies=("ask", "wait"))
-    assert len(rows) == len(real) == len(null) == len(null2)
-    for r, a, b, c in zip(rows, real, null, null2):
+    nulls2 = [lifetime_rows(relabelled(st, cut, seed)[0], cal, cut, "topstep_50k_x", 0.95, policies=("ask", "wait")) for seed in (0, 1, 2)]
+    assert len(rows) == len(real) == len(null)
+    for i, (r, a, b) in enumerate(zip(rows, real, null)):
         assert (r["period"], r["policy"], r["horizon"]) == (a["period"], a["policy"], a["horizon"])
-        assert r["ev"] == pytest.approx(a["ev"], nan_ok=True) and r["ev0"] == pytest.approx(b["ev"], nan_ok=True) and r["ev1"] == pytest.approx(c["ev"], nan_ok=True)
+        assert r["ev"] == pytest.approx(a["ev"], nan_ok=True) and r["ev0"] == pytest.approx(b["ev"], nan_ok=True)
+        evs = [n2[i]["ev"] for n2 in nulls2]
+        assert r["ev1"] == pytest.approx(np.mean(evs), nan_ok=True) and r["ev1_sd"] == pytest.approx(np.std(evs, ddof=1), nan_ok=True)
     assert all(x["firm"] == "topstep_50k_x" for x in rows)
+
+
+def test_a_stream_with_no_other_side_has_no_relabel_null(stream):
+    st, _, cut = stream
+    up = st.assign(r=st["r"].astype(float).abs() + 0.1)  # every trade a winner
+    same, share = relabelled(up, cut)
+    assert np.isnan(share) and same["r"].equals(up["r"])
 
 
 def test_cli_runs_through_b3s_gates(sealed_4y, tmp_path, monkeypatch):
     from research import structure_control
     monkeypatch.setattr(structure_control, "STREAMS", ("S0r sealed brackets, flat 16:00", "S1 continuation only, sealed bracket"))
     monkeypatch.setattr(structure_control, "RUNS_X", (("topstep_50k_x", 1.00),))
+    monkeypatch.setattr(structure_control, "SEEDS", (0, 1))
     monkeypatch.setattr("sys.argv", ["structure_control.py", *sealed_4y["b3"], "--out", str(tmp_path / "sc.md")])
     assert structure_control.main() == 0
     text = (tmp_path / "sc.md").read_text()

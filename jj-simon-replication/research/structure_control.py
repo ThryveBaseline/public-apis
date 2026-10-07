@@ -7,9 +7,10 @@ entry and its timing, and each removing the stream's development mean:
 
   shift       every trade's R moves by the stream's development mean R per trade (outcome sizes move with it)
   re-label    trades on the side that gives the stream its mean (its losers when the mean is negative, its winners
-              when it is positive) take, in a seeded random order, the median development outcome of the other side,
+              when it is positive) take, in a seeded random order, a middle development outcome of the other side,
               until the development mean is as close to zero as one more trade can bring it; the benchmark re-labels
-              the same share of its trades on that side (outcome sizes stay the stream's own)
+              the same share of its trades on that side (outcome sizes stay the stream's own); averaged over ten
+              orders, with the spread across them shown
 
 Both copies go through B4's lifetime_rows at TopstepX's sizes and both payout policies and horizons (B4's first-payout
 gate included). TopstepX only: at the sealed sizing a stop-out sits 0.02 R from the frozen preset's soft daily limit
@@ -38,6 +39,7 @@ from research.candidates import add_gate_args, build_streams, gated_inputs, ny_d
 from research.lifetime import POLICIES, RUNS, STREAMS, lifetime_rows  # noqa: E402
 
 RUNS_X = tuple((firm, size) for firm, size in RUNS if firm == "topstep_50k_x")  # TopstepX only (see the module note)
+SEEDS = tuple(range(10))  # the re-label null is averaged over these orders (one order's spread is about $12-21)
 
 
 def shifted(stream: pd.DataFrame, cut: pd.Timestamp) -> tuple[pd.DataFrame, float]:
@@ -51,7 +53,8 @@ def shifted(stream: pd.DataFrame, cut: pd.Timestamp) -> tuple[pd.DataFrame, floa
 
 
 def relabelled(stream: pd.DataFrame, cut: pd.Timestamp, seed: int = 0) -> tuple[pd.DataFrame, float]:
-    """The re-label null and the share of the moving side's development trades re-labelled (see the module note)."""
+    """The re-label null and the share of the moving side's development trades re-labelled (see the module note); the
+    share is NaN, and the stream returned unchanged, when the other side has no development trade."""
     r = stream["r"].astype(float).to_numpy().copy()
     dev = (ny_day(stream) <= cut).to_numpy()
     m = float(r[dev].mean()) if dev.any() else 0.0
@@ -59,9 +62,9 @@ def relabelled(stream: pd.DataFrame, cut: pd.Timestamp, seed: int = 0) -> tuple[
         return stream.copy(), 0.0
     side = r < 0 if m < 0 else r > 0
     other = (r > 0 if m < 0 else r < 0) & dev
-    if not other.any():
-        raise ValueError("a stream with no development trade on the other side cannot be re-labelled")
-    target = float(np.median(r[other]))
+    if not other.any():  # nothing to re-label towards: the null is not defined for this stream
+        return stream.copy(), float("nan")
+    target = float(np.quantile(r[other], 0.5, method="lower"))  # a middle outcome of the stream's own, never an average of two
     rng = np.random.default_rng(seed)
     order = rng.permutation(np.flatnonzero(dev & side))
     total, best_k, best = float(r[dev].sum()), 0, abs(float(r[dev].sum()))
@@ -81,18 +84,26 @@ def relabelled(stream: pd.DataFrame, cut: pd.Timestamp, seed: int = 0) -> tuple[
 
 
 def rows_for(name: str, st: pd.DataFrame, cal: pd.DatetimeIndex, cut: pd.Timestamp) -> list[dict]:
+    """Per TopstepX size, period, policy and horizon: the stream, the shift null, and the re-label null averaged over
+    SEEDS with its standard deviation across them."""
     zero, m = shifted(st, cut)
-    flip, share = relabelled(st, cut)
+    flips = [relabelled(st, cut, seed) for seed in SEEDS]
+    flips = [(f, sh) for f, sh in flips if np.isfinite(sh)]
+    share = float(np.mean([sh for _, sh in flips])) if flips else float("nan")
     out = []
+    key = ("period", "policy", "horizon")
     for firm, size in RUNS_X:
         real = lifetime_rows(st, cal, cut, firm, size, policies=tuple(POLICIES))
         null = lifetime_rows(zero, cal, cut, firm, size, policies=tuple(POLICIES))
-        null2 = lifetime_rows(flip, cal, cut, firm, size, policies=tuple(POLICIES))
-        for a, b, c in zip(real, null, null2):
-            if not ((a["period"], a["policy"], a["horizon"]) == (b["period"], b["policy"], b["horizon"]) == (c["period"], c["policy"], c["horizon"])):
+        nulls2 = [lifetime_rows(f, cal, cut, firm, size, policies=tuple(POLICIES)) for f, _ in flips]
+        for i, (a, b) in enumerate(zip(real, null)):
+            if tuple(a[k] for k in key) != tuple(b[k] for k in key) or any(tuple(n2[i][k] for k in key) != tuple(a[k] for k in key) for n2 in nulls2):
                 raise ValueError("the stream's and the nulls' rows do not line up")
+            evs = np.array([n2[i]["ev"] for n2 in nulls2], dtype=float)
+            ps = np.array([n2[i]["pass_rate"] for n2 in nulls2], dtype=float)
             out.append({"stream": name, "shift": m, "share": share, "firm": firm, "size": size, "period": a["period"], "policy": a["policy"], "horizon": a["horizon"],
-                        "pass": a["pass_rate"], "pass0": b["pass_rate"], "pass1": c["pass_rate"], "ev": a["ev"], "ev0": b["ev"], "ev1": c["ev"]})
+                        "pass": a["pass_rate"], "pass0": b["pass_rate"], "pass1": float(ps.mean()) if len(ps) else float("nan"), "ev": a["ev"], "ev0": b["ev"],
+                        "ev1": float(evs.mean()) if len(evs) else float("nan"), "ev1_sd": float(evs.std(ddof=1)) if len(evs) > 1 else float("nan")})
     return out
 
 
@@ -104,18 +115,19 @@ def report(rows: list[dict], gate_note: str, cut: pd.Timestamp) -> str:
     s = ["# Structure versus edge: B4's lifetime EV with the development edge removed\n", gate_note, "",
          f"Development: New York days through {cut.date()}; benchmark from {(cut + pd.Timedelta(days=1)).date()}, moved the same way and shown beside. "
          "Two nulls remove each stream's development mean while keeping every entry and its timing. Shift: every R moves by the development mean (the shift column). "
-         "Re-label: trades on the side that gives the stream its mean take the median development outcome of the other side, in a seeded random order, until the development mean is as close to zero as one more trade can bring it (the share column), so outcome sizes stay the stream's own. "
+         f"Re-label: trades on the side that gives the stream its mean take a middle development outcome of the other side (its lower median), in a seeded random order, until the development mean is as close to zero as one more trade can bring it (the share column, averaged over orders), so outcome sizes stay the stream's own; "
+         f"it is averaged over {len(SEEDS)} orders, with the standard deviation across them beside it, because one order moves its EV by about $12-21. "
          "All copies go through B4's lifetime_rows (research/lifetime.py; its first-payout gate passed on every row), on TopstepX only: at the sealed sizing a stop-out sits 0.02 R from the frozen preset's soft daily limit, so shifting R by a few hundredths would cross it and measure that artifact. "
          "EV with no edge is what the same pattern of trades earns with a zero development mean: a funded account's loss is capped by the drawdown while half of every upswing can be withdrawn. "
-         "The edge's part is the difference, under each null; where the two nulls disagree, the split depends on the null. Descriptive only; nothing is chosen here.\n"]
+         "The edge's part is the difference, under each null; where the two nulls disagree by more than the re-label null's spread, the split depends on the null. Descriptive only; nothing is chosen here.\n"]
     df = pd.DataFrame(rows)
     for (firm, size), g in df.groupby(["firm", "size"], sort=False):
         s += [f"## {firm} at {size:.2f} of the budget\n",
-              "| stream | shift (R per trade) | re-labelled share | period | policy | H | P(pass): stream / shift / re-label | EV per evaluation | EV with no edge: shift / re-label | the edge's part: shift / re-label |",
+              "| stream | shift (R per trade) | re-labelled share | period | policy | H | P(pass): stream / shift / re-label | EV per evaluation | EV with no edge: shift / re-label (sd across orders) | the edge's part: shift / re-label |",
               "|---|---|---|---|---|---|---|---|---|---|"]
         for _, r in g.iterrows():
             s.append(f"| {r['stream']} | {r['shift']:+.3f} | {r['share']:.1%} | {r['period']} | {r['policy']} | {r['horizon']} | {r['pass']:.1%} / {r['pass0']:.1%} / {r['pass1']:.1%} | "
-                     f"{_c(r['ev'], '+,.0f')} | {_c(r['ev0'], '+,.0f')} / {_c(r['ev1'], '+,.0f')} | {_c(r['ev'] - r['ev0'], '+,.0f')} / {_c(r['ev'] - r['ev1'], '+,.0f')} |")
+                     f"{_c(r['ev'], '+,.0f')} | {_c(r['ev0'], '+,.0f')} / {_c(r['ev1'], '+,.0f')} ({_c(r['ev1_sd'], ',.0f')}) | {_c(r['ev'] - r['ev0'], '+,.0f')} / {_c(r['ev'] - r['ev1'], '+,.0f')} |")
         s.append("")
     return "\n".join(s)
 
