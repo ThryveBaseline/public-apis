@@ -1,4 +1,4 @@
-from research.status_page import checkpoint_lines, page
+from research.status_page import checkpoint_lines, html_page, page
 
 
 def _trade(c, d, r, why, side="long"):
@@ -23,3 +23,13 @@ def test_a_page_with_trades(tmp_path):
     pub = tmp_path / "status.md"
     pub.write_text("x\n\n## Checkpoints (protocol v1)\n\n- S3, first 10 sessions: **FLAG: count**\n")
     assert checkpoint_lines(str(pub)) == ["S3, first 10 sessions: **FLAG: count**"]
+
+
+def test_the_web_page():
+    state = {"dates": ["2026-10-06", "2026-10-07"],
+             "trades": [_trade("S3", "2026-10-06", 2.0, "target"), _trade("S3", "2026-10-07", -1.02, "stop", "short")]}
+    h = html_page(state, "OK", "2026-10-07 available", [], "2026-10-08T07:05:00Z")
+    assert h.startswith("<!doctype html>") and 'content="noindex, nofollow"' in h and "<b>OK</b>" in h and "<svg" in h
+    assert "<td>2</td>" in h and "+0.98" in h and "2 / 10" in h
+    w = html_page(None, "REFUSED: <bad>", "", [], "2026-10-08T07:05:00Z")
+    assert "&lt;bad&gt;" in w and "<svg" not in w and "#cf222e" in w
