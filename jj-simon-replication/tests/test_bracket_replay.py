@@ -92,3 +92,35 @@ def test_common_population_and_reproduction_check():
     assert "reaches the same exit reason on 100.00% and the largest absolute R difference is 0.0000" in text
     assert "1 ledger `session_end` trades" in text and "1 sealed wide-open trades that carried 50/75" in text
     assert "1 entries dropped for every variant" in text
+
+
+def test_report_end_to_end_formats_walk_forward_rows():
+    """Six development years on synthetic bars so the sequential chain has rows to format."""
+    rng = np.random.default_rng(1)
+    idx = []
+    d0 = pd.Timestamp("2018-01-08", tz=NY)
+    k = 0
+    while len(idx) < 7 * 60:
+        day = d0 + pd.offsets.BDay(k); k += 1
+        idx.append(pd.date_range(day.replace(hour=9, minute=30), day.replace(hour=16), freq="1min", inclusive="left"))
+    index = idx[0].append(idx[1:])
+    n = len(index)
+    px = 7000 + rng.normal(0, 3, n).cumsum()
+    bars = pd.DataFrame({"open": px, "high": px + np.abs(rng.normal(0, 4, n)), "low": px - np.abs(rng.normal(0, 4, n)), "close": px + rng.normal(0, 1, n)}, index=index)
+    bars["symbol"] = "A"
+    days = sorted(set(index.normalize()))
+    rows = []
+    for j, d in enumerate(days):
+        if j < 16 or j % 3:
+            continue
+        e = d.replace(hour=9, minute=35 + (j % 20)); i = index.get_loc(e)
+        rows.append(_trade(e, e + pd.Timedelta(minutes=15), 1 if j % 2 else -1, float(bars["open"].iloc[i]) + 0.25, 0.0,
+                           setup="continuation" if j % 2 else "reversion", reason="stop"))
+    t = pd.DataFrame(rows); t["entry_time"] = pd.to_datetime(t["entry_time"]); t["exit_time"] = pd.to_datetime(t["exit_time"])
+    rep = replay(t, bars, grid())
+    oos = days[-30].strftime("%Y-%m-%d")
+    text = report(t, rep, oos, 0, 0, 0, rep.attrs["n_no_context"])
+    assert "### Sequential walk-forward, family `all`" in text
+    assert "| sealed bracket in year |" in text
+    assert "Trade-weighted out-of-year expectancy of the chain" in text
+    assert "Reproduction check, ledger bracket" in text

@@ -208,7 +208,7 @@ def walk_forward(rep: pd.DataFrame, meta: pd.DataFrame, years: list[int], famili
         lines.append(f"### Sequential walk-forward, family `{fam}`\n")
         lines.append("| year | chosen on prior years | expectancy R in year | sealed bracket in year | trades |\n|---|---|---|---|---|")
         for _, r in ch.iterrows():
-            lines.append(f"| {int(r['year'])} | {r['chosen_on_prior_years']} | {r['expectancy_r_in_year']:+.3f} | {r['fixed_25_38_in_year']:+.3f} | {int(r['trades'])} |")
+            lines.append(f"| {int(r['year'])} | {r['chosen_on_prior_years']} | {r['expectancy_r_in_year']:+.3f} | {r['ledger_bracket_in_year']:+.3f} | {int(r['trades'])} |")
         lines.append(f"\nTrade-weighted out-of-year expectancy of the chain: {tot:+.3f} R against {tot_f:+.3f} R for the sealed bracket (each trade's own stop and target, flat at 16:00) over the same years.\n")
     return piv, lines
 
