@@ -28,7 +28,9 @@ and payout policy B4 uses, whose development lifetime EV per evaluation at H 250
 (fractional) on its preset; for every stream and policy with a selected configuration, whole micro contracts run on
 TopstepX (the frozen preset's soft daily limit is not usable below the sealed sizing; registration clarification 5).
 All at caps 1 and 5, on development paths and on the benchmark path. Both phases share one calendar, so a period in
-which no trade fits one phase's budget still runs: that phase's account never trades.
+which no trade fits one phase's budget still runs: that phase's account never trades. Every run is repeated with
+Topstep's call-up to a Live account at the path's 3rd payout request (amendment 10): every account closes, nothing more
+is bought, and the Live account counts for nothing, a lower bound. The reading needs both versions to qualify.
 
 usage: python research/b5_paths.py <B3's arguments> --registration docs/research/preregistration_b5_bootstrap.md \
            --trend-registration docs/research/preregistration_trend_exit.md \
@@ -55,7 +57,7 @@ from research.ledger_filters import sequential_pass  # noqa: E402
 from research.lifetime import POLICIES, RUNS, STREAMS, TOPSTEP_XFA, LifetimeAccount, lifetime_rows, walk_forward_lifetime  # noqa: E402
 from research.stream_report import on_span  # noqa: E402
 
-REGISTRATION_SHA256 = "2efd497dbb5cd333023ae754aef13eda94709ecb7ab88103fc12302685e6e48f"  # registered in df2bc28, clarified in 1995b2c and 7465eed
+REGISTRATION_SHA256 = "bdd8635616b27c07902ec3060a2990ee21004091a9e47430f400b4eacac5ac18"  # registered df2bc28, clarified 1995b2c 7465eed, amended eb01d37
 START_CASH = 2000.0
 H_SELECT = 250
 PATH_DAYS = 365
@@ -63,6 +65,8 @@ PAYOUT_DELAY = 5
 CAPS = (1, 5)
 SIZINGS = ("fractional", "whole micros")
 TOPSTEPX = "topstep_50k_x"  # whole micros run on this preset only (clarification 5)
+CALLUP = 3  # the call-up to a Live account at the path's 3rd payout request, the lower bound (amendment 10)
+CALLUPS = (None, CALLUP)
 
 
 class SlotAccount(LifetimeAccount):
@@ -117,9 +121,11 @@ def path_bounds(dates: pd.DatetimeIndex, last: pd.Timestamp | None) -> tuple[np.
 
 
 def simulate(dates: pd.DatetimeIndex, ev: tuple[np.ndarray, np.ndarray], fu: tuple[np.ndarray, np.ndarray], starts: np.ndarray, ends: np.ndarray,
-             firm: str, policy: str, cap: int) -> dict:
+             firm: str, policy: str, cap: int, callup: int | None = None) -> dict:
     """Every path in one vectorised pass (a path is a sim of each of its `cap` slot accounts). Returns per-path
-    arrays and the logs the gates compare."""
+    arrays and the logs the gates compare. With `callup`, a path is called up to a Live account at the end of the day
+    its payout requests (across all its accounts) reach that number: every account closes and the path stops
+    (amendment 10); it is not a ruin, and the Live account counts for nothing."""
     rules = PRESETS[firm]
     er, fr = eval_risk(firm), FUNDED_RISK
     ev_r, ev_m = ev
@@ -144,19 +150,23 @@ def simulate(dates: pd.DatetimeIndex, ev: tuple[np.ndarray, np.ndarray], fu: tup
     first_payout = np.full(p, np.nan)
     ruin_day = np.full(p, np.nan)
     ruined = np.zeros(p, dtype=bool)
+    called = np.zeros(p, dtype=bool)
+    callup_day = np.full(p, np.nan)
+    n_pay = np.zeros(p, dtype=int)
     eval_log, xfa_log = [], []
     rows = np.arange(p)
     for k in range(steps + 1):
         d = starts + k
         on = d < ends
-        for a in slots:  # a path that has just ended stops: whatever is live is cut off
-            a.phase[~on & (a.phase != INACTIVE)] = INACTIVE
+        run_ = on & ~called  # a path called up has stopped
+        for a in slots:  # a path that has ended or been called up stops: whatever is live is cut off
+            a.phase[~run_ & (a.phase != INACTIVE)] = INACTIVE
         cash += due[:, k]
         if k == steps:
             break
-        di = np.where(on, d, n)
+        di = np.where(run_, d, n)
         for j, a in enumerate(slots):  # the monthly fee of every live evaluation
-            live_eval = on & (a.phase == EVAL)
+            live_eval = run_ & (a.phase == EVAL)
             period = (day_no[np.minimum(d, n - 1)] - day_no[np.minimum(bought[j], n - 1)]) // BILLING_DAYS + 1
             owe = live_eval & (period > billed[j])
             pay = owe & (cash >= rules.eval_cost)
@@ -167,7 +177,7 @@ def simulate(dates: pd.DatetimeIndex, ev: tuple[np.ndarray, np.ndarray], fu: tup
             out["cancelled"] += cancel
             a.phase[cancel] = INACTIVE
         live = sum(((a.phase == EVAL) | (a.phase == FUNDED)).astype(int) for a in slots)
-        can = on & (cash >= rules.eval_cost) & (live < cap)
+        can = run_ & (cash >= rules.eval_cost) & (live < cap)
         for j, a in enumerate(slots):  # at most one purchase a day, in the first free slot
             buy = can & ((a.phase == INACTIVE) | (a.phase == FAILED))
             if buy.any():
@@ -182,7 +192,7 @@ def simulate(dates: pd.DatetimeIndex, ev: tuple[np.ndarray, np.ndarray], fu: tup
         for j, a in enumerate(slots):
             was_eval, was_funded = a.phase == EVAL, a.phase == FUNDED
             use = was_eval[:, None]
-            a.apply_day(np.where(use, ev_r[di], fu_r[di]), np.where(use, ev_m[di], fu_m[di]) & on[:, None])
+            a.apply_day(np.where(use, ev_r[di], fu_r[di]), np.where(use, ev_m[di], fu_m[di]) & run_[:, None])
             age[j] += was_eval
             passed = was_eval & (a.phase == FUNDED)
             failed = was_eval & (a.phase == FAILED)
@@ -210,6 +220,7 @@ def simulate(dates: pd.DatetimeIndex, ev: tuple[np.ndarray, np.ndarray], fu: tup
             due[got, k + PAYOUT_DELAY] += paid[got]
             out["payouts"] += got
             out["paid"] += paid
+            n_pay += got
             first_payout = np.where(np.isnan(first_payout) & got, k + 1, first_payout)
             for i in rows[got & tracking[j]]:
                 xfa_log.append((int(i), int(xfa_start[j, i]), "payout", int(d[i] - xfa_start[j, i] + 1), float(paid[i])))
@@ -218,14 +229,18 @@ def simulate(dates: pd.DatetimeIndex, ev: tuple[np.ndarray, np.ndarray], fu: tup
             for i in rows[aged]:
                 xfa_log.append((int(i), int(xfa_start[j, i]), "open", -1, 0.0))
             tracking[j] &= ~aged
+        if callup is not None:
+            hit = run_ & (n_pay >= callup)
+            callup_day[hit] = k + 1
+            called |= hit
         live = sum(((a.phase == EVAL) | (a.phase == FUNDED)).astype(int) for a in slots)
         pending = due[:, k + 1:].sum(axis=1) > 0
-        newly = on & ~ruined & (cash < rules.eval_cost) & (live == 0) & ~pending
+        newly = run_ & ~called & ~ruined & (cash < rules.eval_cost) & (live == 0) & ~pending
         ruin_day[newly] = k + 1
         ruined |= newly
         low = np.where(on, np.minimum(low, cash), low)
     out.update({"final_cash": cash + due[:, steps + 1:].sum(axis=1), "low": low, "ruined": ruined, "ruin_day": ruin_day,
-                "first_payout": first_payout, "eval_log": eval_log, "xfa_log": xfa_log})
+                "first_payout": first_payout, "called": called, "callup_day": callup_day, "eval_log": eval_log, "xfa_log": xfa_log})
     return out
 
 
@@ -297,7 +312,8 @@ def check_gates(res: dict, ev_stream: pd.DataFrame, fu_stream: pd.DataFrame, dat
     return len(e), len(f)
 
 
-def run(pre: pd.DataFrame, cal: pd.DatetimeIndex, last: pd.Timestamp | None, firm: str, policy: str, sizing: str, size: float, cap: int) -> dict:
+def run(pre: pd.DataFrame, cal: pd.DatetimeIndex, last: pd.Timestamp | None, firm: str, policy: str, sizing: str, size: float, cap: int,
+        callup: int | None = None) -> dict:
     """One configuration on one period's calendar `cal` (`last` = the cut for development paths, None for the benchmark
     path): the streams on that calendar, the paths, the simulation, the gates, and the summary."""
     if not len(cal):
@@ -312,7 +328,7 @@ def run(pre: pd.DataFrame, cal: pd.DatetimeIndex, last: pd.Timestamp | None, fir
     starts, ends = path_bounds(dates, last)
     if not len(starts):
         return {"paths": 0}
-    res = simulate(dates, day_arrays(rs_e, width), day_arrays(rs_f, width), starts, ends, firm, policy, cap)
+    res = simulate(dates, day_arrays(rs_e, width), day_arrays(rs_f, width), starts, ends, firm, policy, cap, callup)
     n_e, n_f = check_gates(res, ev_stream, fu_stream, dates, firm, policy)
     out = summarize(res, dates, starts, n_e, n_f)
     out.update({"eval_trades": int(len(ev_stream)), "funded_trades": int(len(fu_stream)),
@@ -333,6 +349,7 @@ def summarize(res: dict, dates: pd.DatetimeIndex, starts: np.ndarray, n_e: int, 
             "fall_p50": float(np.median(fall)), "fall_p90": float(np.percentile(fall, 90)),
             **{f"{k}_mean": float(res[k].mean()) for k in ("evals", "passes", "activations", "lost_passes", "cancelled", "xfa_breaches", "payouts", "paid", "fees")},
             "first_payout_median": float(np.nanmedian(fp)) if np.isfinite(fp).any() else float("nan"), "p_no_payout": float(np.isnan(fp).mean()),
+            "p_callup": float(res["called"].mean()), "callup_day_median": float(np.nanmedian(res["callup_day"])) if res["called"].any() else float("nan"),
             "gate_evaluations": n_e, "gate_funded": n_f}
 
 
@@ -411,13 +428,23 @@ def qualifies(x: dict) -> bool:
     return bool(x.get("paths") and x["p_ruin"] <= 0.10 and x["cash_p50"] > START_CASH and x["cash_p25"] >= 1000.0)
 
 
+def verdict(ok: dict) -> str:
+    """The amended reading for one stream and policy, from {(cap, call-up): qualifies} on development whole micros:
+    both versions must qualify at one cap."""
+    if any(ok.get((cap, None), False) and ok.get((cap, CALLUP), False) for cap in CAPS):
+        return "**yes**"
+    if any(ok.get((cap, None), False) for cap in CAPS):
+        return "no: only without the call-up (depends on the Live account)"
+    return "no"
+
+
 def _f(x, fmt: str) -> str:
     return "n/a" if x is None or not np.isfinite(x) else format(x, fmt)
 
 
 def report(sel: list[dict], results: list[dict], notes: list[str], gate_note: str, reg_sha: str, cut: pd.Timestamp) -> str:
     s = ["# B5: the $2,000 bootstrap on replayed market paths\n", gate_note, "",
-         f"Implements docs/research/preregistration_b5_bootstrap.md as registered in df2bc28 and clarified in 1995b2c and 7465eed, before any B5 number (sha256 of the file read: {reg_sha}, the pinned value). "
+         f"Implements docs/research/preregistration_b5_bootstrap.md as registered in df2bc28, clarified in 1995b2c and 7465eed and amended in eb01d37, all before any B5 number (sha256 of the file read: {reg_sha}, the pinned value). "
          f"Development: New York days through {cut.date()}; benchmark from {(cut + pd.Timedelta(days=1)).date()}, one path over the benchmark year, reported beside and never used. "
          f"From ${START_CASH:,.0f} of cash, each path runs Topstep 50K evaluations and Express Funded accounts for {PATH_DAYS} calendar days on the stream's own trading days, every live account taking the same trades on the same day: "
          "$49 an evaluation at purchase and every 30 calendar days it stays live, $149 to activate a pass, payouts net of the split credited five trading days after they are requested, at most one purchase a day, "
@@ -425,6 +452,7 @@ def report(sel: list[dict], results: list[dict], notes: list[str], gate_note: st
          "Gates, passed on every run: each evaluation compared (those cancelled for fees or cut off by the path's end are not) equals the frozen pass walk-forward for its start day in outcome and day, and each Express Funded account's first payout within 60 days "
          "equals the frozen payout walk-forward's (B4's walk-forward of the same policy under \"wait\") in outcome, day and amount; B4's own gate passed on every stream in the selection. "
          "Whole micros run on TopstepX only (clarification 5); a selected configuration on the frozen topstep_50k preset is shown at its B4 size for the record and decides nothing. "
+         f"Every run is shown twice (amendment 10): without a call-up, and with Topstep's call-up to a Live account at the path's {CALLUP}rd payout request, where every account closes, nothing more is bought and the Live account counts for nothing (a lower bound). "
          "Not modelled: Topstep's limit of 20 account purchases a month, which binds on part of the paths at cap 5 (in the review's synthetic probe enforcing it moved P(ruin) by under a point).\n",
          "Streams: " + "; ".join(notes) + ".\n",
          f"## Which configurations run (B4's development lifetime EV per evaluation at H {H_SELECT})\n",
@@ -444,36 +472,41 @@ def report(sel: list[dict], results: list[dict], notes: list[str], gate_note: st
     for c in results:
         role = " (for the record: decides nothing)" if c["firm"] != TOPSTEPX else ""
         s += [f"### {c['stream']}: {c['firm']}, {c['policy']}{role}\n",
-              "| sizing | cap | period | paths (years; span) | P(ruin) | median ruin day | cash at the end: p10 / p25 / median / p75 / p90 | mean | P(above $2,000) | P(above $4,000) | deepest fall: median / p90 | frozen bootstrap: P(bust), first payout days, funded at month 12 |",
-              "|---|---|---|---|---|---|---|---|---|---|---|---|"]
+              "| sizing | cap | call-up | period | paths (years; span) | P(ruin) | median ruin day | cash at the end: p10 / p25 / median / p75 / p90 | mean | P(above $2,000) | P(above $4,000) | deepest fall: median / p90 | called up (median day) | frozen bootstrap: P(bust), first payout days, funded at month 12 |",
+              "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
         for x in c["runs"]:
             o, fz = x["out"], x["frozen"]
             frozen = f"{_f(fz['p_bust'], '.0%')}, {_f(fz['first_payout_days'], '.0f')}, {_f(fz['funded_month12'], '.0f')}"
+            cu = "none" if x["callup"] is None else f"at payout {x['callup']}"
             if not o.get("paths"):
-                s.append(f"| {x['sizing_label']} | {x['cap']} | {x['period']} | 0 | n/a | n/a | n/a | n/a | n/a | n/a | n/a | {frozen} |")
+                s.append(f"| {x['sizing_label']} | {x['cap']} | {cu} | {x['period']} | 0 | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | {frozen} |")
                 continue
             q = " / ".join(f"{o[k]:,.0f}" for k in ("cash_p10", "cash_p25", "cash_p50", "cash_p75", "cash_p90"))
-            s.append(f"| {x['sizing_label']} | {x['cap']} | {x['period']} | {o['paths']} ({o['years']:.1f}; {o['span_days']} days) | {o['p_ruin']:.1%} | {_f(o['ruin_day_median'], '.0f')} | {q} | {o['cash_mean']:,.0f} | "
-                     f"{o['p_above_2000']:.1%} | {o['p_above_4000']:.1%} | {o['fall_p50']:,.0f} / {o['fall_p90']:,.0f} | {frozen} |")
-        s += ["", "| sizing | cap | period | trades: evaluation, funded | evaluations | passes | lost passes | cancelled | Express Funded breaches | payouts | fees | paid | first payout requested (median day) | no payout | gate: evaluations, funded compared |",
-              "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+            called = "n/a" if x["callup"] is None else f"{o['p_callup']:.1%} ({_f(o['callup_day_median'], '.0f')})"
+            s.append(f"| {x['sizing_label']} | {x['cap']} | {cu} | {x['period']} | {o['paths']} ({o['years']:.1f}; {o['span_days']} days) | {o['p_ruin']:.1%} | {_f(o['ruin_day_median'], '.0f')} | {q} | {o['cash_mean']:,.0f} | "
+                     f"{o['p_above_2000']:.1%} | {o['p_above_4000']:.1%} | {o['fall_p50']:,.0f} / {o['fall_p90']:,.0f} | {called} | {frozen} |")
+        s += ["", "| sizing | cap | call-up | period | trades: evaluation, funded | evaluations | passes | lost passes | cancelled | Express Funded breaches | payouts | fees | paid | first payout requested (median day) | no payout | gate: evaluations, funded compared |",
+              "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
         for x in c["runs"]:
             o = x["out"]
             if not o.get("paths"):
                 continue
-            s.append(f"| {x['sizing_label']} | {x['cap']} | {x['period']} | {o['eval_trades']}, {o['funded_trades']} | {o['evals_mean']:.1f} | {o['passes_mean']:.2f} | {o['lost_passes_mean']:.2f} | {o['cancelled_mean']:.2f} | "
+            cu = "none" if x["callup"] is None else f"at payout {x['callup']}"
+            s.append(f"| {x['sizing_label']} | {x['cap']} | {cu} | {x['period']} | {o['eval_trades']}, {o['funded_trades']} | {o['evals_mean']:.1f} | {o['passes_mean']:.2f} | {o['lost_passes_mean']:.2f} | {o['cancelled_mean']:.2f} | "
                      f"{o['xfa_breaches_mean']:.2f} | {o['payouts_mean']:.2f} | {o['fees_mean']:,.0f} | {o['paid_mean']:,.0f} | {_f(o['first_payout_median'], '.0f')} | {o['p_no_payout']:.1%} | {o['gate_evaluations']}, {o['gate_funded']} |")
         s.append("")
-    s += ["## Reading (the registered rule)\n",
-          "A configuration goes on to a forward test only if, on development paths in whole micros (on TopstepX) at either cap, P(ruin within 12 months) is at most 10%, the median cash at 12 months is above $2,000 and its 25th percentile is at least $1,000. "
+    s += ["## Reading (the registered rule, as amended)\n",
+          "A configuration goes on to a forward test only if, on development paths in whole micros on TopstepX, at one cap, the thresholds hold both without a call-up and with the call-up at the "
+          f"{CALLUP}rd payout: P(ruin within 12 months) at most 10%, median final cash above $2,000, its 25th percentile at least $1,000. One that qualifies only without the call-up depends on the Live account's value and is not carried forward on this evidence. "
           "The benchmark path decides nothing; clean proof comes only from data after 2026-10-05.\n",
-          "| stream | policy | cap 1 | cap 5 | goes on to a forward test |", "|---|---|---|---|---|"]
+          "| stream | policy | cap 1: no call-up / call-up | cap 5: no call-up / call-up | goes on to a forward test |", "|---|---|---|---|---|"]
     for c in (x for x in results if x["firm"] == TOPSTEPX):
-        dev = {x["cap"]: x["out"] for x in c["runs"] if x["sizing"] == "whole micros" and x["period"] == "development"}
+        dev = {(x["cap"], x["callup"]): x["out"] for x in c["runs"] if x["sizing"] == "whole micros" and x["period"] == "development"}
         if not dev:
             continue
-        cells = ["yes" if qualifies(dev.get(cap, {})) else "no" for cap in CAPS]
-        s.append(f"| {c['stream']} | {c['policy']} | " + " | ".join(cells) + f" | {'**yes**' if 'yes' in cells else 'no'} |")
+        ok = {key: qualifies(o) for key, o in dev.items()}
+        cells = [" / ".join("yes" if ok.get((cap, cu), False) else "no" for cu in CALLUPS) for cap in CAPS]
+        s.append(f"| {c['stream']} | {c['policy']} | " + " | ".join(cells) + f" | {verdict(ok)} |")
     s.append("")
     return "\n".join(s)
 
@@ -512,11 +545,13 @@ def main() -> int:
                 c = {"stream": item["stream"], "firm": item["firm"], "policy": item["policy"], "runs": []}
                 results.append(c)
             label = f"{item['size']:.2f} of the budget" if item["sizing"] == "fractional" else "whole micros"
+            frozen = {period: frozen_row(pre_s, cal_s, cut, item["firm"], item["sizing"], item["size"], period) for period in ("development", "benchmark")}
             for cap in CAPS:
-                for period, part, last in (("development", cal_s[cal_s <= cut], cut), ("benchmark", cal_s[cal_s > cut], None)):
-                    out = run(pre_s, part, last, item["firm"], item["policy"], item["sizing"], item["size"], cap)
-                    frozen = frozen_row(pre_s, cal_s, cut, item["firm"], item["sizing"], item["size"], period)
-                    c["runs"].append({"sizing": item["sizing"], "sizing_label": label, "cap": cap, "period": period, "out": out, "frozen": frozen})
+                for callup in CALLUPS:
+                    for period, part, last in (("development", cal_s[cal_s <= cut], cut), ("benchmark", cal_s[cal_s > cut], None)):
+                        out = run(pre_s, part, last, item["firm"], item["policy"], item["sizing"], item["size"], cap, callup)
+                        c["runs"].append({"sizing": item["sizing"], "sizing_label": label, "cap": cap, "callup": callup, "period": period, "out": out,
+                                          "frozen": frozen[period]})
     except ValueError as e:
         raise SystemExit(f"refusing to report: {e}")
     text = report(sel, results, notes, g["note"], reg_sha, cut)

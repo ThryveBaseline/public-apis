@@ -18,10 +18,10 @@ def _arrays(rows, width=2):
     return day_arrays([np.array(x, dtype=float) for x in rows], width)
 
 
-def _one_path(ev_rows, fu_rows, firm="topstep_50k_x", policy="ask", cap=1, days=None):
+def _one_path(ev_rows, fu_rows, firm="topstep_50k_x", policy="ask", cap=1, days=None, callup=None):
     days = days or len(ev_rows)
     dates = pd.DatetimeIndex(pd.bdate_range("2024-01-02", periods=days))
-    return simulate(dates, _arrays(ev_rows), _arrays(fu_rows), np.array([0]), np.array([days]), firm, policy, cap)
+    return simulate(dates, _arrays(ev_rows), _arrays(fu_rows), np.array([0]), np.array([days]), firm, policy, cap, callup)
 
 
 def test_a_hand_computed_path():
@@ -226,7 +226,8 @@ def test_cli_end_to_end_on_four_years(sealed_4y, tmp_path, monkeypatch):
     assert "NOT THE REGISTERED RUN" in text and b5_paths.REGISTRATION_SHA256 in text and "## Which configurations run" in text
     assert "| S4 S3 + A+ reversion, sealed bracket | topstep_50k_x | 1.00 | ask |" in text
     if "| yes |" in text.split("## Results")[0]:
-        assert "## Reading (the registered rule)" in text and "| whole micros | 5 | development |" in text and "| 1.00 of the budget | 1 | benchmark |" in text
+        assert "## Reading (the registered rule, as amended)" in text and "| whole micros | 5 | none | development |" in text
+        assert "| whole micros | 5 | at payout 3 | development |" in text and "| 1.00 of the budget | 1 | none | benchmark |" in text
     else:
         assert "B5 stops here" in text
     for which, pos in (("B5", 1), ("trend-exit", 3), ("conditional-edge", 5)):
@@ -237,3 +238,40 @@ def test_cli_end_to_end_on_four_years(sealed_4y, tmp_path, monkeypatch):
         monkeypatch.setattr("sys.argv", ["b5_paths.py", *sealed_4y["b3"], *bad, "--out", str(tmp_path / "x.md"), "--allow-other-cut"])
         with pytest.raises(SystemExit, match=f"the {which} registration file"):
             b5_paths.main()
+
+
+def test_the_call_up_closes_everything_at_the_nth_payout():
+    """The hand-computed path's payouts are requested on days 9, 14 and 19. Called up at the first, the path stops
+    that evening with $675 pending; at the third, it keeps everything it had (its last day trades nothing new)."""
+    one = _one_path([[0.8]] * 20, [[0.6]] * 20, callup=1)
+    assert one["called"][0] and one["callup_day"][0] == 9 and one["payouts"][0] == 1 and not one["ruined"][0]
+    assert one["final_cash"][0] == pytest.approx(START_CASH - 198.0 + 675.0)
+    three = _one_path([[0.8]] * 20, [[0.6]] * 20, callup=3)
+    assert three["callup_day"][0] == 19 and three["payouts"][0] == 3
+    assert three["final_cash"][0] == pytest.approx(START_CASH - 198.0 + 675.0 + 1012.5 + 1181.25)
+    none = _one_path([[0.8]] * 20, [[0.6]] * 20)
+    assert not none["called"][0] and np.isnan(none["callup_day"][0])
+
+
+def test_call_up_runs_pass_their_gates_and_conserve_cash(stream, monkeypatch):
+    pre, cal, cut = stream
+    kept = {}
+    real = b5_paths.summarize
+
+    def keep(res, *a):
+        kept["res"] = res
+        return real(res, *a)
+    monkeypatch.setattr(b5_paths, "summarize", keep)
+    out = run(pre, cal[cal <= cut], cut, "topstep_50k_x", "ask", "whole micros", 1.0, 5, callup=3)
+    res = kept["res"]
+    assert out["p_callup"] > 0.5 and out["gate_evaluations"] > 0 and not (res["called"] & res["ruined"]).any()
+    assert np.allclose(res["final_cash"], b5_paths.START_CASH - res["fees"] + res["paid"])
+    assert (res["payouts"][res["called"]] >= 3).all()
+
+
+def test_the_amended_reading_needs_both_versions_at_one_cap():
+    from research.b5_paths import verdict
+    assert verdict({(1, None): True, (1, 3): True}) == "**yes**"
+    assert verdict({(5, None): True, (5, 3): True, (1, None): False}) == "**yes**"
+    assert verdict({(1, None): True, (1, 3): False, (5, None): False, (5, 3): True}).startswith("no: only without the call-up")
+    assert verdict({(1, None): False, (1, 3): True}) == "no"
