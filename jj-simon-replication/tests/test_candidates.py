@@ -8,8 +8,8 @@ from fpt.strategy import StrategyConfig, generate_trades
 from research.anatomy import load_trades
 from research.bracket_replay import dropped_rows, grid, replay, walk_forward
 from research.candidates import (ATR_NAMES, FIRMS, NEEDED_VARIANTS, START_CASH, bootstrap, build_streams, check_grid, ev_net, fees_per_eval, firm_rows,
-                                 format_bootstrap, format_row, hold_drift, mean_se, pooled_choices, s3_bracket, score, score_whole, sealed_firm_rows,
-                                 variant_frame, whole_contracts)
+                                 format_bootstrap, format_row, hold_drift, mean_se, pooled_choices, s3_bracket, score, score_sized, score_whole,
+                                 sealed_firm_rows, variant_frame, whole_contracts)
 from research.ledger_filters import sequential_pass
 
 NY = "America/New_York"
@@ -204,6 +204,7 @@ def test_cli_gate_reproduces_the_sealed_rows_and_refuses_a_changed_one(tmp_path,
     text = (tmp_path / "b3.md").read_text()
     assert f"reproduces all 8 firm rows of {tmp_path / 'report.md'} character for character" in text
     assert "## Continuation by direction" in text and "| benchmark |" in text and "## Whole contracts, topstep_50k" in text
+    assert "## Position size at Topstep's daily loss limit, topstep_50k" in text
     row = next(x for x in rep.text.splitlines() if x.startswith("| topstep_50k |"))
     cells = row.split(" | ")
     cells[4] = str(int(cells[4]) + 1)  # days to pass, in sample: one character's worth of difference
@@ -221,6 +222,10 @@ def test_cli_gate_reproduces_the_sealed_rows_and_refuses_a_changed_one(tmp_path,
     (tmp_path / "manifest.json").write_text(json.dumps(man))
     with pytest.raises(SystemExit, match="lacks 1 of the variants"):
         candidates.main()  # a replay file without the whole grid would silently change the chain
+    del man["outputs"]["report_sha256"]
+    (tmp_path / "manifest.json").write_text(json.dumps(man))
+    with pytest.raises(SystemExit, match="the manifest has no 'report_sha256' hash"):
+        candidates.main()
 
 
 def test_bootstrap_rows_reproduce_the_frozen_report(engine):
@@ -248,38 +253,56 @@ def test_s3_bracket_maps_years_and_the_benchmark():
     assert (s3_bracket(t, {}, pd.Timestamp("2014-09-30")) == "ledger_bracket").all()
 
 
-def test_whole_contracts_size_in_micros_and_leave_the_sealed_brackets_unchanged(engine):
+def test_whole_contracts_size_on_the_full_stop_out(engine):
     bars, trades = engine
-    # sizes: 25 points is 20 micros at $1,000 and 10 at $500; 207 points is 2 and 1 micros (83%); 300 points cannot
-    # be taken at $500 and is 1 micro (60%) at $1,000; 4 points hits the 50-micro cap (40%) at $1,000
+    # one micro's full stop-out is (stop + 0.25) x $2 + $0.50: 25 points is $51, so 19 micros at $1,000 (size 0.95) and 9 at
+    # $500 (0.90); 207 points is $415, 2 and 1 micros (0.828); 300 points is $601, 1 micro (0.6) at $1,000 and none at $500;
+    # 4 points is $9, capped at 50 micros (0.4 and 0.8)
     t = trades.head(4).copy()
     t["stop_pts"] = [25.0, 207.0, 300.0, 4.0]
     t["r"] = 1.0
     t["entry_time"] = [pd.Timestamp(f"2025-01-0{i + 6} 09:35", tz=NY) for i in range(4)]
     t["exit_time"] = t["entry_time"] + pd.Timedelta(minutes=5)
     ev, fu = whole_contracts(t, 1000.0, 50), whole_contracts(t, 500.0, 50)
-    assert list(ev["size"].round(4)) == [1.0, 0.828, 0.6, 0.4] and list(ev["r"].round(4)) == [1.0, 0.828, 0.6, 0.4]
-    assert list(fu["size"].round(4)) == [1.0, 0.828, 0.8]  # 300 points: zero micros at $500, not taken
+    assert list(ev["size"].round(4)) == [0.95, 0.828, 0.6, 0.4] and list(ev["r"].round(4)) == [0.95, 0.828, 0.6, 0.4]
+    assert list(fu["size"].round(4)) == [0.9, 0.828, 0.8]  # 300 points: zero micros at $500, not taken
     t.loc[t.index[0], "stop_pts"] = np.nan
     with pytest.raises(ValueError, match="no positive stop"):
         whole_contracts(t, 500.0, 50)
-    # the sealed ledger's 25 and 50-point stops size exactly, so the whole-contract rows equal the frozen ones
+    # an entry that rounds to zero is dropped before the sequential pass: it neither holds a position nor blocks the next
+    a = trades.head(2).copy()
+    a["stop_pts"], a["r"] = [300.0, 25.0], [1.0, 1.0]
+    a["entry_time"] = [pd.Timestamp("2025-03-03 09:35", tz=NY), pd.Timestamp("2025-03-03 09:50", tz=NY)]
+    a["exit_time"] = [pd.Timestamp("2025-03-03 10:30", tz=NY), pd.Timestamp("2025-03-03 10:10", tz=NY)]
+    assert list(whole_contracts(a, 1000.0, 50)["stop_pts"]) == [300.0]  # taken at one micro, it blocks the second entry
+    assert list(whole_contracts(a, 500.0, 50)["stop_pts"]) == [25.0]  # not takeable at $500, so the second entry is taken
+    # score_whole: the evaluation trades the stream sized to the evaluation budget, the funded phase the one sized to $500
     last = trades["entry_time"].dt.tz_convert(NY).dt.normalize().dt.tz_localize(None).max()
     cut = (last - pd.DateOffset(months=2)).normalize()
     cal = trading_days_of(bars)
+    wide = trades.assign(stop_pts=150.0)  # $301 a micro: 3 at $1,000 (0.9), 1 at $500 (0.6)
+    w = score_whole(wide, cal, cut)
+    assert w["development"]["eval_size"] == pytest.approx(0.9) and w["development"]["funded_size"] == pytest.approx(0.6)
     assert set(trades["stop_points"]) <= {25.0, 50.0}
-    frac = score(sequential_pass(trades), cal, cut)
     whole = score_whole(trades, cal, cut)
-    for per in ("development", "benchmark"):
-        assert whole[per]["eval_size"] == 1.0 and whole[per]["funded_size"] == 1.0
-        pd.testing.assert_frame_equal(whole[per]["firms"], frac[per]["firms"].iloc[:1])
-    # and a split evaluation / funded stream is scored on its own two streams
-    d = trades["entry_time"].dt.tz_convert(NY).dt.normalize().dt.tz_localize(None) <= cut
+    ev, fu = whole_contracts(trades, 1000.0, 50), whole_contracts(trades, 500.0, 50)
+    assert set(ev["size"].round(4)) <= {0.95, 0.9} and set(fu["size"].round(4)) <= {0.9, 0.8}
+    for per, m in (("development", lambda d: d <= cut), ("benchmark", lambda d: d > cut)):
+        de, df_ = ev[m(ev["entry_time"].dt.tz_convert(NY).dt.normalize().dt.tz_localize(None))], fu[m(fu["entry_time"].dt.tz_convert(NY).dt.normalize().dt.tz_localize(None))]
+        want = firm_rows(de, cal[m(cal)], firms=("topstep_50k",), funded_part=df_)
+        pd.testing.assert_frame_equal(whole[per]["firms"], want)
+
+
+def test_score_sized_scales_both_phases(engine):
+    bars, trades = engine
+    last = trades["entry_time"].dt.tz_convert(NY).dt.normalize().dt.tz_localize(None).max()
+    cut = (last - pd.DateOffset(months=2)).normalize()
+    cal = trading_days_of(bars)
     st = sequential_pass(trades)
-    sd = st[st["entry_time"].dt.tz_convert(NY).dt.normalize().dt.tz_localize(None) <= cut]
-    half = sd.iloc[: len(sd) // 2]
-    mixed = firm_rows(sd, cal[cal <= cut], firms=("topstep_50k",), funded_part=half)
-    assert mixed.iloc[0]["n_eval_starts"] == frac["development"]["firms"].iloc[0]["n_eval_starts"] and d.any()
+    got = score_sized(st, cal, cut, 0.98)
+    dev = st[st["entry_time"].dt.tz_convert(NY).dt.normalize().dt.tz_localize(None) <= cut].assign(r=lambda x: x["r"] * 0.98)
+    assert got["development"] == firm_rows(dev, cal[cal <= cut], firms=("topstep_50k",)).iloc[0].to_dict()
+    assert score_sized(st, cal, cut, 1.0)["benchmark"] == score(st, cal, cut)["benchmark"]["firms"].iloc[0].to_dict()
 
 
 def test_check_grid_refuses_an_incomplete_replay():

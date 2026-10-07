@@ -17,8 +17,9 @@ Streams (provenance: docs/reviews/run1_b2_read.md):
   S0   sealed ledger (the gate stream)
   S0r  sealed brackets replayed, flat at 16:00: the control for S1-S4 (same entries, same flat); S0 differs from it
        by the entries the replay drops for lack of context and by the ledger's exits after 16:00
-  S1   continuation only, sealed bracket. Exact: its entries are those of a frozen-engine run with reversion off,
-       because a reversion can never precede or block a continuation in a session
+  S1   continuation only, sealed bracket. Exact: its entries are those of a frozen-engine run with reversion off
+       (less the entries the replay drops for lack of context), because a reversion can never precede or block a
+       continuation in a session
   S2   continuation, plus reversion A+ only (his funded entry trigger), sealed bracket
   S3   continuation only, with the bracket chosen year by year by the pooled walk-forward over earlier development
        years among the ATR-scaled brackets (the sealed bracket before the chain starts; benchmark trades take the
@@ -29,10 +30,14 @@ S2-S4 are built from the sealed entries, so they cannot contain an A+ reversion 
 position suppressed, nor a continuation re-entry an earlier ATR exit would have freed: research/engine.py re-simulates
 whatever survives.
 
-Sizing. The frozen account books every trade at R x its risk budget whatever the stop (fractional contracts); for
-the sealed 25 and 50-point brackets that is exact in micro NQ, for S3's ATR stops it is not. A whole-contract table
-sizes each entry in micro NQ to the largest count whose stop-out stays within the budget (capped at the preset's
-contract limit), skips entries that round to zero, and scales R by the risk actually carried.
+Sizing. The frozen account books every trade at R x its risk budget whatever the stop (fractional contracts). At
+that sizing a stop-out costs 1.02 R with slippage and commission, which on Topstep 50K is $1,020 against a $1,000
+soft daily loss limit: the firm caps the day at exactly $1,000, and two such days use exactly the $2,000 drawdown,
+so the account fails; a stream sized 2% smaller survives a third loss. Every Topstep number at the sealed sizing,
+the sealed report's included, sits on this edge, so B3 shows it: a sensitivity table at 1.00, 0.98 and 0.95 of
+the budget, and a whole-contract table sizing each entry in micro NQ to the largest count whose full stop-out
+(slippage and commission included) stays within the budget, capped at the preset's contract limit, skipping
+entries that round to zero and scaling R by the risk carried.
 
 Plus a direction split (long / short) of continuation under the sealed bracket, S3's brackets and the hold-to-16:00
 control, and a drift control for the hold: each trade held to 16:00 against the same-direction trade from the same
@@ -75,6 +80,8 @@ CHAIN_START = 3  # as research/bracket_replay.walk_forward: the chain starts at 
 MNQ_POINT_VALUE = 2.0  # micro E-mini Nasdaq-100, first traded 2019-05-06
 MICROS_PER_MINI = 10  # the firms count ten micros as one mini against the contract limit
 DAYS_PER_MONTH = 22  # trading days in a billing month, as fpt.bootstrap.HisStatsConfig
+MICRO_COMMISSION_RT = COMMISSION_RT / MICROS_PER_MINI  # the replay's $5 per NQ round trip, per micro: $0.50 (real micro fees run higher)
+SIZES = (1.00, 0.98, 0.95)  # fractional sizes around Topstep's daily-loss-limit edge
 
 
 def firm_rows(part: pd.DataFrame, cal_part: pd.DatetimeIndex, firms=FIRMS, eval_risk_mode: str = "two_trade", eval_risk: float = 500.0,
@@ -164,13 +171,15 @@ def score(stream: pd.DataFrame, cal: pd.DatetimeIndex, cut: pd.Timestamp) -> dic
 
 def whole_contracts(pre: pd.DataFrame, budget: float, cap: int) -> pd.DataFrame:
     """The stream a whole-contract account takes from the candidate entries `pre` (before the sequential pass): each
-    trade in micro NQ ($2 a point) at the largest count whose stop-out stays within `budget`, at most `cap`; a trade
-    that rounds to zero contracts is not taken; then the sequential pass. `size` is the share of the budget actually
-    at risk, and R is scaled by it, so the frozen account's R x budget is the dollar result of those contracts."""
+    trade in micro NQ ($2 a point) at the largest count whose full stop-out (the stop plus the exit slippage, plus the
+    round-trip commission) stays within `budget`, at most `cap`; a trade that rounds to zero contracts is not taken;
+    then the sequential pass. `size` is the contracts' stop risk as a share of the budget, and R is scaled by it, so
+    the frozen account's R x budget is the dollar result of those contracts."""
     stop = (pre["stop_pts"] if "stop_pts" in pre.columns else pre["stop_points"]).astype(float).to_numpy()
     if not np.isfinite(stop).all() or (stop <= 0).any():
         raise ValueError("a candidate trade has no positive stop to size from")
-    n = np.minimum(np.floor(budget / (stop * MNQ_POINT_VALUE)), cap)
+    per_micro = (stop + SLIPPAGE) * MNQ_POINT_VALUE + MICRO_COMMISSION_RT
+    n = np.minimum(np.floor(budget / per_micro), cap)
     keep = n > 0
     t = pre[keep].copy()
     t["size"] = n[keep] * stop[keep] * MNQ_POINT_VALUE / budget
@@ -193,6 +202,15 @@ def score_whole(pre: pd.DataFrame, cal: pd.DatetimeIndex, cut: pd.Timestamp, fir
                       "funded_trades": int(len(pf)), "funded_size": float(pf["size"].mean()) if len(pf) else float("nan"),
                       "firms": firm_rows(pe, cal_part, firms=(firm,), funded_part=pf) if len(pe) and len(pf) else pd.DataFrame()}
     return out
+
+
+def score_sized(stream: pd.DataFrame, cal: pd.DatetimeIndex, cut: pd.Timestamp, size: float, firm: str = "topstep_50k") -> dict:
+    """One firm's row per period with every trade's R scaled by `size` (fractional), in both phases."""
+    t = stream.copy()
+    t["r"] = t["r"].astype(float) * size
+    day = ny_day(t)
+    return {label: (firm_rows(t[m], cal[mc], firms=(firm,)).iloc[0].to_dict() if m.any() else None)
+            for label, m, mc in (("development", day <= cut, cal <= cut), ("benchmark", day > cut, cal > cut))}
 
 
 def sealed_firm_rows(report_text: str) -> dict:
@@ -409,7 +427,7 @@ def report(streams: dict, pre: dict, chain: dict, cal: pd.DatetimeIndex, cut: pd
     s.append("Every stream goes through the sequential pass (one position at a time, three-loss session stop, each trade's own exit time) and is scored with the frozen evaluator's walk-forward pass and payout functions under each firm preset and the sealed cut. "
              "The benchmark year is reported beside and never used to choose. EV per evaluation is the frozen calculator: pass x payout x median payout - fee.\n")
     s.append("Read with: S0r, not S0, is the control for S1-S4 (same entries, same 16:00 flat); S0 differs from it by the entries the replay drops for lack of context and by the ledger's exits after 16:00. "
-             "S1's entries are exactly those of a frozen-engine run with reversion off. S2-S4 are built from the sealed entries: they cannot contain an A+ reversion that the sealed three-loss stop or open position suppressed, nor a continuation re-entry that an earlier ATR exit would have freed (research/engine.py re-simulates whatever survives). "
+             "S1's entries are exactly those of a frozen-engine run with reversion off, less the entries the replay drops for lack of context. S2-S4 are built from the sealed entries: they cannot contain an A+ reversion that the sealed three-loss stop or open position suppressed, nor a continuation re-entry that an earlier ATR exit would have freed (research/engine.py re-simulates whatever survives). "
              "Sizing: these tables book every trade at R x its budget whatever the stop ($1,000 or $2,000 in the evaluation by firm, $500 funded), as the frozen evaluator does, which is fractional contracts; the whole-contract table below sizes in micro NQ.\n")
     links = sorted(k for k in chain if k != "benchmark")
     if chain:
@@ -432,11 +450,26 @@ def report(streams: dict, pre: dict, chain: dict, cal: pd.DatetimeIndex, cut: pd
     s.append("")
     rules = FIRM_PRESETS["topstep_50k"]
     cap = MICROS_PER_MINI * rules.max_contracts
+    s.append("## Position size at Topstep's daily loss limit, topstep_50k\n")
+    s.append("At the sealed sizing a stop-out costs 1.02 R with slippage and commission: $1,020 in the evaluation against the preset's $1,000 soft daily loss limit, which caps the day at exactly $1,000 and stops it, so two losing days use exactly the $2,000 drawdown and the account fails at the threshold. "
+             "Sized 2% smaller (0.98) a stop-out stays inside the limit and the account survives a third loss, though two wins (2.98 R) no longer reach the $3,000 target; the funded phase has the same kind of edge at four stop-outs. "
+             "Every Topstep row at exactly the sealed sizing, the sealed report's included, sits on this edge (topstep_100k too: its limit is $2,000 at $2,000 of risk); FundedNext and Tradeify have no limit at 1 R. Fractional sizes, both phases scaled alike.\n")
+    s.append("| stream | period | P(pass) at " + " / ".join(f"{z:.2f}" for z in SIZES) + " | P(payout) at " + " / ".join(f"{z:.2f}" for z in SIZES) + " | EV net of all fees at " + " / ".join(f"{z:.2f}" for z in SIZES) + " |")
+    s.append("|---|---|---|---|---|")
+    for name, st in streams.items():
+        sized = {z: score_sized(st, cal, cut, z) for z in SIZES}
+        for per in ("development", "benchmark"):
+            rows_ = [sized[z][per] for z in SIZES]
+            if any(x is None for x in rows_):
+                continue
+            s.append(f"| {name} | {per} | " + " / ".join(f"{x['pass_rate']:.1%}" for x in rows_) + " | " + " / ".join(f"{x['payout_rate']:.1%}" for x in rows_)
+                     + " | " + " / ".join(f"{ev_net({**x, 'firm': 'topstep_50k'}):+,.0f}" for x in rows_) + " |")
+    s.append("")
     s.append("## Whole contracts, topstep_50k\n")
-    s.append(f"Each candidate's entries sized in whole micro NQ contracts ($2 a point): the largest count whose stop-out stays within the budget (${rules.profit_target / 3:,.0f} in the evaluation, ${FUNDED_RISK:,.0f} funded), at most {cap} (the preset's {rules.max_contracts} NQ). "
-             "An entry that rounds to zero contracts is not taken, the sequential pass runs on what is taken, and each R is scaled by the share of the budget actually at risk (size). "
-             "Micro NQ began trading on 2019-05-06; this applies today's contract menu to every year, which is the question for an account opened now (before May 2019 only NQ existed, and a stop wider than 50 points could not be taken at $1,000 of risk, nor one wider than 25 at $500). "
-             "The sealed 25 and 50-point brackets size exactly, so S0 to S2 match the summary above; the frozen bootstrap is run on these inputs.\n")
+    s.append(f"Each candidate's entries sized in whole micro NQ contracts ($2 a point): the largest count whose full stop-out (the stop plus {SLIPPAGE} point of exit slippage, plus ${MICRO_COMMISSION_RT:.2f} round-trip commission per micro, the replay's $5 per NQ scaled; real micro fees run higher, about 0.01 to 0.02 R per trade on a 25-point stop) stays within the budget (${rules.profit_target / 3:,.0f} in the evaluation, ${FUNDED_RISK:,.0f} funded), at most {cap} (the preset's {rules.max_contracts} NQ). "
+             "An entry that rounds to zero contracts is not taken, the sequential pass runs on what is taken, and each R is scaled by the contracts' stop risk as a share of the budget (size). "
+             "No stream sits on the daily-limit edge here: the sealed 25-point stop takes 19 micros in the evaluation (size 0.95) and 9 funded (0.90), the 50-point stop 9 and 4 (0.90 and 0.80), so the sealed rows differ from the summary for that reason. "
+             "Micro NQ began trading on 2019-05-06; this applies today's contract menu to every year, which is the question for an account opened now (before May 2019 only NQ existed, and a stop wider than 50 points could not be taken at $1,000 of risk, nor one wider than 25 at $500). The frozen bootstrap is run on these inputs.\n")
     s.append("| stream | period | evaluation: trades, mean size | P(pass) | +/- | funded: trades, mean size | P(payout) | +/- | median payout | EV per evaluation | EV net of all fees | P(bust) from $2,000 |")
     s.append("|---|---|---|---|---|---|---|---|---|---|---|---|")
     for name, p in pre.items():
@@ -505,7 +538,11 @@ def main() -> int:
     a = ap.parse_args()
     with open(a.manifest) as fh:
         m = json.load(fh)
-    for what, path, want in (("trades", a.trades, m["outputs"]["trades_sha256"]), ("report", a.report, m["outputs"]["report_sha256"]), ("bar file", a.csv, m["data"]["sha256"])):
+    try:
+        wanted = (("trades", a.trades, m["outputs"]["trades_sha256"]), ("report", a.report, m["outputs"]["report_sha256"]), ("bar file", a.csv, m["data"]["sha256"]))
+    except KeyError as e:
+        raise SystemExit(f"refusing to report: the manifest has no {e} hash to check provenance against")
+    for what, path, want in wanted:
         if sha256(path) != want:
             raise SystemExit(f"refusing to report: the {what} given ({path}) is not the sealed run's (sha256 differs from the manifest)")
     bars = load_minute_bars(a.csv, source_tz=a.source_tz)
