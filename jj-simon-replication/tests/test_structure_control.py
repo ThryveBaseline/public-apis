@@ -9,7 +9,7 @@ from research.anatomy import load_trades
 from research.candidates import ny_day
 from research.ledger_filters import sequential_pass
 from research.lifetime import lifetime_rows
-from research.structure_control import rows_for, shifted
+from research.structure_control import relabelled, rows_for, shifted
 
 
 @pytest.fixture(scope="module")
@@ -22,7 +22,7 @@ def stream(tmp_path_factory):
     return st, trading_days_of(bars), (day.max() - pd.DateOffset(months=2)).normalize()
 
 
-def test_the_shift_removes_the_development_edge_and_nothing_else(stream):
+def test_the_shift_zeroes_the_development_mean_and_keeps_every_other_column(stream):
     st, _, cut = stream
     zero, m = shifted(st, cut)
     dev = (ny_day(st) <= cut).to_numpy()
@@ -31,23 +31,44 @@ def test_the_shift_removes_the_development_edge_and_nothing_else(stream):
     assert zero.drop(columns="r").equals(st.drop(columns="r"))
 
 
-def test_rows_pair_the_stream_with_its_shifted_copy(stream, monkeypatch):
+def test_the_relabel_null_keeps_outcome_sizes_and_zeroes_the_development_mean(stream):
+    st, _, cut = stream
+    dev = (ny_day(st) <= cut).to_numpy()
+    for sign in (1.0, -1.0):  # a stream with a positive mean and its mirror with a negative one
+        s = st.assign(r=st["r"].astype(float) * sign)
+        flip, share = relabelled(s, cut)
+        r0, r1 = s["r"].to_numpy(float), flip["r"].to_numpy(float)
+        m = r0[dev].mean()
+        side = r0 < 0 if m < 0 else r0 > 0
+        target = np.median(r0[dev & ((r0 > 0) if m < 0 else (r0 < 0))])
+        moved = r1 != r0
+        assert moved.any() and (side[moved]).all() and np.allclose(r1[moved], target)  # only the mean's side moves, to the other side's median
+        step = abs(target - r0[side & dev]).max()
+        assert abs(r1[dev].sum()) <= step and 0 < share < 1  # as close to zero as one more trade can bring it
+        bm_side = side & ~dev
+        assert (moved & ~dev).sum() == round(share * bm_side.sum())
+        assert flip.drop(columns="r").equals(s.drop(columns="r"))
+
+
+def test_rows_pair_the_stream_with_both_nulls_on_topstepx(stream, monkeypatch):
     from research import structure_control
     st, cal, cut = stream
-    monkeypatch.setattr(structure_control, "RUNS", (("topstep_50k_x", 0.95),))
+    monkeypatch.setattr(structure_control, "RUNS_X", (("topstep_50k_x", 0.95),))
     rows = rows_for("s", st, cal, cut)
     real = lifetime_rows(st, cal, cut, "topstep_50k_x", 0.95, policies=("ask", "wait"))
     null = lifetime_rows(shifted(st, cut)[0], cal, cut, "topstep_50k_x", 0.95, policies=("ask", "wait"))
-    assert len(rows) == len(real) == len(null)
-    for r, a, b in zip(rows, real, null):
+    null2 = lifetime_rows(relabelled(st, cut)[0], cal, cut, "topstep_50k_x", 0.95, policies=("ask", "wait"))
+    assert len(rows) == len(real) == len(null) == len(null2)
+    for r, a, b, c in zip(rows, real, null, null2):
         assert (r["period"], r["policy"], r["horizon"]) == (a["period"], a["policy"], a["horizon"])
-        assert r["ev"] == pytest.approx(a["ev"], nan_ok=True) and r["ev0"] == pytest.approx(b["ev"], nan_ok=True)
+        assert r["ev"] == pytest.approx(a["ev"], nan_ok=True) and r["ev0"] == pytest.approx(b["ev"], nan_ok=True) and r["ev1"] == pytest.approx(c["ev"], nan_ok=True)
+    assert all(x["firm"] == "topstep_50k_x" for x in rows)
 
 
 def test_cli_runs_through_b3s_gates(sealed_4y, tmp_path, monkeypatch):
     from research import structure_control
     monkeypatch.setattr(structure_control, "STREAMS", ("S0r sealed brackets, flat 16:00", "S1 continuation only, sealed bracket"))
-    monkeypatch.setattr(structure_control, "RUNS", (("topstep_50k_x", 1.00),))
+    monkeypatch.setattr(structure_control, "RUNS_X", (("topstep_50k_x", 1.00),))
     monkeypatch.setattr("sys.argv", ["structure_control.py", *sealed_4y["b3"], "--out", str(tmp_path / "sc.md")])
     assert structure_control.main() == 0
     text = (tmp_path / "sc.md").read_text()
