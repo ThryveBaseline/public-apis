@@ -44,6 +44,16 @@ def test_the_tournament_table():
         "T21": {"description": "50-point stop", "trades": 0, "r_per_trade": float("nan"), "se": float("nan"), "lower_bound": float("nan"), "total_r": 0.0, "wins": 0,
                 "promotable": False}}}
     text = page({"tournament": t}, "OK", "", [], "2026-10-08T07:05:00Z")
-    assert "Promotable now: T05" in text and text.index("| T05 |") < text.index("| T00 |") < text.index("| T21 |")
+    assert "Promotable now: T05" in text and text.index("| T00 |") < text.index("| T05 |") < text.index("| T21 |")  # 3 sessions: by name, no bounds
+    assert "| T05 | reversions only until 10:00 | 60 | +0.900 | - |" in text
+    later = page({"tournament": {**t, "sessions": 8}}, "OK", "", [], "2026-10-08T07:05:00Z")
+    assert later.index("| T05 |") < later.index("| T00 |") < later.index("| T21 |") and "| T05 | reversions only until 10:00 | 60 | +0.900 | +0.316 |" in later
     h = html_page({"tournament": t}, "OK", "", [], "2026-10-08T07:05:00Z")
     assert "<tr class=promo><td>T05</td>" in h and "None promotable" not in h
+
+
+def test_readings_from_a_pasted_table():
+    from research.status_page import readings_lines
+    assert readings_lines("| 2026-10-06 | available | 2026-10-08 | | 2026-10-07 | available | 2026-10-07 |") == [
+        "2026-10-06: available (last revised 2026-10-08)", "2026-10-07: available (last revised 2026-10-07)"]
+    assert readings_lines("2026-10-06 degraded; 2026-10-07 available") == ["2026-10-06 degraded", "2026-10-07 available"]

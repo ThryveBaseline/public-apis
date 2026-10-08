@@ -102,7 +102,7 @@ def page(states: dict, headline: str, readings: str, flags: list[str], now: str)
         s += [f"| {t['candidate']} | {t['date']} | {t['direction']} | {t['exit_reason']} | {float(t['r']):+.2f} |" for _, t in latest.iterrows()]
     s += tournament_md(states.get("tournament"))
     if readings:
-        s += ["", "## Market data status (Databento)", "", readings]
+        s += ["", "## Market data status (Databento)", ""] + [f"- {x}" for x in readings_lines(readings)]
     s += ["", "R is the result per contract in units of the trade's stop: +2 is a full target on S3, -1 a full stop. The paper accounts follow the "
           "frozen bookkeeping ($0.50 micro fee, intraday dips not counted), so they read a little high."]
     return "\n".join(s) + "\n"
@@ -173,20 +173,36 @@ ul {{ padding-left:18px; }} tr.promo td {{ font-weight:600; }}
 <h2>Checkpoints</h2><ul>{checks}</ul>
 {tournament_html(states.get("tournament"))}
 {"<h2>Latest trades</h2><div class='scroll'><table><tr><th>stream</th><th>date</th><th>side</th><th>exit</th><th class='num'>R</th></tr>" + latest + "</table></div>" if latest else ""}
-{"<h2>Market data</h2><p class='muted'>" + esc.escape(readings) + "</p>" if readings else ""}
+{"<h2>Market data</h2><p class='muted'>" + "<br>".join(esc.escape(x) for x in readings_lines(readings)) + "</p>" if readings else ""}
 <p class="muted">R is the result per contract in units of the trade's stop: -1 is a full stop. The paper accounts follow the frozen bookkeeping
 ($0.50 micro fee, intraday dips not counted), so they read a little high.</p>
 </main></body></html>
 """
 
 
+BOUND_MIN_SESSIONS, BOUND_MIN_TRADES = 5, 10  # below these a day-clustered error is not meaningful: no bound is shown
+
+
+def _bound(t: dict, v: dict) -> float:
+    return v["lower_bound"] if t["sessions"] >= BOUND_MIN_SESSIONS and v["trades"] >= BOUND_MIN_TRADES else float("nan")
+
+
 def _tournament_rows(t: dict | None) -> list[tuple]:
-    """The tournament's variants, best forward lower bound first (variants without one last)."""
+    """The tournament's variants: by forward lower bound once bounds mean something, by version name until then."""
     if not t:
         return []
-    rows = [(k, v) for k, v in t["variants"].items()]
-    return sorted(rows, key=lambda kv: (kv[1]["lower_bound"] != kv[1]["lower_bound"], -(kv[1]["lower_bound"] if kv[1]["lower_bound"] == kv[1]["lower_bound"] else 0),
-                                        -kv[1]["trades"]))
+    rows = sorted(t["variants"].items())
+    if t["sessions"] < BOUND_MIN_SESSIONS:
+        return rows
+    return sorted(rows, key=lambda kv: (_bound(t, kv[1]) != _bound(t, kv[1]), -(_bound(t, kv[1]) if _bound(t, kv[1]) == _bound(t, kv[1]) else 0), kv[0]))
+
+
+def readings_lines(readings: str) -> list[str]:
+    """The day's condition readings, one line per date; a pasted table ('| date | condition | last modified |') is unpacked."""
+    cells = [c.strip() for c in readings.split("|") if c.strip()]
+    if "|" in readings and cells and len(cells) % 3 == 0:
+        return [f"{cells[i]}: {cells[i + 1]} (last revised {cells[i + 2]})" for i in range(0, len(cells), 3)]
+    return [x.strip() for x in readings.split(";") if x.strip()]
 
 
 def _f(x: float, fmt: str) -> str:
@@ -202,7 +218,7 @@ def tournament_md(t: dict | None) -> list[str]:
          f"{t['sessions']} session(s). A version is promotable at {t['min_trades']}+ trades with its lower bound above zero (allowing for {len(rows)} tries). "
          + ("Promotable now: " + ", ".join(promo) if promo else "None promotable yet."), "",
          "| version | what changes | trades | R per trade | lower bound | total R |", "|---|---|---|---|---|---|"]
-    s += [f"| {k} | {v['description']} | {v['trades']} | {_f(v['r_per_trade'], '+.3f')} | {_f(v['lower_bound'], '+.3f')} | {v['total_r']:+.1f} |" for k, v in rows]
+    s += [f"| {k} | {v['description']} | {v['trades']} | {_f(v['r_per_trade'], '+.3f')} | {_f(_bound(t, v), '+.3f')} | {v['total_r']:+.1f} |" for k, v in rows]
     return s
 
 
@@ -212,9 +228,9 @@ def tournament_html(t: dict | None) -> str:
     rows = _tournament_rows(t)
     promo = [k for k, v in rows if v["promotable"]]
     body = "".join(f"<tr{' class=promo' if v['promotable'] else ''}><td>{esc.escape(k)}</td><td>{esc.escape(v['description'])}</td><td class='num'>{v['trades']}</td>"
-                   f"<td class='num'>{_f(v['r_per_trade'], '+.3f')}</td><td class='num'>{_f(v['lower_bound'], '+.3f')}</td><td class='num'>{v['total_r']:+.1f}</td></tr>"
+                   f"<td class='num'>{_f(v['r_per_trade'], '+.3f')}</td><td class='num'>{_f(_bound(t, v), '+.3f')}</td><td class='num'>{v['total_r']:+.1f}</td></tr>"
                    for k, v in rows)
-    note = (f"{t['sessions']} session(s). A version is promotable at {t['min_trades']}+ trades with its lower bound above zero, allowing for {len(rows)} tries. "
+    note = (f"{t['sessions']} session(s). Lower bounds appear from {BOUND_MIN_SESSIONS} sessions and {BOUND_MIN_TRADES} trades. A version is promotable at {t['min_trades']}+ trades with its lower bound above zero, allowing for {len(rows)} tries. "
             + ("Promotable now: " + ", ".join(promo) + "." if promo else "None promotable yet."))
     return (f"<h2>Tournament: {len(rows)} versions of JJ's rules</h2><p class='muted'>{esc.escape(note)}</p><div class='scroll'><table>"
             "<tr><th>version</th><th>what changes</th><th class='num'>trades</th><th class='num'>R/trade</th><th class='num'>lower bound</th>"
