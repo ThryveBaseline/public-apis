@@ -35,3 +35,15 @@ def test_the_web_page():
     assert "<th>JJ full rules</th>" in h and "+0.58" in h and "2 / 10" in h
     w = html_page({}, "REFUSED: <bad>", "", [], "2026-10-08T07:05:00Z")
     assert "&lt;bad&gt;" in w and "<svg" not in w and "#cf222e" in w
+
+
+def test_the_tournament_table():
+    t = {"sessions": 3, "min_trades": 50, "z": 2.92, "variants": {
+        "T00": {"description": "JJ's rules", "trades": 12, "r_per_trade": 0.1, "se": 0.3, "lower_bound": -0.776, "total_r": 1.2, "wins": 6, "promotable": False},
+        "T05": {"description": "reversions only until 10:00", "trades": 60, "r_per_trade": 0.9, "se": 0.2, "lower_bound": 0.316, "total_r": 54.0, "wins": 40, "promotable": True},
+        "T21": {"description": "50-point stop", "trades": 0, "r_per_trade": float("nan"), "se": float("nan"), "lower_bound": float("nan"), "total_r": 0.0, "wins": 0,
+                "promotable": False}}}
+    text = page({"tournament": t}, "OK", "", [], "2026-10-08T07:05:00Z")
+    assert "Promotable now: T05" in text and text.index("| T05 |") < text.index("| T00 |") < text.index("| T21 |")
+    h = html_page({"tournament": t}, "OK", "", [], "2026-10-08T07:05:00Z")
+    assert "<tr class=promo><td>T05</td>" in h and "None promotable" not in h

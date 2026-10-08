@@ -56,7 +56,7 @@ When forward evidence reveals a weakness or an opportunity:
 | S4 | continuation and A+ reversion | `forward_protocol_v1.md` | `research/forward.py` |
 | JJ full rules, B0 | Baseline 0, exactly as frozen | `forward_protocol_b0.md` | `research/forward_b0.py` |
 
-All three use the same bars and gate, each with its own ledger, state and paper account. They are compared only on new trades, and none is ranked or dropped on history.
+All three use the same bars and gate, each with its own ledger, state and paper account. Beside them, the forward tournament (`forward_tournament_v1.md`, `research/tournament.py`) runs 28 frozen one-dial versions of JJ's rules on the same bars, with a promotion rule fixed before any forward trade. They are compared only on new trades, and none is ranked or dropped on history.
 
 ## Notes on version 1
 

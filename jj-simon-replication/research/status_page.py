@@ -100,6 +100,7 @@ def page(states: dict, headline: str, readings: str, flags: list[str], now: str)
         latest = led.sort_values("entry_time").tail(12).iloc[::-1]
         s += ["", "## Latest trades", "", "| stream | date | side | exit | R |", "|---|---|---|---|---|"]
         s += [f"| {t['candidate']} | {t['date']} | {t['direction']} | {t['exit_reason']} | {float(t['r']):+.2f} |" for _, t in latest.iterrows()]
+    s += tournament_md(states.get("tournament"))
     if readings:
         s += ["", "## Market data status (Databento)", "", readings]
     s += ["", "R is the result per contract in units of the trade's stop: +2 is a full target on S3, -1 a full stop. The paper accounts follow the "
@@ -162,7 +163,7 @@ td, .num {{ font-variant-numeric:tabular-nums; }} .num {{ text-align:right; }}
 .mile {{ display:grid; grid-template-columns:1fr auto; gap:2px 8px; margin:8px 0; font-size:15px; }}
 .bar {{ grid-column:1 / -1; height:6px; background:var(--line); border-radius:3px; overflow:hidden; }} .bar div {{ height:100%; background:{COLOURS["OK"]}; }}
 .spark {{ width:100%; height:auto; }} .spark .line {{ fill:none; stroke:var(--fg); stroke-width:2; }} .spark .zero {{ stroke:var(--line); stroke-dasharray:4 4; }}
-ul {{ padding-left:18px; }}
+ul {{ padding-left:18px; }} tr.promo td {{ font-weight:600; }}
 </style></head><body><main>
 <h1>Forward paper test</h1>
 <div class="status"><b>{esc.escape(headline)}</b>{esc.escape(MEANING.get(kind, ""))}<div class="muted">Last run {esc.escape(_when(now))}</div></div>
@@ -170,12 +171,54 @@ ul {{ padding-left:18px; }}
 <h2>Cumulative R</h2>{sparks}
 <h2>Milestones</h2>{miles}<p class="muted">After about 20 to 30 trades in a stream with no flag, Chris decides on one $49 evaluation.</p>
 <h2>Checkpoints</h2><ul>{checks}</ul>
+{tournament_html(states.get("tournament"))}
 {"<h2>Latest trades</h2><div class='scroll'><table><tr><th>stream</th><th>date</th><th>side</th><th>exit</th><th class='num'>R</th></tr>" + latest + "</table></div>" if latest else ""}
 {"<h2>Market data</h2><p class='muted'>" + esc.escape(readings) + "</p>" if readings else ""}
 <p class="muted">R is the result per contract in units of the trade's stop: -1 is a full stop. The paper accounts follow the frozen bookkeeping
 ($0.50 micro fee, intraday dips not counted), so they read a little high.</p>
 </main></body></html>
 """
+
+
+def _tournament_rows(t: dict | None) -> list[tuple]:
+    """The tournament's variants, best forward lower bound first (variants without one last)."""
+    if not t:
+        return []
+    rows = [(k, v) for k, v in t["variants"].items()]
+    return sorted(rows, key=lambda kv: (kv[1]["lower_bound"] != kv[1]["lower_bound"], -(kv[1]["lower_bound"] if kv[1]["lower_bound"] == kv[1]["lower_bound"] else 0),
+                                        -kv[1]["trades"]))
+
+
+def _f(x: float, fmt: str) -> str:
+    return "-" if x != x else format(x, fmt)
+
+
+def tournament_md(t: dict | None) -> list[str]:
+    if not t:
+        return []
+    rows = _tournament_rows(t)
+    promo = [k for k, v in rows if v["promotable"]]
+    s = ["", f"## Tournament: {len(rows)} versions of JJ's rules, forward only", "",
+         f"{t['sessions']} session(s). A version is promotable at {t['min_trades']}+ trades with its lower bound above zero (allowing for {len(rows)} tries). "
+         + ("Promotable now: " + ", ".join(promo) if promo else "None promotable yet."), "",
+         "| version | what changes | trades | R per trade | lower bound | total R |", "|---|---|---|---|---|---|"]
+    s += [f"| {k} | {v['description']} | {v['trades']} | {_f(v['r_per_trade'], '+.3f')} | {_f(v['lower_bound'], '+.3f')} | {v['total_r']:+.1f} |" for k, v in rows]
+    return s
+
+
+def tournament_html(t: dict | None) -> str:
+    if not t:
+        return ""
+    rows = _tournament_rows(t)
+    promo = [k for k, v in rows if v["promotable"]]
+    body = "".join(f"<tr{' class=promo' if v['promotable'] else ''}><td>{esc.escape(k)}</td><td>{esc.escape(v['description'])}</td><td class='num'>{v['trades']}</td>"
+                   f"<td class='num'>{_f(v['r_per_trade'], '+.3f')}</td><td class='num'>{_f(v['lower_bound'], '+.3f')}</td><td class='num'>{v['total_r']:+.1f}</td></tr>"
+                   for k, v in rows)
+    note = (f"{t['sessions']} session(s). A version is promotable at {t['min_trades']}+ trades with its lower bound above zero, allowing for {len(rows)} tries. "
+            + ("Promotable now: " + ", ".join(promo) + "." if promo else "None promotable yet."))
+    return (f"<h2>Tournament: {len(rows)} versions of JJ's rules</h2><p class='muted'>{esc.escape(note)}</p><div class='scroll'><table>"
+            "<tr><th>version</th><th>what changes</th><th class='num'>trades</th><th class='num'>R/trade</th><th class='num'>lower bound</th>"
+            f"<th class='num'>total R</th></tr>{body}</table></div>")
 
 
 def checkpoint_lines(public_status: str | None) -> list[str]:
@@ -194,13 +237,14 @@ def main() -> int:
     ap.add_argument("--state-b0", help="research/private/forward_b0_state.json, JJ's full rules")
     ap.add_argument("--public-status", help="research/forward_v1_status.md, for the checkpoint lines")
     ap.add_argument("--public-status-b0", help="research/forward_b0_status.md")
+    ap.add_argument("--tournament", help="research/private/tournament_v1_summary.json")
     ap.add_argument("--headline", required=True, help="OK | WAITING: ... | REFUSED: ... | FLAG: ...")
     ap.add_argument("--readings", default="", help="the day's Databento condition readings, one line")
     ap.add_argument("--out", required=True)
     ap.add_argument("--html", help="also write the web page here (robots.txt beside it)")
     a = ap.parse_args()
     states = {}
-    for key, path in (("v1", a.state), ("B0", a.state_b0)):
+    for key, path in (("v1", a.state), ("B0", a.state_b0), ("tournament", a.tournament)):
         if path and os.path.exists(path):
             with open(path) as fh:
                 states[key] = json.load(fh)
