@@ -21,10 +21,17 @@ usage (on the GB10):
       --manifest sealed/run1/manifest.json --init research/jj_system_v1_init.json --calendar-dir research/private/calendar \\
       --state research/private/jj_system_v1_state.json --v1-state research/private/forward_v1_state.json \\
       --summary research/private/jj_system_v1_summary.json
+  python research/forward_jj.py dry --csv data/nq_1min_databento.csv --forward-csv data/forward/nq_1min_forward.csv --source-tz UTC \
+      --manifest sealed/run1/manifest.json --from 2026-10-07
+
+`dry` is implementation debugging only: it runs the engine on the forward bars from a date, with the exercise calendar,
+and prints trade counts per day and session, the unscored days and the run time. It never prints a result, and it
+writes nothing.
 """
 from __future__ import annotations
 
 import argparse
+import glob
 import hashlib
 import importlib
 import io
@@ -41,18 +48,20 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from fpt.data import NY, load_minute_bars  # noqa: E402
 from research import forward as fw  # noqa: E402
 from research.b5_paths import day_arrays, eval_risk, phase_days, simulate  # noqa: E402
-from research.candidates import FUNDED_RISK, MICROS_PER_MINI, whole_contracts  # noqa: E402
+from research.bracket_replay import SLIPPAGE  # noqa: E402
+from research.candidates import FUNDED_RISK, MICRO_COMMISSION_RT, MICROS_PER_MINI, MNQ_POINT_VALUE  # noqa: E402
 from research.jj_system import VERSION, JJConfig, generate_trades, trading_days  # noqa: E402
 from research.news_calendar import events_for  # noqa: E402
 
 SPEC = "docs/research/jj_system_v1.md"
 SPEC_SHA256 = None  # set at the freeze: the spec's sha256
-FIRST_DAY = pd.Timestamp("2026-10-15")  # the first trading day that began after this stream was frozen
+FIRST_DAY = pd.Timestamp("2026-10-14")  # the first trading day that began after this stream was frozen (it began 18:00 ET on 10-13)
 CONTEXT_DAYS = 5  # calendar days of bars loaded before the first day wanted: its previous 09:30 open, the 12-hour bias, a weekend
 CHECK_DAYS = 30  # the init check's earlier start
 CHECK_LAST = 5  # trading days compared at the end of the sealed bars
 FIRM = "topstep_50k_x"
-EVAL_DAY_TARGET_R = 1.5  # "I'm just going to go for 1500": the evaluation's day stops at +$1,500, 1.5 x its $1,000 risk
+EVAL_DAY_TARGET = 1500.0  # "I'm just going to go for 1500": the evaluation's day stops at +$1,500
+MAX_HOLE = pd.Timedelta(minutes=30)  # a longer stretch without a bar inside his trading hours leaves the day unscored
 TRADE_MODULES = ("research.jj_system", "research.news_calendar", "research.forward_jj", "research.forward", "fpt.data")
 NAME = "JJ"
 LEDGER_KEY = ["candidate", "date", "session", "signal_time", "entry_time", "setup", "grade", "direction", "entry", "stop", "target", "exit_time",
@@ -86,17 +95,19 @@ def run(bars: pd.DataFrame, sealed: pd.DataFrame, days: list, events: pd.DataFra
     return generate_trades(window, JJConfig(), events=events, days=days, prior_high=hi)
 
 
+KEEP = LEDGER_KEY + ["stop_points", "target_points", "contracts", "pnl_dollars", "attempt", "layer", "entry_kind", "anchor"]
+
+
 def ledger_rows(t: pd.DataFrame) -> pd.DataFrame:
     if t.empty:
-        return pd.DataFrame(columns=LEDGER_KEY)
+        return pd.DataFrame(columns=KEEP)
     out = t.assign(candidate=NAME, date=pd.to_datetime(t["trading_day"]).dt.strftime("%Y-%m-%d"))
     for k in ("signal_time", "entry_time", "exit_time"):
         out[k] = out[k].astype(str)
     out["ambiguous_bar"] = out["ambiguous_bar"].astype(bool)
     for k in NUM:
         out[k] = out[k].astype(float).round(6)
-    keep = LEDGER_KEY + ["stop_points", "target_points", "contracts", "pnl_dollars", "attempt", "layer", "entry_kind", "anchor"]
-    return out[keep].sort_values(["entry_time", "session", "attempt"], kind="stable").reset_index(drop=True)
+    return out[KEEP].sort_values(["entry_time", "session", "attempt"], kind="stable").reset_index(drop=True)
 
 
 def same(a: pd.DataFrame, b: pd.DataFrame) -> bool:
@@ -114,15 +125,19 @@ def merge(old: list, old_days: list, new: pd.DataFrame, days: list) -> pd.DataFr
     recorded = set(old_days)
     if not recorded <= set(days):
         raise ValueError(f"days already scored are missing from this run: {sorted(recorded - set(days))}")
-    before = pd.DataFrame(old) if old else new.iloc[:0]
+    before = pd.DataFrame(old, columns=KEEP) if old else pd.DataFrame(columns=KEEP)
+    new = new if len(new.columns) else pd.DataFrame(columns=KEEP)
     again = new[new["date"].isin(recorded)]
-    if not same(before[LEDGER_KEY] if len(before) else before, again[LEDGER_KEY] if len(again) else again):
+    if not same(before[LEDGER_KEY], again[LEDGER_KEY]):
         raise ValueError("a recorded forward trade would change: history is never rewritten (record a new version instead)")
-    return pd.concat([before, new[~new["date"].isin(recorded)]], ignore_index=True).sort_values(["entry_time", "session", "attempt"], kind="stable").reset_index(drop=True)
+    out = pd.concat([x for x in (before, new[~new["date"].isin(recorded)]) if len(x)], ignore_index=True) if len(before) or len(new) else before
+    return out.sort_values(["entry_time", "session", "attempt"], kind="stable").reset_index(drop=True) if len(out) else pd.DataFrame(columns=KEEP)
 
 
-def scorable(index: pd.DatetimeIndex, symbols: pd.Series | None, first: pd.Timestamp) -> tuple[list, list]:
-    """Trading days from `first` with a 09:30 bar and a bar of a later trading day in the file, and the roll days among them."""
+def scorable(index: pd.DatetimeIndex, symbols: pd.Series | None, first: pd.Timestamp) -> tuple[list, dict]:
+    """Trading days from `first` with a bar of a later trading day in the file: those that can be scored, and the
+    others with the reason (no 09:30 bar on a weekday; a contract roll inside the day; a stretch of more than
+    MAX_HOLE without a bar in his trading hours, 18:00 to 16:10)."""
     td = pd.DatetimeIndex(trading_days(index))
     last = td.max()
     ny = index.tz_convert(NY)
@@ -132,52 +147,96 @@ def scorable(index: pd.DatetimeIndex, symbols: pd.Series | None, first: pd.Times
         sym = symbols.astype(str).to_numpy()
         changed = np.flatnonzero(sym[1:] != sym[:-1]) + 1
         rolls = set(td[changed])
-    days = sorted(d for d in has930 if first <= d < last)
-    return [d for d in days if d not in rolls], [d for d in days if d in rolls]
+    out, why = [], {}
+    for d in pd.date_range(first, last - pd.Timedelta(days=1), freq="B"):
+        if d not in has930:
+            why[d] = "no 09:30 bar (market closed or data missing)"
+        elif d in rolls:
+            why[d] = "a contract roll inside the day"
+        else:
+            hole = _hole(index[td == d], d)
+            if hole:
+                why[d] = hole
+            else:
+                out.append(d)
+    return out, why
+
+
+def _hole(times: pd.DatetimeIndex, day: pd.Timestamp) -> str | None:
+    """The first stretch of more than MAX_HOLE without a bar between 18:00 the evening before and 16:10."""
+    begin = (day - pd.Timedelta(hours=6)).tz_localize(NY)
+    end = (day + pd.Timedelta(hours=16, minutes=10)).tz_localize(NY)
+    t = times[(times >= begin) & (times < end)].tz_convert(NY)
+    edges = [begin] + list(t) + [min(end, t.max() + pd.Timedelta(minutes=1)) if len(t) else end]
+    for a, b in zip(edges[:-1], edges[1:]):
+        if b - a > MAX_HOLE:
+            return f"no bar from {a.strftime('%m-%d %H:%M')} to {b.strftime('%m-%d %H:%M')} ET, inside his trading hours"
+    return None
+
+
+def sized(t: pd.DataFrame, budget: float, cap: int) -> pd.DataFrame:
+    """Each trade in whole micro NQ: the largest count whose full stop-out (the stop plus the exit slippage, plus the
+    round-trip fee) stays strictly within `budget`, at most `cap` (research/candidates.whole_contracts' sizing, without
+    its frozen three-loss cap: his accounts trade on after losses); a trade that rounds to zero is not taken. R is
+    scaled to the account's risk, so R x budget is its dollars."""
+    if t.empty:
+        return t.assign(size=pd.Series(dtype=float))
+    stop = t["stop_points"].astype(float).to_numpy()
+    per = (stop + SLIPPAGE) * MNQ_POINT_VALUE + MICRO_COMMISSION_RT
+    n = np.floor(budget / per)
+    n = np.minimum(np.where(n * per >= budget, n - 1, n), cap)
+    out = t[n > 0].copy()
+    out["size"] = n[n > 0] * stop[n > 0] * MNQ_POINT_VALUE / budget
+    out["r"] = out["r"].astype(float) * out["size"]
+    return out
 
 
 def route(t: pd.DataFrame, funded: bool) -> pd.DataFrame:
-    """The trades one account takes from the stream, one at a time, in entry order. An evaluation takes every kind of
-    entry and stops for the day at +1.5 R ($1,500 on its $1,000 risk), and after a loss takes the next ("profit target
-    or gone"); a funded account takes breaks of structure only, never a continuation ("continuations are only for
-    evaluations") and never an overnight order ("I have an eval short at every single piece of structure")."""
+    """The trades one account takes from the stream, one at a time in entry order (a trade is skipped while the
+    account's previous one is still open, including one that closes in the bar this one would enter), sized in whole
+    micros within the phase's budget.
+
+    Evaluation: every kind of entry ("Evaluations as well will be all of my displacement candle entries"); the day
+    stops once it has made $1,500 ("I'm just going to go for 1500"); after a loss it takes the next ("I like my
+    accounts to either be at profit target or gone"). Funded: breaks of structure only, never a continuation
+    ("continuations are only for evaluations"); overnight orders included ("a $2,000 win on funded taking shorts
+    overnight")."""
+    budget = FUNDED_RISK if funded else eval_risk(FIRM)
     t = t.sort_values("entry_time", kind="stable")
     if funded:
-        t = t[(t["grade"] == "A+") & ~t["setup"].isin(["continuation", "overnight"])]
-    keep, busy_until, day_r = [], None, {}
+        t = t[(t["grade"] == "A+") & (t["setup"] != "continuation")]
+    t = sized(t, budget, MICROS_PER_MINI * 5)
+    keep, busy_until, day_usd = [], None, {}
     for i, x in t.iterrows():
         et, xt = pd.Timestamp(x["entry_time"]), pd.Timestamp(x["exit_time"])
-        if busy_until is not None and et < busy_until:
+        if busy_until is not None and et <= busy_until:
             continue
-        if not funded and day_r.get(x["date"], 0.0) >= EVAL_DAY_TARGET_R:
+        if not funded and day_usd.get(x["date"], 0.0) >= EVAL_DAY_TARGET:
             continue
         keep.append(i)
         busy_until = xt
-        day_r[x["date"]] = day_r.get(x["date"], 0.0) + float(x["r"])
+        day_usd[x["date"]] = day_usd.get(x["date"], 0.0) + float(x["r"]) * budget
     return t.loc[keep]
 
 
 def paper_account(led: pd.DataFrame, days: list, policy: str = "wait") -> dict:
-    """One Topstep 50K (TopstepX) path from $2,000, one account at a time, whole micro contracts within each phase's
-    budget, on the trades that account takes (route); the firm rules, fees and payouts are the frozen bookkeeping's
-    (research/b5_paths.simulate). Days are trading days: times move 6 hours forward so the firm's day key is the
-    trading day."""
+    """One Topstep 50K (TopstepX) path from $2,000, one account at a time, on the trades that account takes (route);
+    the firm rules, fees and payouts are the frozen bookkeeping's (research/b5_paths.simulate). Days are trading days:
+    times move 6 hours forward so the firm's day key is the trading day."""
     cal = pd.DatetimeIndex(pd.to_datetime(sorted(days)))
     if not len(cal) or led.empty:
         return {}
 
     def pre(t: pd.DataFrame) -> pd.DataFrame:
+        cols = ["entry_time", "exit_time", "r", "setup", "stop_points", "pnl_dollars"]
         if t.empty:
-            return pd.DataFrame(columns=["entry_time", "exit_time", "r", "setup", "stop_points", "pnl_dollars"])
+            return pd.DataFrame(columns=cols)
         shift = pd.Timedelta(hours=6)
         return pd.DataFrame({"entry_time": pd.to_datetime(t["entry_time"], utc=True) + shift, "exit_time": pd.to_datetime(t["exit_time"], utc=True) + shift,
                              "r": t["r"].astype(float), "setup": t["setup"], "stop_points": t["stop_points"].astype(float),
                              "pnl_dollars": t["r"].astype(float)}).reset_index(drop=True)
 
-    cap = MICROS_PER_MINI * 5
-    pe, pf = pre(route(led, False)), pre(route(led, True))
-    ev = whole_contracts(pe, eval_risk(FIRM), cap) if len(pe) else pe
-    fu = whole_contracts(pf, FUNDED_RISK, cap) if len(pf) else pf
+    ev, fu = pre(route(led, False)), pre(route(led, True))
     d, rs_e, rs_f = phase_days(ev, fu, cal)
     w = max([1] + [len(x) for x in rs_e + rs_f])
     res = simulate(d, day_arrays(rs_e, w), day_arrays(rs_f, w), np.array([0]), np.array([len(d)]), FIRM, policy, 1)
@@ -196,6 +255,18 @@ def summarize(led: pd.DataFrame, days: list, skipped: list) -> dict:
     return out
 
 
+def exercise_calendar(days: list) -> pd.DataFrame:
+    """A made-up calendar for init's check only, so that the news, 10:00, FOMC and speech paths run on real bars."""
+    rows = []
+    kinds = [[("08:30", "High", "Exercise release")], [("10:00", "Medium", "Exercise release")],
+             [("14:00", "High", "FOMC Statement"), ("14:30", "High", "FOMC Press Conference")],
+             [("08:15", "High", "Exercise release"), ("08:30", "Medium", "Exercise release")], [("10:00", "High", "Exercise Speaks")]]
+    for d, ks in zip(days, kinds):
+        for hm, imp, title in ks:
+            rows.append({"time": (d + pd.Timedelta(hours=int(hm[:2]), minutes=int(hm[3:]))).tz_localize(NY), "country": "USD", "impact": imp, "title": title})
+    return pd.DataFrame(rows)
+
+
 def init(a) -> int:
     with open(a.manifest) as fh:
         man = json.load(fh)
@@ -205,22 +276,26 @@ def init(a) -> int:
         raise SystemExit("refusing: the spec is not the frozen one")
     sealed = load_minute_bars(a.csv, source_tz=a.source_tz)
     idx = sealed.index
-    days, _ = scorable(idx, sealed["symbol"] if "symbol" in sealed else None, pd.Timestamp("1900-01-01"))
+    days, _ = scorable(idx, sealed["symbol"] if "symbol" in sealed else None, idx.min().tz_convert(NY).normalize().tz_localize(None) + pd.Timedelta(days=7))
     last = days[-CHECK_LAST:]
-    short = run(sealed, sealed, last, None)
+    cal = exercise_calendar(last)
+    short = run(sealed, sealed, last, cal)
     longer_start = (min(last) - pd.Timedelta(days=CHECK_DAYS)).tz_localize(NY)
-    longer = generate_trades(sealed[sealed.index >= longer_start], JJConfig(), days=last, prior_high=prior_high(sealed, longer_start))
+    longer = generate_trades(sealed[sealed.index >= longer_start], JJConfig(), events=cal, days=last, prior_high=prior_high(sealed, longer_start))
     x, y = ledger_rows(short), ledger_rows(longer)
     if not same(x, y):
         raise SystemExit("refusing: the engine's trades depend on how much history is loaded")
     if len(x) == 0:
         raise SystemExit("refusing: the check compared no trade")
-    per_day = x.groupby("date").size().to_dict()
+    per_day = {k: int(v) for k, v in x.groupby("date").size().items()}
+    per_session = {k: int(v) for k, v in x.groupby("session").size().items()}
     pinned = {"version": VERSION, "first_day": str(FIRST_DAY.date()), "spec_sha256": SPEC_SHA256, "code": code_hashes(), "config": config(),
-              "check_trades": int(len(x)), "check_trades_per_day": per_day, "sealed_sha256": man["data"]["sha256"]}
+              "check_trades": int(len(x)), "check_trades_per_day": per_day, "check_trades_per_session": per_session,
+              "sealed_sha256": man["data"]["sha256"]}
     with open(a.out, "w") as fh:
         json.dump(pinned, fh, indent=1, sort_keys=True)
-    print(f"check: {len(x)} trades on the sealed bars' last {len(last)} trading days compared ({per_day}); pinned {a.out}")
+    print(f"check: {len(x)} trades on the sealed bars' last {len(last)} trading days compared, with an exercise calendar; "
+          f"per day {per_day}; per session {per_session} (counts only); pinned {a.out}")
     return 0
 
 
@@ -265,11 +340,13 @@ def day(a) -> int:
     cols = sealed.columns.intersection(fwd.columns)
     bars = pd.concat([sealed[sealed.index >= (FIRST_DAY - pd.Timedelta(days=CONTEXT_DAYS + 1)).tz_localize(NY)][cols], fwd[cols]])
     both = pd.concat([sealed.iloc[-1:][cols], fwd[cols]])
-    days, rolls = scorable(both.index, both["symbol"] if "symbol" in both else None, FIRST_DAY)
+    if not glob.glob(os.path.join(a.calendar_dir, "ff_*.json")):
+        raise SystemExit(f"refusing: no calendar snapshot in {a.calendar_dir} (the nightly fetch has not run, or the folder is wrong)")
+    days, why = scorable(both.index, both["symbol"] if "symbol" in both else None, FIRST_DAY)
     cal, missing = events_for(days, a.calendar_dir)
     unscored = {d["day"]: d["why"] for d in state["unscored"]}
-    for d in rolls:
-        unscored.setdefault(d.strftime("%Y-%m-%d"), "a contract roll inside the day")
+    for d, reason in why.items():
+        unscored.setdefault(d.strftime("%Y-%m-%d"), reason)
     for d in missing:
         unscored.setdefault(d.strftime("%Y-%m-%d"), "no calendar snapshot fetched before the day began")
     scored = [d for d in days if d.strftime("%Y-%m-%d") not in unscored]
@@ -292,12 +369,45 @@ def day(a) -> int:
     return 0
 
 
+def dry(a) -> int:
+    import time
+    with open(a.manifest) as fh:
+        man = json.load(fh)
+    if fw.sha256(a.csv) != man["data"]["sha256"]:
+        raise SystemExit("refusing: the bar file is not the sealed run's")
+    with open(a.forward_csv, "rb") as fh:
+        data = fh.read()
+    fw.check_forward_file(data)
+    sealed = load_minute_bars(a.csv, source_tz=a.source_tz)
+    fwd = load_minute_bars(io.BytesIO(data), source_tz=a.source_tz)
+    first = pd.Timestamp(a.from_)
+    cols = sealed.columns.intersection(fwd.columns)
+    bars = pd.concat([sealed[sealed.index >= (first - pd.Timedelta(days=CONTEXT_DAYS + 1)).tz_localize(NY)][cols], fwd[cols]])
+    both = pd.concat([sealed.iloc[-1:][cols], fwd[cols]])
+    days, why = scorable(both.index, both["symbol"] if "symbol" in both else None, first)
+    t0 = time.time()
+    t = run(bars, sealed[sealed.index < bars.index.min()], days, exercise_calendar(days))
+    took = time.time() - t0
+    print(f"dry run (counts only): {len(days)} scorable trading days, {len(t)} trades, {took:.1f} s")
+    for d, reason in sorted(why.items()):
+        print(f"  {d.date()} unscored: {reason}")
+    if len(t):
+        tab = t.assign(day=pd.to_datetime(t["trading_day"]).dt.strftime("%Y-%m-%d")).groupby(["day", "session"]).size().unstack(fill_value=0)
+        print(tab.to_string())
+        print("by setup and grade:", {f"{k[0]} {k[1]}": int(v) for k, v in t.groupby(["setup", "grade"]).size().items()})
+        print("exit kinds:", {k: int(v) for k, v in t.groupby("exit_reason").size().items()})
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="mode", required=True)
     i = sub.add_parser("init")
     d = sub.add_parser("day")
-    for p in (i, d):
+    y = sub.add_parser("dry")
+    y.add_argument("--forward-csv", required=True)
+    y.add_argument("--from", dest="from_", required=True)
+    for p in (i, d, y):
         p.add_argument("--csv", required=True)
         p.add_argument("--source-tz", default="UTC")
         p.add_argument("--manifest", required=True)
@@ -309,7 +419,7 @@ def main() -> int:
     d.add_argument("--v1-state", help="the v1 runner's state, whose accepted gaps apply here too")
     d.add_argument("--summary", required=True)
     a = ap.parse_args()
-    return init(a) if a.mode == "init" else day(a)
+    return {"init": init, "day": day, "dry": dry}[a.mode](a)
 
 
 if __name__ == "__main__":

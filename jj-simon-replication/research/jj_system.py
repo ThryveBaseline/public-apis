@@ -50,6 +50,7 @@ class JJConfig:
     continuation_minutes: int = 5
     stall_candles: int = 2
     max_reversion_losses: int = 3  # three losing reversion attempts in a row end the session's reversions
+    reanchor_after_losses: int = 2  # losing reversions move fair value to the consolidation (after the second in his latest example)
     bos_only_after_losses: int = 2  # "after two losses, I usually expect a structural breakdown"
     layer_progress: float = 0.5  # "After the first one is halfway to take profit, boom, there goes the next one"
     htf_hours: tuple = (6, 12)  # "inverting whatever happened for the previous 6 to 12 hours"
@@ -114,6 +115,9 @@ class Session:
     rev_max: int | None = None
     aplus_only: bool = False
     holiday: bool = False
+    ws: int = 0  # structure counts from this bar (the previous 09:30 open before the session)
+    ath: float = np.inf  # the all-time high before the session
+    disabled: bool = False
 
 
 @dataclass
@@ -174,8 +178,10 @@ def generate_trades(bars: pd.DataFrame, cfg: JJConfig | None = None, events: pd.
                     prior_high: float = -np.inf) -> pd.DataFrame:
     """His whole day on every trading day of `bars` (or only `days`) that has a previous 09:30 bar for its structure
     and the evening's references. `events` is the USD calendar (columns time, country, impact, title); without it no
-    news session runs. `prior_high` is the all-time high before the first bar (the bars loaded may start late). One
-    row per closed position."""
+    news session runs. `prior_high` is the all-time high before the first bar (the bars loaded may start late). Bars
+    exist only for minutes with trades: a session opens on its first bar within 5 minutes of its time, an order fills
+    at the next bar's open, and anything due at a time happens at the close of the last bar before it. One row per
+    closed position."""
     cfg = cfg or JJConfig()
     bars = bars.sort_index()
     if bars.empty:
@@ -185,8 +191,6 @@ def generate_trades(bars: pd.DataFrame, cfg: JJConfig | None = None, events: pd.
     n = len(bars)
     mod = (ny.hour * 60 + ny.minute).to_numpy()
     mins = (bars.index.as_unit("ns").asi8 // 60_000_000_000).astype(np.int64)  # epoch minutes
-    cal = ny.tz_localize(None).normalize()
-    dow = ny.dayofweek.to_numpy()
     td = trading_days(bars.index)
     # swing pivots: a wick beyond the one candle before and the one after (strict), known when the next bar closes
     sh = np.zeros(n, dtype=bool)
@@ -200,7 +204,12 @@ def generate_trades(bars: pd.DataFrame, cfg: JJConfig | None = None, events: pd.
     ev_days = events_by_day(events, all_days)
     opens_0930 = np.flatnonzero(mod == 570)
     firm_close = _m(cfg.firm_close)
+    grace = 5  # a session opens on its first bar within this many minutes of its time
     trades: list[dict] = []
+
+    def epoch(date: pd.Timestamp, minute: int) -> int:
+        """Epoch minute of a New York wall time on a calendar date."""
+        return int((date + pd.Timedelta(minutes=minute)).tz_localize(NY).value // 60_000_000_000)
 
     def htf_day(t: int) -> int:
         """Daytime higher-time-frame bias: the previous 6 and 12 hours' net move, inverted; 0 when they disagree."""
@@ -212,10 +221,6 @@ def generate_trades(bars: pd.DataFrame, cfg: JJConfig | None = None, events: pd.
             signs.append(int(np.sign(c[t] - c[j])))
         return -signs[0] if signs[0] != 0 and all(x == signs[0] for x in signs) else 0
 
-    def last_within(i: int, minutes: int, e: int) -> int:
-        """The last bar index at most `minutes` - 1 minutes after bar i (within the day)."""
-        return int(min(e, np.searchsorted(mins, mins[i] + minutes - 1, side="right")) - 1)
-
     for day in all_days:
         if want is not None and day not in want:
             continue
@@ -224,58 +229,59 @@ def generate_trades(bars: pd.DataFrame, cfg: JJConfig | None = None, events: pd.
         prev930 = opens_0930[opens_0930 < s]
         if not len(prev930):
             continue
-        w0 = int(prev930[-1])  # structure: from the previous 09:30 open ("all the way back down to 9:30")
+        w0 = int(prev930[-1])  # the previous 09:30 open: "all the way back down to 9:30"
+        today930 = opens_0930[(opens_0930 >= s) & (opens_0930 < e)]
+        w_today = int(today930[0]) if len(today930) else w0
         am_prev = o[w0]  # "9:30 of that morning"
         prev_close = c[s - 1]
-        ath = run_high[s - 1]
+        eve = day - pd.Timedelta(days=1)
         evs = ev_days.get(day, [])
-        news_min = [mm for mm, imp, title in evs if imp in NEWS_IMPACT and mm in (_m("08:15"), _m("08:30"))
-                    and not any(w in title for w in SPEECH_WORDS)]
-        release_min = {mm for mm, imp, title in evs if imp in NEWS_IMPACT and mm in (_m("08:15"), _m("08:30"), _m("09:45"), _m("10:00"), _m("14:00"))}
-        ten_switch = any(mm == _m("10:00") and imp in NEWS_IMPACT and not any(w in title for w in SPEECH_WORDS) for mm, imp, title in evs)
+        is_speech = [any(w in title for w in SPEECH_WORDS) for _, _, title in evs]
+        news_min = [mm for (mm, imp, _), sp in zip(evs, is_speech) if imp in NEWS_IMPACT and not sp and mm in (_m("08:15"), _m("08:30"))]
+        release_t = {epoch(day, mm) for (mm, imp, _), sp in zip(evs, is_speech)
+                     if imp in NEWS_IMPACT and not sp and mm in (_m("08:15"), _m("08:30"), _m("09:45"), _m("10:00"), _m("14:00"))}
+        ten_switch = any(mm == _m("10:00") and imp in NEWS_IMPACT and not sp for (mm, imp, _), sp in zip(evs, is_speech))
         fomc = any(mm == _m("14:00") and imp == "High" and any(w in title for w in FOMC_WORDS) for mm, imp, title in evs)
-        speeches = sorted(mm for mm, imp, title in evs if imp == "High" and any(w in title for w in SPEECH_WORDS))
+        speeches = sorted(epoch(day, mm) for (mm, imp, _), sp in zip(evs, is_speech) if imp == "High" and sp)
         holiday = day.strftime("%Y-%m-%d") in BANK_HOLIDAYS
-        at = {int(mod[i]): i for i in range(s, e)}
 
-        # ---- the day's sessions (a session runs only when its opening bar exists) ----
+        # ---- the day's sessions ----
         sess: dict[str, Session] = {}
+        nominal: dict[str, int] = {}
 
-        def add(name: str, minute: int, length: int, kind: str, cont: bool, **kw) -> None:
-            if minute not in at:
+        def add(name: str, when: int, length: int, kind: str, cont: bool, ws: int, **kw) -> None:
+            i = int(np.searchsorted(mins, when, side="left"))
+            if not (s <= i < e and mins[i] < when + grace):
                 return
-            i = at[minute]
-            ce = last_within(i, cfg.continuation_minutes, e) if cont else -1
-            sess[name] = Session(name, i, last_within(i, length, e), ce, o[i], kind, holiday=holiday, **kw)
+            end = int(min(e, np.searchsorted(mins, when + length - 1, side="right")) - 1)
+            ce = int(min(e, np.searchsorted(mins, when + cfg.continuation_minutes - 1, side="right")) - 1) if cont else -1
+            sess[name] = Session(name, i, end, ce, o[i], kind, holiday=holiday, ws=ws, ath=run_high[i - 1], **kw)
+            nominal[name] = when
 
-        if 1080 in at and cal[at[1080]] < day:
-            add("18:00", 1080, 120, "evening", True, cont_max=cfg.evening_continuations, rev_max=cfg.evening_reversions)
-        add("20:00", 1200, cfg.session_minutes, "evening", True, cont_max=cfg.evening_continuations, rev_max=cfg.evening_reversions,
-            a5_from="18:00", a5_done=False)
+        add("18:00", epoch(eve, _m("18:00")), 120, "evening", True, w0, cont_max=cfg.evening_continuations, rev_max=cfg.evening_reversions)
+        add("20:00", epoch(eve, _m("20:00")), cfg.session_minutes, "evening", True, w0, cont_max=cfg.evening_continuations,
+            rev_max=cfg.evening_reversions, a5_from="18:00", a5_done=False)
         if news_min:
             mm = min(news_min)
-            add("news", mm, _m("09:30") - mm, "news", False)  # reversions to the pre-news price only
-        add("09:30", 570, cfg.session_minutes, "day", True)
-        if "09:30" in sess and holiday:  # a bank holiday is traded only on an influx: the opening candle larger than most so far
-            i = sess["09:30"].start
-            rng = h[s:i] - l[s:i]
-            if not len(rng) or not h[i] - l[i] > np.median(rng):
-                del sess["09:30"]
-        add("14:00", 840, cfg.session_minutes, "day", True, a5_from=None if fomc else "09:30", a5_done=fomc)
-        if 900 in at and dow[at[900]] == 4:
-            add("fri", 900, 60, "friday", False, rev_max=1, aplus_only=True)
+            add("news", epoch(day, mm), _m("09:30") - mm, "news", False, w0)  # reversions to the pre-news price only
+        add("09:30", epoch(day, _m("09:30")), cfg.session_minutes, "day", True, w0)
+        # FOMC is news: no continuation of the news candle ("I don't really do continuation of news anymore")
+        add("14:00", epoch(day, _m("14:00")), cfg.session_minutes, "day", not fomc, w_today, a5_from=None if fomc else "09:30", a5_done=fomc)
+        if day.dayofweek == 4:
+            add("fri", epoch(day, _m("15:00")), 60, "friday", False, w_today, rev_max=1, aplus_only=True)
         for sp in speeches:
-            b = at.get(sp)
+            b = int(np.searchsorted(mins, sp, side="left"))
             for ss in sess.values():
-                if b is not None and ss.start <= b <= ss.end:
+                if ss.start <= b <= ss.end:
                     ss.blocked_from = min(ss.blocked_from, b)
-        opens = {int(mod[ss.start]) for ss in sess.values() if ss.kind != "friday"} | release_min
+        be_times = {nominal[k] for k, ss in sess.items() if ss.kind != "friday"} | release_t
+        t2130, t0930, t1000 = epoch(eve, _m("21:30")), epoch(day, _m("09:30")), epoch(day, _m("10:00"))
 
         # ---- structure since the previous 09:30 open ----
         piv_hi: list[list] = []  # [index, level, alive]
         piv_lo: list[list] = []
-        bos = {1: np.zeros(e - w0, dtype=bool), -1: np.zeros(e - w0, dtype=bool)}
-        wickfail = {1: np.zeros(e - w0, dtype=bool), -1: np.zeros(e - w0, dtype=bool)}
+        bos_max = {1: np.full(e - w0, -1), -1: np.full(e - w0, -1)}  # the latest swing a bar's close broke (-1: none)
+        wick_max = {1: np.full(e - w0, -1), -1: np.full(e - w0, -1)}  # the latest swing a bar's wick passed without a close
 
         def structure(t: int) -> None:
             j = t - 1
@@ -284,31 +290,29 @@ def generate_trades(bars: pd.DataFrame, cfg: JJConfig | None = None, events: pd.
                     piv_hi.append([j, h[j], True])
                 if sl[j]:
                     piv_lo.append([j, l[j], True])
-            for p in piv_hi:
-                if p[2]:
-                    if c[t] > p[1]:
-                        p[2] = False
-                        bos[1][t - w0] = True
-                    elif h[t] > p[1]:
-                        wickfail[1][t - w0] = True
-            for p in piv_lo:
-                if p[2]:
-                    if c[t] < p[1]:
-                        p[2] = False
-                        bos[-1][t - w0] = True
-                    elif l[t] < p[1]:
-                        wickfail[-1][t - w0] = True
+            for d, pivs in ((1, piv_hi), (-1, piv_lo)):
+                for p in pivs:
+                    if p[2]:
+                        if (c[t] - p[1]) * d > 0:
+                            p[2] = False
+                            bos_max[d][t - w0] = max(bos_max[d][t - w0], p[0])
+                        elif (h[t] if d > 0 else l[t]) * d > p[1] * d:
+                            wick_max[d][t - w0] = max(wick_max[d][t - w0], p[0])
+
+        def bos(d: int, t: int, ws: int) -> bool:
+            return t >= w0 and bos_max[d][t - w0] >= ws
 
         for t in range(w0, s):
             structure(t)
 
-        def disp(t: int, d: int) -> bool:
+        def disp(t: int, d: int, ws: int) -> bool:
             """A displacement in direction d: a body larger than the previous, opposite-colour candle's and a close beyond
-            its wick; two or three same-colour candles may count together against the one before them. Not right after a
-            break the other way, and not a candle that reached structure and failed to close through it."""
-            if t - 1 < w0 or bos[-d][t - 1 - w0]:
+            its wick; two or three same-colour candles may count together against the one before them. Not when the
+            displaced candle broke structure the other way, and not a candle that reached structure and failed to close
+            through it."""
+            if t - 1 < w0 or bos(-d, t - 1, ws):
                 return False
-            if wickfail[d][t - w0] and not bos[d][t - w0]:
+            if wick_max[d][t - w0] >= ws and not bos(d, t, ws):
                 return False
             for k in (1, 2, 3):
                 f = t - k + 1  # the group's first candle
@@ -317,6 +321,8 @@ def generate_trades(bars: pd.DataFrame, cfg: JJConfig | None = None, events: pd.
                     break
                 if np.sign(c[pv] - o[pv]) != -d:
                     continue
+                if bos(-d, pv, ws):
+                    return False
                 if (c[t] - o[f]) * d > abs(c[pv] - o[pv]) and (c[t] > h[pv] if d > 0 else c[t] < l[pv]):
                     return True
             return False
@@ -343,8 +349,9 @@ def generate_trades(bars: pd.DataFrame, cfg: JJConfig | None = None, events: pd.
                 return
             if reason == "stop":
                 ss.losses_in_row += 1
-                lo = max(w0, t - cfg.reanchor_minutes + 1)
-                set_anchor(ss, (h[lo:t + 1].max() + l[lo:t + 1].min()) / 2)  # "adjusting fair price to this consolidation now"
+                if ss.losses_in_row >= cfg.reanchor_after_losses:
+                    lo = max(w0, t - cfg.reanchor_minutes + 1)
+                    set_anchor(ss, (h[lo:t + 1].max() + l[lo:t + 1].min()) / 2)  # "adjusting fair price to this consolidation now"
                 if ss.losses_in_row >= cfg.max_reversion_losses:
                     ss.stopped = True
             elif reason == "target":
@@ -361,7 +368,7 @@ def generate_trades(bars: pd.DataFrame, cfg: JJConfig | None = None, events: pd.
             return (c[t] - p.entry) * p.d > 0 and (p.stop - p.entry) * p.d < 0
 
         for t in range(s, e):
-            nxt_ok = t + 1 < e and mins[t + 1] - mins[t] == 1 and not (firm_close <= mod[t + 1] < 1080)
+            can_fill = t + 1 < e and not (firm_close <= mod[t + 1] < _m("18:00"))
             # ---- 1. fills and exits at this bar's open ----
             for p in pending:
                 p.entry_i, p.entry = t, o[t] + p.d * cfg.slippage
@@ -401,6 +408,10 @@ def generate_trades(bars: pd.DataFrame, cfg: JJConfig | None = None, events: pd.
                 if t == ss.start:
                     ss.open_dir = int(np.sign(c[t] - o[t]))
                     ss.open_body = abs(c[t] - o[t])
+                    if ss.name == "09:30" and ss.holiday:  # a bank holiday is traded only on an influx at the open
+                        prior = (mins >= nominal["09:30"] - 60) & (mins < nominal["09:30"])
+                        rng = (h - l)[prior]
+                        ss.disabled = not (len(rng) and h[t] - l[t] > np.median(rng))
                     if not ss.a5_done:
                         ref = sess.get(ss.a5_from)
                         if ref is None:
@@ -414,7 +425,7 @@ def generate_trades(bars: pd.DataFrame, cfg: JJConfig | None = None, events: pd.
                 if not ss.a5_done and ss.start <= t <= ss.cont_end:
                     away = int(np.sign(o[ss.start] - ss.a5_old))
                     for dd in (1, -1):
-                        if bos[dd][t - w0]:  # the first move: away from the earlier anchor makes the new open fair
+                        if bos(dd, t, ss.ws):  # the first move: away from the earlier anchor makes the new open fair
                             set_anchor(ss, o[ss.start] if away in (0, dd) else ss.a5_old)
                             ss.a5_done = True
                             break
@@ -423,9 +434,9 @@ def generate_trades(bars: pd.DataFrame, cfg: JJConfig | None = None, events: pd.
                         ss.a5_done = True
             am = sess.get("09:30")
             if am is not None and "news" in sess and t == am.cont_end:
-                pre = sess["news"].anchor  # a news day: the pre-news price stays fair if the opening move heads back to it
+                pre = o[sess["news"].start]  # a news day: the pre-news price stays fair if the opening move heads back to it
                 set_anchor(am, pre if abs(c[t] - pre) < abs(o[am.start] - pre) else o[am.start])
-            if am is not None and ten_switch and mod[t] == 600 and am.start <= t <= am.end:
+            if am is not None and ten_switch and am.start < t <= am.end and mins[t - 1] < t1000 <= mins[t]:
                 set_anchor(am, o[t])  # news at 10: the pre-10:00 price is fair
             for ss in sess.values():
                 if ss.start <= t <= ss.end:
@@ -435,20 +446,20 @@ def generate_trades(bars: pd.DataFrame, cfg: JJConfig | None = None, events: pd.
                         ss.exc_up = max(ss.exc_up, h[t] - ss.anchor)
                         ss.exc_dn = max(ss.exc_dn, ss.anchor - l[t])
             # ---- 5. management at the close ----
-            if nxt_ok and int(mod[t + 1]) in opens:
+            if t + 1 < e and any(mins[t] < x <= mins[t + 1] for x in be_times):
                 for p in open_pos:
                     if in_profit(p, t):
                         p.stop = p.entry  # break-even into a new session or a release, when in profit
             for p in open_pos:
                 ss = sess.get(p.session)
                 if p.setup == "continuation" and ss is not None:
-                    if bos[-p.d][t - w0] or disp(t, -p.d):
+                    if bos(-p.d, t, ss.ws) or disp(t, -p.d, ss.ws):
                         p.exit_next = True  # the bias flipped: out at the next open
                     elif ss.cont_end >= 0 and t <= ss.cont_end and (t == ss.cont_end or ss.stalled):
                         best = (h[ss.start:t + 1].max() - o[ss.start]) if p.d > 0 else (o[ss.start] - l[ss.start:t + 1].min())
                         if best < cfg.unfair_move and in_profit(p, t):
                             p.stop = p.entry  # the unfair move never made 38 points
-                if p.evening38 and bos[-p.d][t - w0] and in_profit(p, t):
+                if p.evening38 and ss is not None and bos(-p.d, t, ss.ws) and in_profit(p, t):
                     p.stop = p.entry
             # ---- 6. the firm's end of day ----
             if mod[t] < firm_close and (t == e - 1 or mod[t + 1] >= firm_close):
@@ -461,8 +472,8 @@ def generate_trades(bars: pd.DataFrame, cfg: JJConfig | None = None, events: pd.
                 for p in list(open_pos):
                     close(p, c[t] - p.d * cfg.slippage, "day_end", t)
                 continue
-            # ---- 7. the overnight book: placed at 21:30 toward 9:30 of that morning, cancelled at 09:29 ----
-            if mod[t] == _m("21:29") and cal[t] < day:
+            # ---- 7. the overnight book: placed at 21:30 toward 9:30 of that morning, cancelled at 09:30 ----
+            if mins[t] < t2130 <= mins[t + 1]:
                 d = int(np.sign(am_prev - c[t]))
                 if d != 0:
                     levels = sorted({p[1] for p in (piv_lo if d < 0 else piv_hi) if p[2] and min(am_prev, c[t]) < p[1] < max(am_prev, c[t])})
@@ -471,24 +482,24 @@ def generate_trades(bars: pd.DataFrame, cfg: JJConfig | None = None, events: pd.
                         br = (cfg.stop, cfg.target) if room >= cfg.room_full else ((cfg.half_stop, cfg.half_target) if room >= cfg.room_half else None)
                         if br:
                             book.append({"level": lv, "d": d, "stop": br[0], "target": br[1], "anchor": am_prev, "active": True})
-            if mod[t] == _m("09:29"):
+            if mins[t] < t0930 <= mins[t + 1]:
                 for b in book:
                     b["active"] = False
             # ---- 8. signals at the close, filled at the next bar's open ----
-            if not nxt_ok:
+            if not can_fill:
                 continue
             for ss in sess.values():
-                if not ss.start <= t <= ss.end or t >= ss.blocked_from:
+                if not ss.start <= t <= ss.end or t >= ss.blocked_from or ss.disabled:
                     continue
                 if ss.cont_end >= 0 and t <= ss.cont_end and not ss.stalled:  # the continuation phase
                     d = ss.open_dir
-                    if d == 0 or not bos[d][t - w0] or (ss.cont_max is not None and ss.cont_entries >= ss.cont_max):
+                    if d == 0 or not bos(d, t, ss.ws) or (ss.cont_max is not None and ss.cont_entries >= ss.cont_max):
                         continue
                     if ss.name == "18:00":
                         gap = o[ss.start] - prev_close
                         if abs(gap) >= TICK and int(np.sign(-gap)) != d:
                             continue  # never away from the gap
-                    elif ss.kind == "day" and htf_day(t) == -d and not disp(t, d):
+                    elif ss.kind == "day" and htf_day(t) == -d and not disp(t, d, ss.ws):
                         continue  # against the higher time frame only on a strong opening: a break and a displacement
                     mine = [p for p in open_pos if p.session == ss.name and p.setup == "continuation"]
                     if any((c[t] - p.entry) * p.d < 0 for p in mine):
@@ -504,10 +515,10 @@ def generate_trades(bars: pd.DataFrame, cfg: JJConfig | None = None, events: pd.
                 d = int(np.sign(ss.anchor - c[t]))
                 if d == 0:
                     continue
-                grade = "A+" if bos[d][t - w0] else ("A" if disp(t, d) else None)
+                grade = "A+" if bos(d, t, ss.ws) else ("A" if disp(t, d, ss.ws) else None)
                 if grade is None or (grade != "A+" and (ss.aplus_only or ss.losses_in_row >= cfg.bos_only_after_losses)):
                     continue
-                if d < 0 and grade != "A+" and h[s:t + 1].max() >= ath:
+                if d < 0 and grade != "A+" and h[ss.start:t + 1].max() >= ss.ath:
                     continue  # at all-time highs, shorts only on a break of structure
                 bias = int(np.sign(am_prev - c[t])) if ss.kind == "evening" else htf_day(t)
                 if bias == -d:

@@ -48,17 +48,26 @@ This replaces Baseline 0 (B0) as the JJ stream:
 | Overnight book | placed at 21:30, cancelled at 09:29 | 9:30 of that morning | - | an order at every live swing between the price and 9:30 of that morning, in that direction; it fills when price trades through |
 | 08:30 news (a USD red or orange folder release at 08:30 or 08:15) | the release minute to 09:29 | the pre-news price (the release bar's open; the earlier of two releases) | none ("I don't really do continuation of news anymore") | to the pre-news price |
 | 09:30 New York | 09:30-10:59 | the 09:30 open. News days: the pre-news price stays fair if the opening move (to 09:34) heads back to it. A 10:00 release: the pre-10:00 price from 10:00 | first 5 minutes; follow up on each further break | to fair value |
-| 14:00 New York PM | 14:00-15:29 ("first 90 minutes") | the 14:00 open if its first move goes away from the morning's fair value; otherwise the morning's. FOMC days: the pre-FOMC price | first 5 minutes; follow up on each further break | to fair value |
+| 14:00 New York PM | 14:00-15:29 ("first 90 minutes") | the 14:00 open if its first move goes away from the morning's fair value; otherwise the morning's. FOMC days: the pre-FOMC price | first 5 minutes; follow up on each further break. None on FOMC days: FOMC is news | to fair value |
 | Friday's last hour | 15:00-15:59 | the 15:00 open | - | one reversal, on a break of structure |
 
 London (03:00) is not traded: "I'm not going to talk about London because I don't operate there."
+
+**Bars and timing.** Bars exist only for minutes with trades.
+- A session opens on its first bar within 5 minutes of its time.
+- An order fills at the next bar's open.
+- Anything due at a time (a break-even, the overnight orders at 21:30, their cancellation at 09:30, the 10:00 fair value) happens at the close of the last bar before it.
+
+**News continuation.** He does not continue a news candle, FOMC included: "Continuation of news is fine. I usually only do I don't really do continuation of news anymore actually, unless it's a huge candle. So, I didn't take that" (l6iq0ljhxIo, 20 Sep). Of the FOMC candle in the same video: "If you're taking continuation".
 
 ## Entries
 
 **Structure.**
 - A swing high (low) is a wick above (below) the one candle before and the one after. It counts once the next bar has closed.
 - It stays live until a candle closes beyond it; a wick does not consume it.
-- Structure counts from the previous 09:30 open ("every single piece of structure to the left all the way back down to 9:30").
+- Structure counts from the last 09:30 open before the session began ("every single piece of structure to the left all the way back down to 9:30"):
+  - for the 14:00 session and Friday's last hour, today's;
+  - for the others, the previous day's.
 - A **break of structure** is a close beyond a live swing.
 
 **Displacement.** All three of these:
@@ -90,13 +99,14 @@ Two or three same-colour candles may count together against the one before them.
 - **Room of 30 points or more**, after a move away of more than 38 points: 25/38 ("I waited until we had a move of more than 38 points ... so I could look for 38-point reversals"; "I need at least 30 points in my favor").
 - **Room of 15 points or more**, after a move away of more than 15 points: 12.5/19 ("If there are 15 to 30 points in my favor ... 19 points"; "every time it moves more than 15 points from the right price ... I'm going to send a reversal").
 - **Under 15 points:** none (14.75 rejected).
+- **12.5/19 runs in every session, the New York ones included.** His evaluation brackets are "2538, 5076, or 12519" (KhooqEQK9bA, 6 Sep), with 19-point reversions "back to the opening". "Never less than 25 points in the New York session" (KHEQ5g55dQ4, recorded in July) is about a funded trade sent for about 100 points.
 - **Re-arming:** once price closes within 15 points of fair value, a fresh move away is needed.
 
 Filters, all from his statements:
 - After two losing reversion attempts in a row, breaks of structure only.
 - At an all-time high, shorts only on a break of structure ("I don't want to short off displacement").
 - Three losing reversion attempts in a row end that session's reversions ("I lose three in a row, then I'm done"; per session).
-- After a losing attempt, fair value moves to the middle of the last 30 minutes ("I'll be adjusting fair price to this consolidation now"; "There's the 30 minutes of consolidation").
+- After the second losing attempt in a row, fair value moves to the middle of the last 30 minutes. In his latest recording he kept fair value after the first loss ("It never made enough of a move away for me to adjust fair price"). After the next loss he moved it: "unfortunately lost this one there. So, I'll be adjusting fair price to this consolidation now" (PN1UKQMPb5M). The 30 minutes: "There's the 30 minutes of consolidation".
 
 **Layering.** A further position in the same direction is taken on a new signal only when the latest one is at least halfway to its target ("After the first one is halfway to take profit, boom, there goes the next one"). It is never at the same level, and it belongs to the same attempt.
 
@@ -111,8 +121,8 @@ Filters, all from his statements:
 
 - **Reversions are static:** no partials, and no break-even except as below ("Leaving runners and partials is probably one of the worst things you can do on prop firms").
 - **Break-even at a new session or a release:** any position in profit moves its stop to break-even at the close of the bar before:
-  - a session opens;
-  - a release at 08:15, 08:30, 09:45, 10:00 or 14:00.
+  - a session opens (18:00, 20:00, 08:30 news, 09:30, 14:00; Friday's last hour is not a session open);
+  - a release at 08:15, 08:30, 09:45, 10:00 or 14:00 (a speech is not a release; it stops new entries instead).
 
   A position in drawdown is left to play out ("I would move stop to break even, but I'm in draw down").
 - **Continuation exits:**
@@ -126,7 +136,7 @@ Filters, all from his statements:
   - The snapshot used is the latest fetched before the trading day began.
   - FOMC: a High release at 14:00 named FOMC or Federal Funds Rate.
   - A High-impact scheduled speech ("Speaks", "Testifies", "Press Conference") stops new entries in any session open at that time, for the rest of it ("the dude is speaking. So, probably not going to be taking any trades").
-- **Bank holidays** (2026-10-12, 2026-11-11 and the exchange's early-halt holidays): the 09:30 session runs only when its opening candle's range is larger than the median of the day's candles so far ("the 9:30 a.m. candle that's larger than most of these candles").
+- **Bank holidays** (2026-10-12, 2026-11-11 and the exchange's early-halt holidays): the 09:30 session runs only when its opening candle's range is larger than the median of the hour's candles before it ("the 9:30 a.m. candle that's larger than most of these candles"). This is decided at that candle's close.
 - **Sundays:** the 18:00 and 20:00 sessions run as on any evening ("I do the same thing on Sundays").
 
 ## Where he gives no number: the value his words imply
@@ -141,7 +151,9 @@ Filters, all from his statements:
 | A 20:00 or 14:00 open's first move | "The first move was down. Uh, so 6 p.m. is fair" | the first break of structure in its first 5 minutes |
 | Friday's last hour | "every Friday in the last hour" | 15:00-15:59 |
 | "Halfway to take profit" | his words | 50% of the target |
-| "Larger than most of these candles" | his words | above the median of the day's candles so far |
+| "Larger than most of these candles" | his words | above the median range of the hour's candles before 09:30 |
+| "Because we're at all-time highs" (no displacement shorts) | his words | the session has traded at or above the all-time high from before it |
+| How many losses before fair value moves to the consolidation | "lost this one there. So, I'll be adjusting fair price", after his second loss | two in a row |
 | The overnight book's orders | "an eval short at every single piece of structure to the left all the way back down to 9:30" | every live swing between the price and 9:30 of that morning, at the 25/38 or 12.5/19 bracket its room allows |
 | A news-day open "heading back" to the pre-news price | "if the opening move heads to the pre-news price" | the 09:34 close nearer the pre-news price than the 09:30 open was |
 
@@ -162,6 +174,7 @@ These clauses are his, but his words give a computer no way to know when they ap
 | A displacement with a "huge wick" is not one | no size given |
 | Ambiguous fair values: trade between them | no test for ambiguity given |
 | Unscheduled news (tweets, unscheduled speeches): no fade, done for the day | no feed of them; scheduled speeches are handled |
+| A release far off its forecast is unexpected: no fade, and the post-news consolidation becomes fair | needs the actual figures, and he gives no size for "pretty far off" |
 | His discretionary skips ("some days I'm going to skip 6 p.m.") | no rule given; the stream takes the session |
 
 ## The paper account
@@ -169,22 +182,28 @@ These clauses are his, but his words give a computer no way to know when they ap
 One Topstep 50K evaluation from $2,000, following his evaluation playbook.
 - **Evaluation phase:**
   - It takes the stream's trades one at a time, every kind of entry ("Evaluations as well will be all of my displacement candle entries").
-  - It stops for the day at +$1,500 ("I'm just going to go for 1500").
-  - After a loss it takes the next one ("I like my accounts to either be at profit target or gone").
-- **Funded phase:** it takes breaks of structure only, never a continuation ("continuations are only for evaluations").
-- **Firm rules, fees, sizing in whole micros and payouts:** the frozen bookkeeping's (TopstepX).
+  - It stops for the day once it has made $1,500 in its own dollars ("I'm just going to go for 1500").
+  - After a loss it takes the next one, with no cap on losses ("I like my accounts to either be at profit target or gone").
+- **Funded phase:** it takes breaks of structure only, never a continuation ("continuations are only for evaluations"). Overnight orders are included ("a $2,000 win on funded taking shorts overnight").
+- **Sizing:** whole micros within the phase's budget: $1,000 on the evaluation, $500 funded.
+- **Firm rules, fees and payouts:** the frozen bookkeeping's (TopstepX).
 
 ## Scoring and versions
 
 **Scoring.**
 - A trading day is scored once the forward file holds a bar of a later trading day.
-- The day must have a 09:30 bar, no contract roll inside it, and a calendar snapshot fetched before it began.
+- A day is not scored if any of these holds:
+  - it has no 09:30 bar;
+  - a contract roll falls inside it;
+  - more than 30 minutes pass without a bar between 18:00 the evening before and 16:10;
+  - no calendar snapshot was fetched before it began.
 - A day that can never be scored is recorded with the reason.
+- The runner refuses to run when the calendar folder holds no snapshot at all.
 - History is never rewritten.
 
 **Version 1:**
 - starts on the first trading day that began after this file was committed (`FIRST_DAY` in `research/forward_jj.py`);
 - is compared with the other streams only on its own forward trades;
-- has a one-time `init` check on the sealed bars that only confirms the trades do not depend on how much history is loaded (trade counts, no results).
+- has a one-time `init` check on the sealed bars. It runs the last 5 days with a made-up calendar, so the news, FOMC and speech paths run on real bars. It confirms the trades do not depend on how much history is loaded, and reports trade counts by day and session, not results.
 
 **Changes:** a change is a new version, frozen before its first day and judged only on the forward days after it.

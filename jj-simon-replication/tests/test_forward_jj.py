@@ -25,15 +25,21 @@ def test_a_day_takes_its_calendar_from_a_snapshot_fetched_before_it_began(tmp_pa
     assert cal.empty
 
 
-def test_scorable_days_need_a_later_day_and_no_roll():
-    idx = pd.date_range(pd.Timestamp("2026-10-14 09:00", tz=NY), pd.Timestamp("2026-10-16 10:00", tz=NY), freq="1min")
+def test_scorable_days_need_a_later_day_no_roll_and_no_hole():
+    idx = pd.date_range(pd.Timestamp("2026-10-13 18:00", tz=NY), pd.Timestamp("2026-10-16 10:00", tz=NY), freq="1min")
     idx = idx[idx.hour != 17]
     sym = pd.Series(np.where(idx < pd.Timestamp("2026-10-14 20:00", tz=NY), "NQZ6", "NQH7"), index=idx)
-    days, rolls = fj.scorable(idx, sym, pd.Timestamp("2026-10-14"))
-    assert days == [pd.Timestamp("2026-10-14")] and rolls == [pd.Timestamp("2026-10-15")]  # 20:00 on the 14th is in the 15th's day
+    days, why = fj.scorable(idx, sym, pd.Timestamp("2026-10-14"))
+    assert days == [pd.Timestamp("2026-10-14")] and why == {pd.Timestamp("2026-10-15"): "a contract roll inside the day"}  # 20:00 on the 14th is the 15th's
     late = pd.Series(np.where(idx < pd.Timestamp("2026-10-15 20:00", tz=NY), "NQZ6", "NQH7"), index=idx)
-    days, rolls = fj.scorable(idx, late, pd.Timestamp("2026-10-15"))
-    assert days == [pd.Timestamp("2026-10-15")] and rolls == []  # the 16th holds the roll but is not complete yet
+    days, why = fj.scorable(idx, late, pd.Timestamp("2026-10-15"))
+    assert days == [pd.Timestamp("2026-10-15")] and why == {}  # the 16th holds the roll but is not complete yet
+    holed = idx[(idx < pd.Timestamp("2026-10-14 22:00", tz=NY)) | (idx > pd.Timestamp("2026-10-14 22:45", tz=NY))]
+    days, why = fj.scorable(holed, None, pd.Timestamp("2026-10-14"))
+    assert days == [pd.Timestamp("2026-10-14")] and why[pd.Timestamp("2026-10-15")].startswith("no bar from 10-14 21:59 to 10-14 22:46")
+    no930 = idx[~((idx.hour == 9) & (idx.minute == 30) & (idx.day == 14))]
+    days, why = fj.scorable(no930, None, pd.Timestamp("2026-10-14"))
+    assert why[pd.Timestamp("2026-10-14")] == "no 09:30 bar (market closed or data missing)"
 
 
 def _led(rows):
@@ -44,15 +50,28 @@ def _led(rows):
 def test_an_evaluation_takes_one_trade_at_a_time_and_stops_the_day_at_1500():
     led = _led([("2026-10-15", "2026-10-15 09:31", "2026-10-15 09:40", -1.01, "A+", "continuation"),  # a loss: take the next
                 ("2026-10-15", "2026-10-15 09:35", "2026-10-15 09:50", -1.0, "A", "reversion"),  # overlaps: another account
-                ("2026-10-15", "2026-10-15 09:55", "2026-10-15 10:10", 1.51, "A", "reversion"),  # day at +0.50
-                ("2026-10-15", "2026-10-15 10:20", "2026-10-15 10:40", 1.51, "A", "reversion"),  # day at +2.01: done
+                ("2026-10-15", "2026-10-15 09:55", "2026-10-15 10:10", 1.51, "A", "reversion"),  # day at about +$475
+                ("2026-10-15", "2026-10-15 10:20", "2026-10-15 10:40", 1.51, "A", "reversion"),  # about +$1,909: done
                 ("2026-10-15", "2026-10-15 10:50", "2026-10-15 11:10", 1.51, "A", "reversion"),
-                ("2026-10-16", "2026-10-16 09:31", "2026-10-16 09:40", 1.51, "A", "reversion"),  # one full win is the day
+                ("2026-10-16", "2026-10-16 09:31", "2026-10-16 09:40", 1.51, "A", "reversion"),  # 19 micros: $1,434, under $1,500
+                ("2026-10-16", "2026-10-16 09:40", "2026-10-16 09:45", 1.51, "A", "reversion"),  # enters in the bar the last one exits
                 ("2026-10-16", "2026-10-16 09:50", "2026-10-16 10:00", 1.51, "A+", "reversion")])
     ev = fj.route(led, funded=False)
-    assert list(ev["entry_time"].dt.strftime("%m-%d %H:%M")) == ["10-15 09:31", "10-15 09:55", "10-15 10:20", "10-16 09:31"]
+    assert list(ev["entry_time"].dt.strftime("%m-%d %H:%M")) == ["10-15 09:31", "10-15 09:55", "10-15 10:20", "10-16 09:31", "10-16 09:50"]
+    assert np.isclose(ev["r"].iloc[0], -1.01 * 0.95)  # 19 micros on a 25-point stop is 0.95 of the $1,000 budget
     fu = fj.route(led, funded=True)
     assert list(fu["entry_time"].dt.strftime("%m-%d %H:%M")) == ["10-16 09:50"]  # breaks of structure only, never a continuation
+
+
+def test_four_losses_then_a_win_are_all_taken():
+    rows = [("2026-10-15", f"2026-10-15 09:{31 + 5 * k}", f"2026-10-15 09:{33 + 5 * k}", -1.01, "A", "reversion") for k in range(4)]
+    rows.append(("2026-10-15", "2026-10-15 10:00", "2026-10-15 10:10", 1.51, "A", "reversion"))
+    assert len(fj.route(_led(rows), funded=False)) == 5  # no three-loss cap on the account
+
+
+def test_an_empty_run_writes_an_empty_ledger():
+    led = fj.merge([], [], fj.ledger_rows(pd.DataFrame()), [])
+    assert led.empty and list(led.columns) == fj.KEEP
 
 
 def test_history_is_never_rewritten():

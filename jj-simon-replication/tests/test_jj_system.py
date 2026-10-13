@@ -162,3 +162,42 @@ def test_the_config_is_his_numbers():
     c = JJConfig()
     assert (c.stop, c.target, c.half_stop, c.half_target, c.wide_stop, c.wide_target) == (25, 38, 12.5, 19, 50, 76)
     assert (c.room_full, c.room_half, c.max_reversion_losses, c.continuation_minutes) == (30, 15, 3, 5)
+
+
+def test_a_missing_minute_does_not_drop_the_entry():
+    f = frame("2026-10-13 08:00", "2026-10-15 16:59", spikes=HIGH_BEFORE, bars=opening_continuation(20005))
+    f = f.drop(pd.Timestamp("2026-10-15 09:31", tz=NY))  # no trade in that minute
+    x = generate_trades(f).query("setup == 'continuation'").iloc[0]
+    assert x["entry_time"] == pd.Timestamp("2026-10-15 09:32", tz=NY)
+
+
+def test_an_evening_wick_above_the_high_does_not_block_a_morning_short():
+    bars = rally_then_red(20045, 20034, [(20034, 20034.5, 20033, 20033), (20033, 20033, 19990, 19992)])
+    spikes = {"2026-10-14 18:05": 21000.25}  # one tick above the old high, the evening before
+    t = generate_trades(frame("2026-10-13 08:00", "2026-10-15 16:59", spikes={**HIGH_BEFORE, **spikes}, bars=bars))
+    assert len(t[(t["setup"] == "reversion") & (t["session"] == "09:30")]) == 1
+
+
+def test_no_continuation_of_the_fomc_candle():
+    bars = {"2026-10-15 13:57": (20000, 20002, 20000, 20000), "2026-10-15 13:59": (20000.5, 20000.5, 19999.75, 20000),
+            "2026-10-15 14:00": (20000, 20011, 20000, 20010), "2026-10-15 14:30": (20010, 20060, 20010, 20058)}
+    f = frame("2026-10-13 08:00", "2026-10-15 16:59", spikes=HIGH_BEFORE, bars=bars)
+    assert len(generate_trades(f).query("session == '14:00' and setup == 'continuation'")) == 1
+    ev = pd.DataFrame({"time": [pd.Timestamp("2026-10-15 14:00", tz=NY)], "country": ["USD"], "impact": ["High"], "title": ["FOMC Statement"]})
+    assert generate_trades(f, events=ev).query("session == '14:00' and setup == 'continuation'").empty
+
+
+def test_the_book_is_placed_and_cancelled_without_the_exact_minutes():
+    bars = {"2026-10-14 09:30": (20000, 20000, 20000, 20000)}
+    for k in range(10):
+        p = 20000 + 10 * k
+        bars[f"2026-10-14 13:{10 + 2 * k:02d}"] = (p, p + 12, p + 5, p + 10)
+        bars[f"2026-10-14 13:{11 + 2 * k:02d}"] = (p + 10, p + 11, p + 4, p + 10)
+    bars["2026-10-14 13:31"] = (20100, 20101, 20099, 20100)
+    bars["2026-10-15 10:00"] = (20100, 20100, 20040, 20041)  # falls through the lows after the book is cancelled
+    f = frame("2026-10-13 08:00", "2026-10-15 16:59", spikes=HIGH_BEFORE, bars=bars)
+    f = f.drop([pd.Timestamp("2026-10-14 21:29", tz=NY), pd.Timestamp("2026-10-15 09:29", tz=NY)])
+    assert generate_trades(f, days=[pd.Timestamp("2026-10-15")]).query("session == 'book'").empty
+    bars["2026-10-14 23:00"] = (20100, 20100, 20040, 20041)
+    f2 = frame("2026-10-13 08:00", "2026-10-15 16:59", spikes=HIGH_BEFORE, bars=bars).drop(pd.Timestamp("2026-10-14 21:29", tz=NY))
+    assert len(generate_trades(f2, days=[pd.Timestamp("2026-10-15")]).query("session == 'book'")) >= 1
