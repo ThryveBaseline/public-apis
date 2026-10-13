@@ -5,7 +5,7 @@ and the latest trades. It reads only the forward record; it computes nothing new
 
 usage (by the daily job, after research/forward.py day or after the gate decides to wait):
   python research/status_page.py --state research/private/forward_v1_state.json --public-status research/forward_v1_status.md \\
-      --state-b0 research/private/forward_b0_state.json --public-status-b0 research/forward_b0_status.md \\
+      --state-jj research/private/jj_system_v1_state.json --state-b0 research/private/forward_b0_state.json \\
       --headline "OK" --readings "2026-10-07 available 2026-10-08; 2026-10-08 available 2026-10-08" --out STATUS.md --html site/index.html
 
 --html also writes a single self-contained web page (and robots.txt beside it, keeping it out of search engines), for a
@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from research import forward_jj  # noqa: E402
 from research.forward import SESSION_WINDOW, SETUP_CHECKS, paper_account  # noqa: E402
 
 NY = "America/New_York"
@@ -40,7 +41,9 @@ def _when(ts: str) -> str:
     return t.tz_convert(NY).strftime("%a %d %b %Y, %H:%M ET")
 
 
-STREAMS = (("S3", "S3 continuation"), ("S4", "S4 + A+ reversion"), ("B0", "JJ full rules"))
+STREAMS = (("S3", "S3 continuation"), ("S4", "S4 + A+ reversion"), ("JJ", "JJ system"))
+JJ_SESSIONS = (("18:00", "18:00"), ("20:00", "20:00 Asia"), ("book", "overnight orders"), ("news", "08:30 news"), ("09:30", "09:30"),
+               ("14:00", "14:00"), ("fri", "Friday last hour"))
 
 
 def _summary(t: pd.DataFrame) -> list[str]:
@@ -57,7 +60,10 @@ def _summary(t: pd.DataFrame) -> list[str]:
 def _account(led: pd.DataFrame, dates: list, name: str) -> str:
     if not len(led[led["candidate"] == name]):
         return "no trade yet"
-    p = paper_account(led, [pd.Timestamp(d) for d in dates], name, "wait")
+    if name == "JJ":  # his evaluation playbook: +$1,500 a day, the next trade after a loss (research/forward_jj.paper_account)
+        p = forward_jj.paper_account(led[led["candidate"] == name], dates, "wait")
+    else:
+        p = paper_account(led, [pd.Timestamp(d) for d in dates], name, "wait")
     state = "ruined" if p["ruined"] else f"{p['evals']:.0f} eval(s), {p['passes']:.0f} passed, {p['payouts']:.0f} payout(s)"
     return f"${p['final_cash']:,.0f} ({state})"
 
@@ -66,7 +72,7 @@ def _streams(states: dict) -> tuple[pd.DataFrame, dict]:
     """All trades in one table (each keeps its stream's name) and each stream's scored sessions."""
     frames, dates = [], {}
     for code, _ in STREAMS:
-        st = states.get("B0" if code == "B0" else "v1")
+        st = states.get("JJ" if code == "JJ" else "v1")
         dates[code] = st["dates"] if st else []
         if st and st["trades"]:
             t = pd.DataFrame(st["trades"])
@@ -83,6 +89,27 @@ def _rows(led: pd.DataFrame, dates: dict) -> list[tuple[str, list[str]]]:
     return rows
 
 
+def jj_sessions(led: pd.DataFrame) -> list[tuple[str, int, float]]:
+    """The JJ system's trades and total R by session of his day."""
+    t = led[led["candidate"] == "JJ"] if len(led) else led
+    return [(label, int((t["session"] == code).sum()), float(t.loc[t["session"] == code, "r"].astype(float).sum())) if len(t) else (label, 0, 0.0)
+            for code, label in JJ_SESSIONS]
+
+
+def retired_line(states: dict) -> str:
+    """Baseline 0's record, kept: JJ's 09:30 rules only, the JJ stream until the JJ system replaced it."""
+    st = states.get("B0")
+    if not st:
+        return ""
+    t = pd.DataFrame(st["trades"]) if st["trades"] else pd.DataFrame(columns=["r"])
+    return (f"JJ's 09:30 rules only (B0), retired 13 Oct 2026 when the JJ system replaced it: {len(st['dates'])} sessions, {len(t)} trades, "
+            f"{t['r'].astype(float).sum():+.2f} R.")
+
+
+def _label(t) -> str:
+    return f"JJ {t['session']}" if t["candidate"] == "JJ" and isinstance(t.get("session"), str) else str(t["candidate"])
+
+
 def page(states: dict, headline: str, readings: str, flags: list[str], now: str) -> str:
     kind = headline.split(":", 1)[0].strip().upper()
     led, dates = _streams(states)
@@ -94,17 +121,23 @@ def page(states: dict, headline: str, readings: str, flags: list[str], now: str)
         n = int((led["candidate"] == code).sum()) if len(led) else 0
         s.append(f"- {label}: {len(dates[code])} of the first {SESSION_WINDOW} sessions; " + ", ".join(
             f"{min(n, k)} of {k} trades" for k in SETUP_CHECKS))
-    s += ["- After about 20 to 30 trades in a stream with no flag, Chris decides on one $49 evaluation", "", "## Checkpoints", ""]
+    s += ["- After about 20 to 30 trades in a stream with no flag, Chris decides on one $49 evaluation", "",
+          "## JJ system by session", "", "| session | trades | total R |", "|---|---|---|"]
+    s += [f"| {label} | {k} | {r:+.2f} |" for label, k, r in jj_sessions(led)]
+    s += ["", "A few of his clauses cannot run yet (he gives no number, or they need 1-second data): docs/research/jj_system_v1.md lists them.",
+          "", "## Checkpoints", ""]
     s += [f"- {f}" for f in flags] or ["- none reached yet"]
     if len(led):
         latest = led.sort_values("entry_time").tail(12).iloc[::-1]
         s += ["", "## Latest trades", "", "| stream | date | side | exit | R |", "|---|---|---|---|---|"]
-        s += [f"| {t['candidate']} | {t['date']} | {t['direction']} | {t['exit_reason']} | {float(t['r']):+.2f} |" for _, t in latest.iterrows()]
+        s += [f"| {_label(t)} | {t['date']} | {t['direction']} | {t['exit_reason']} | {float(t['r']):+.2f} |" for _, t in latest.iterrows()]
     s += tournament_md(states.get("tournament"))
     if readings:
         s += ["", "## Market data status (Databento)", ""] + [f"- {x}" for x in readings_lines(readings)]
-    s += ["", "R is the result per contract in units of the trade's stop: +2 is a full target on S3, -1 a full stop. The paper accounts follow the "
-          "frozen bookkeeping ($0.50 micro fee, intraday dips not counted), so they read a little high."]
+    if retired_line(states):
+        s += ["", "## Earlier versions", "", retired_line(states)]
+    s += ["", "R is the result in units of the trade's stop: +2 is a full target on S3, about +1.5 on the JJ system, -1 a full stop. The paper accounts "
+          "follow the frozen bookkeeping ($0.50 micro fee, intraday dips not counted), so they read a little high."]
     return "\n".join(s) + "\n"
 
 
@@ -141,7 +174,8 @@ def html_page(states: dict, headline: str, readings: str, flags: list[str], now:
             miles += (f'<div class="mile"><span>{esc.escape(title)}</span><span>{min(v, k)} / {k}</span>'
                       f'<div class="bar"><div style="width:{min(v, k) / k * 100:.0f}%"></div></div></div>')
         sparks += f"<h3>{esc.escape(label)}</h3>" + _spark(t["r"].astype(float).tolist() if n else [])
-    latest = "".join(f"<tr><td>{esc.escape(str(t['candidate']))}</td><td>{esc.escape(str(t['date']))}</td><td>{esc.escape(str(t['direction']))}</td>"
+    bysess = "".join(f"<tr><td>{esc.escape(label)}</td><td class='num'>{k}</td><td class='num'>{r:+.2f}</td></tr>" for label, k, r in jj_sessions(led))
+    latest = "".join(f"<tr><td>{esc.escape(_label(t))}</td><td>{esc.escape(str(t['date']))}</td><td>{esc.escape(str(t['direction']))}</td>"
                      f"<td>{esc.escape(str(t['exit_reason']))}</td><td class=\"num\">{float(t['r']):+.2f}</td></tr>"
                      for _, t in (led.sort_values("entry_time").tail(12).iloc[::-1].iterrows() if len(led) else []))
     checks = "".join(f"<li>{esc.escape(f)}</li>" for f in flags) or "<li>none reached yet</li>"
@@ -170,12 +204,15 @@ ul {{ padding-left:18px; }} tr.promo td {{ font-weight:600; }}
 <h2>So far</h2><div class="scroll"><table>{table}</table></div>
 <h2>Cumulative R</h2>{sparks}
 <h2>Milestones</h2>{miles}<p class="muted">After about 20 to 30 trades in a stream with no flag, Chris decides on one $49 evaluation.</p>
+<h2>JJ system by session</h2><div class="scroll"><table><tr><th>session</th><th class="num">trades</th><th class="num">total R</th></tr>{bysess}</table></div>
+<p class="muted">A few of his clauses cannot run yet (he gives no number, or they need 1-second data); the spec, docs/research/jj_system_v1.md, lists them.</p>
 <h2>Checkpoints</h2><ul>{checks}</ul>
 {tournament_html(states.get("tournament"))}
 {"<h2>Latest trades</h2><div class='scroll'><table><tr><th>stream</th><th>date</th><th>side</th><th>exit</th><th class='num'>R</th></tr>" + latest + "</table></div>" if latest else ""}
 {"<h2>Market data</h2><p class='muted'>" + "<br>".join(esc.escape(x) for x in readings_lines(readings)) + "</p>" if readings else ""}
-<p class="muted">R is the result per contract in units of the trade's stop: -1 is a full stop. The paper accounts follow the frozen bookkeeping
-($0.50 micro fee, intraday dips not counted), so they read a little high.</p>
+{"<h2>Earlier versions</h2><p class='muted'>" + esc.escape(retired_line(states)) + "</p>" if retired_line(states) else ""}
+<p class="muted">R is the result in units of the trade's stop: -1 is a full stop, about +1.5 a full JJ target. The paper accounts follow the frozen
+bookkeeping ($0.50 micro fee, intraday dips not counted), so they read a little high.</p>
 </main></body></html>
 """
 
@@ -250,9 +287,10 @@ def checkpoint_lines(public_status: str | None) -> list[str]:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--state", help="research/private/forward_v1_state.json, S3 and S4 (absent until the first scored run)")
-    ap.add_argument("--state-b0", help="research/private/forward_b0_state.json, JJ's full rules")
+    ap.add_argument("--state-jj", help="research/private/jj_system_v1_state.json, the JJ system")
+    ap.add_argument("--state-b0", help="research/private/forward_b0_state.json, Baseline 0's kept record (retired)")
     ap.add_argument("--public-status", help="research/forward_v1_status.md, for the checkpoint lines")
-    ap.add_argument("--public-status-b0", help="research/forward_b0_status.md")
+    ap.add_argument("--public-status-b0", help="ignored: Baseline 0 is retired (accepted so an older job still runs)")
     ap.add_argument("--tournament", help="research/private/tournament_v1_summary.json")
     ap.add_argument("--headline", required=True, help="OK | WAITING: ... | REFUSED: ... | FLAG: ...")
     ap.add_argument("--readings", default="", help="the day's Databento condition readings, one line")
@@ -260,12 +298,12 @@ def main() -> int:
     ap.add_argument("--html", help="also write the web page here (robots.txt beside it)")
     a = ap.parse_args()
     states = {}
-    for key, path in (("v1", a.state), ("B0", a.state_b0), ("tournament", a.tournament)):
+    for key, path in (("v1", a.state), ("JJ", a.state_jj), ("B0", a.state_b0), ("tournament", a.tournament)):
         if path and os.path.exists(path):
             with open(path) as fh:
                 states[key] = json.load(fh)
     now = datetime.now(timezone.utc).isoformat()
-    flags = checkpoint_lines(a.public_status) + checkpoint_lines(a.public_status_b0)
+    flags = checkpoint_lines(a.public_status)  # Baseline 0 is retired: its checkpoints no longer apply
     text = page(states, a.headline, a.readings, flags, now)
     with open(a.out, "w") as fh:
         fh.write(text)

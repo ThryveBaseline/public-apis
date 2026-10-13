@@ -48,15 +48,22 @@ When forward evidence reveals a weakness or an opportunity:
 - Preserve every version and its forward record. A superseded version is kept, not rewritten.
 - Version 1's checkpoint thresholds come from history. They answer one question only: is the implementation behaving as designed? A later version's thresholds may come from history for the same purpose, never to justify the change.
 
-## The three forward streams (from 2026-10-07)
+## The three forward streams (from 2026-10-13)
 
-| Stream | Rules | Protocol | Runner |
+| Stream | Rules | Spec | Runner |
 |---|---|---|---|
 | S3 | continuation only | `forward_protocol_v1.md` | `research/forward.py` |
 | S4 | continuation and A+ reversion | `forward_protocol_v1.md` | `research/forward.py` |
-| JJ full rules, B0 | Baseline 0, exactly as frozen | `forward_protocol_b0.md` | `research/forward_b0.py` |
+| JJ system | JJ's whole trading day, every clause of his that can run | `jj_system_v1.md` | `research/forward_jj.py` |
 
-All three use the same bars and gate, each with its own ledger, state and paper account. Beside them, the forward tournament (`forward_tournament_v1.md`, `research/tournament.py`) runs 28 frozen one-dial versions of JJ's rules on the same bars, with a promotion rule fixed before any forward trade. They are compared only on new trades, and none is ranked or dropped on history.
+All three use the same bars and gate, each with its own ledger, state and paper account.
+
+Chris, 2026-10-13: the JJ stream runs his entire system, exactly:
+- nothing simplified;
+- nothing adjusted because of a backtest;
+- nothing dropped to make it easier.
+
+The JJ system replaced Baseline 0 (`forward_protocol_b0.md`), which was only his 09:30 session. B0's record of 4 sessions is kept. Beside them, the forward tournament (`forward_tournament_v1.md`, `research/tournament.py`) runs 28 frozen one-dial versions of JJ's rules on the same bars, with a promotion rule fixed before any forward trade. They are compared only on new trades, and none is ranked or dropped on history.
 
 ## Notes on version 1
 
