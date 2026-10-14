@@ -1,0 +1,60 @@
+{
+ "check_trades": 107,
+ "check_trades_per_day": {
+  "2026-09-29": 34,
+  "2026-09-30": 14,
+  "2026-10-01": 20,
+  "2026-10-02": 18,
+  "2026-10-05": 21
+ },
+ "check_trades_per_session": {
+  "09:30": 28,
+  "14:00": 12,
+  "18:00": 6,
+  "20:00": 8,
+  "book": 48,
+  "news": 5
+ },
+ "code": {
+  "fpt/data.py": "1d341ec53caf504ddeaa95a0fd655e9f46d0fb0604413f05fef8297be3eb8442",
+  "research/forward.py": "642cba5161e3cd01fcad9263425cc7b32dde173d15118236be40d445f2d8f50c",
+  "research/forward_jj.py": "e29518c6cd36e25562987e104d594dc11a985e5bb1254e079ef915d876e1fbb6",
+  "research/jj_system.py": "5bf01d24ec9f5e2c6a677786168ab0dda341920243e20a4b28767ec35633f40d",
+  "research/news_calendar.py": "e7c9ebcde71e62b28d2ec08d6886378f2b0def74cfeeedbba2093826a15e6122"
+ },
+ "config": {
+  "big_open_body": 25.0,
+  "bos_only_after_losses": 2,
+  "commission_side": 2.5,
+  "continuation_minutes": 5,
+  "contracts": 2,
+  "evening_continuations": 1,
+  "evening_reversions": 1,
+  "firm_close": "16:10",
+  "half_stop": 12.5,
+  "half_target": 19.0,
+  "htf_hours": [
+   6,
+   12
+  ],
+  "layer_progress": 0.5,
+  "max_reversion_losses": 3,
+  "point_value": 20.0,
+  "reanchor_after_losses": 2,
+  "reanchor_minutes": 30,
+  "room_full": 30.0,
+  "room_half": 15.0,
+  "session_minutes": 90,
+  "slippage": 0.25,
+  "stall_candles": 2,
+  "stop": 25.0,
+  "target": 38.0,
+  "unfair_move": 38.0,
+  "wide_stop": 50.0,
+  "wide_target": 76.0
+ },
+ "first_day": "2026-10-15",
+ "sealed_sha256": "d2e4ebf90949244441d898fd9d34236eb768100ff64c298812604522b6be316b",
+ "spec_sha256": "928fb99da33f67c4b6e4aae26d5bc35c406b0ec871fdacda32d8fcf7f3ede456",
+ "version": "jj_system_v1"
+}
