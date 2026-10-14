@@ -202,7 +202,7 @@ One Topstep 50K evaluation from $2,000, following his evaluation playbook.
 - History is never rewritten.
 
 **Version 1:**
-- starts on the first trading day that began after this file was committed (`FIRST_DAY` in `research/forward_jj.py`);
+- starts on the first trading day that began after the freeze: 2026-10-15, which began at 18:00 ET on 2026-10-14 (`FIRST_DAY` in `research/forward_jj.py`);
 - is compared with the other streams only on its own forward trades;
 - has a one-time `init` check on the sealed bars. It runs the last 5 days with a made-up calendar, so the news, FOMC and speech paths run on real bars. It confirms the trades do not depend on how much history is loaded, and reports trade counts by day and session, not results.
 

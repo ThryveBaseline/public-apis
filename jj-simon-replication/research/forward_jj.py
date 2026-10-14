@@ -54,8 +54,8 @@ from research.jj_system import VERSION, JJConfig, generate_trades, trading_days 
 from research.news_calendar import events_for  # noqa: E402
 
 SPEC = "docs/research/jj_system_v1.md"
-SPEC_SHA256 = None  # set at the freeze: the spec's sha256
-FIRST_DAY = pd.Timestamp("2026-10-14")  # the first trading day that began after this stream was frozen (it began 18:00 ET on 10-13)
+SPEC_SHA256 = "928fb99da33f67c4b6e4aae26d5bc35c406b0ec871fdacda32d8fcf7f3ede456"  # docs/research/jj_system_v1.md, frozen 2026-10-14
+FIRST_DAY = pd.Timestamp("2026-10-15")  # the first trading day that began after the freeze (it began 18:00 ET on 10-14)
 CONTEXT_DAYS = 5  # calendar days of bars loaded before the first day wanted: its previous 09:30 open, the 12-hour bias, a weekend
 CHECK_DAYS = 30  # the init check's earlier start
 CHECK_LAST = 5  # trading days compared at the end of the sealed bars
