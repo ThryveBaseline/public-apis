@@ -63,7 +63,9 @@ Chris, 2026-10-13: the JJ stream runs his entire system, exactly:
 - nothing adjusted because of a backtest;
 - nothing dropped to make it easier.
 
-The JJ system replaced Baseline 0 (`forward_protocol_b0.md`), which was only his 09:30 session. B0's record of 4 sessions is kept. Beside them, the forward tournament (`forward_tournament_v1.md`, `research/tournament.py`) runs 28 frozen one-dial versions of JJ's rules on the same bars, with a promotion rule fixed before any forward trade. They are compared only on new trades, and none is ranked or dropped on history.
+The JJ system replaced Baseline 0 (`forward_protocol_b0.md`), which was only his 09:30 session. B0's record of 4 sessions is kept.
+
+**The background lab** (`jj_lab.md`, from 2026-10-17): versions of the JJ system, each with one setting changed, run beside it on paper and are compared with it day by day. A weekly review adds new versions. A version that beats the JJ system is a proposal for Chris, never an automatic change. Beside them, the forward tournament (`forward_tournament_v1.md`, `research/tournament.py`) runs 28 frozen one-dial versions of JJ's rules on the same bars, with a promotion rule fixed before any forward trade. They are compared only on new trades, and none is ranked or dropped on history.
 
 ## Notes on version 1
 

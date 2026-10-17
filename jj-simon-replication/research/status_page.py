@@ -131,6 +131,7 @@ def page(states: dict, headline: str, readings: str, flags: list[str], now: str)
         latest = led.sort_values("entry_time").tail(12).iloc[::-1]
         s += ["", "## Latest trades", "", "| stream | date | side | exit | R |", "|---|---|---|---|---|"]
         s += [f"| {_label(t)} | {t['date']} | {t['direction']} | {t['exit_reason']} | {float(t['r']):+.2f} |" for _, t in latest.iterrows()]
+    s += lab_md(states.get("lab"))
     s += tournament_md(states.get("tournament"))
     if readings:
         s += ["", "## Market data status (Databento)", ""] + [f"- {x}" for x in readings_lines(readings)]
@@ -207,6 +208,7 @@ ul {{ padding-left:18px; }} tr.promo td {{ font-weight:600; }}
 <h2>JJ system by session</h2><div class="scroll"><table><tr><th>session</th><th class="num">trades</th><th class="num">total R</th></tr>{bysess}</table></div>
 <p class="muted">A few of his clauses cannot run yet (he gives no number, or they need 1-second data); the spec, docs/research/jj_system_v1.md, lists them.</p>
 <h2>Checkpoints</h2><ul>{checks}</ul>
+{lab_html(states.get("lab"))}
 {tournament_html(states.get("tournament"))}
 {"<h2>Latest trades</h2><div class='scroll'><table><tr><th>stream</th><th>date</th><th>side</th><th>exit</th><th class='num'>R</th></tr>" + latest + "</table></div>" if latest else ""}
 {"<h2>Market data</h2><p class='muted'>" + "<br>".join(esc.escape(x) for x in readings_lines(readings)) + "</p>" if readings else ""}
@@ -274,6 +276,46 @@ def tournament_html(t: dict | None) -> str:
             f"<th class='num'>total R</th></tr>{body}</table></div>")
 
 
+def _lab_rows(lab: dict | None) -> list[dict]:
+    """The lab's versions, best first against the JJ system once a few days are in, by name before that."""
+    if not lab:
+        return []
+    rows = [dict(v, batch=b["batch"]) for b in lab["batches"] for v in b["versions"]]
+    if max([r["days"] for r in rows] + [0]) < lab.get("show_days", 5):
+        return sorted(rows, key=lambda r: r["version"])
+    return sorted(rows, key=lambda r: (r["per_day_vs_jj"] != r["per_day_vs_jj"], -(r["per_day_vs_jj"] if r["per_day_vs_jj"] == r["per_day_vs_jj"] else 0), r["version"]))
+
+
+def _lab_note(lab: dict) -> str:
+    rows = _lab_rows(lab)
+    beats = [r["version"] for r in rows if r["verdict"] == "beats JJ"]
+    days = max([r["days"] for r in rows] + [0])
+    return (f"{len(rows)} versions of the JJ system, each with one setting changed, run beside it on paper and are compared with it day by day "
+            f"({days} day(s) so far). A version beats JJ once it has {lab['min_days']}+ days and its lower bound is above zero, allowing for "
+            f"{lab['tries']} tries. Nothing here changes the JJ system; a version that beats it is a proposal for you. "
+            + ("Beating JJ now: " + ", ".join(beats) + "." if beats else "None beats it yet."))
+
+
+def lab_md(lab: dict | None) -> list[str]:
+    if not lab:
+        return []
+    s = ["", "## Background lab", "", _lab_note(lab), "", "| version | what changes | days | trades | total R | vs JJ per day | verdict |",
+         "|---|---|---|---|---|---|---|"]
+    s += [f"| {r['version']} | {r['description']} | {r['days']} | {r['trades']} | {r['total_r']:+.1f} | {_f(r['per_day_vs_jj'], '+.2f')} | {r['verdict']} |"
+          for r in _lab_rows(lab)]
+    return s
+
+
+def lab_html(lab: dict | None) -> str:
+    if not lab:
+        return ""
+    body = "".join(f"<tr{' class=promo' if r['verdict'] == 'beats JJ' else ''}><td>{esc.escape(r['version'])}</td><td>{esc.escape(r['description'])}</td>"
+                   f"<td class='num'>{r['days']}</td><td class='num'>{r['trades']}</td><td class='num'>{r['total_r']:+.1f}</td>"
+                   f"<td class='num'>{_f(r['per_day_vs_jj'], '+.2f')}</td><td>{esc.escape(r['verdict'])}</td></tr>" for r in _lab_rows(lab))
+    return (f"<h2>Background lab</h2><p class='muted'>{esc.escape(_lab_note(lab))}</p><div class='scroll'><table><tr><th>version</th><th>what changes</th>"
+            f"<th class='num'>days</th><th class='num'>trades</th><th class='num'>total R</th><th class='num'>vs JJ per day</th><th>verdict</th></tr>{body}</table></div>")
+
+
 def checkpoint_lines(public_status: str | None) -> list[str]:
     if not public_status or not os.path.exists(public_status):
         return []
@@ -292,13 +334,14 @@ def main() -> int:
     ap.add_argument("--public-status", help="research/forward_v1_status.md, for the checkpoint lines")
     ap.add_argument("--public-status-b0", help="ignored: Baseline 0 is retired (accepted so an older job still runs)")
     ap.add_argument("--tournament", help="research/private/tournament_v1_summary.json")
+    ap.add_argument("--lab", help="research/private/jj_lab_summary.json, the background lab")
     ap.add_argument("--headline", required=True, help="OK | WAITING: ... | REFUSED: ... | FLAG: ...")
     ap.add_argument("--readings", default="", help="the day's Databento condition readings, one line")
     ap.add_argument("--out", required=True)
     ap.add_argument("--html", help="also write the web page here (robots.txt beside it)")
     a = ap.parse_args()
     states = {}
-    for key, path in (("v1", a.state), ("JJ", a.state_jj), ("B0", a.state_b0), ("tournament", a.tournament)):
+    for key, path in (("v1", a.state), ("JJ", a.state_jj), ("B0", a.state_b0), ("tournament", a.tournament), ("lab", a.lab)):
         if path and os.path.exists(path):
             with open(path) as fh:
                 states[key] = json.load(fh)

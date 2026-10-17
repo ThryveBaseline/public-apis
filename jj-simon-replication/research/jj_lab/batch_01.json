@@ -1,0 +1,118 @@
+{
+ "batch": 1,
+ "frozen": "2026-10-17",
+ "first_day": "2026-10-19",
+ "engine": "research.jj_lab_engine_b1",
+ "note": "One setting changed from the live JJ system in each version. Chosen from JJ's own earlier or alternative statements and from the clauses where he gives no number, before any forward day of theirs.",
+ "variants": {
+  "L01": {
+   "description": "continuation window 15 minutes",
+   "source": "gjWiGBiVis0 (15 Jun) and xTxrtFKlQfc (21 Jun): 15 minutes; his latest is 5",
+   "dials": {
+    "continuation_minutes": 15
+   }
+  },
+  "L02": {
+   "description": "evening reversions take 12.5/19",
+   "source": "KhooqEQK9bA (6 Sep): \"take profits of 19 points instead of 38\"",
+   "dials": {
+    "evening_force_half": true
+   }
+  },
+  "L03": {
+   "description": "a fourth reversion attempt on a break of structure",
+   "source": "Lep139B5EbU (3 Apr): \"Sometimes a fourth trade only if it's like an A+ setup\"",
+   "dials": {
+    "fourth_aplus": true
+   }
+  },
+  "L04": {
+   "description": "fair value moves after the first losing attempt",
+   "source": "KHEQ5g55dQ4: losing reversions in a trend move fair value; the live system waits for the second",
+   "dials": {
+    "reanchor_after_losses": 1
+   }
+  },
+  "L05": {
+   "description": "no overnight orders",
+   "source": "a part check: the overnight orders are the largest part of the stream",
+   "dials": {
+    "book": false
+   }
+  },
+  "L06": {
+   "description": "only the 10 nearest overnight levels",
+   "source": "VY-bO35-tjE (24 Sep): \"at least 10 evals placed\"",
+   "dials": {
+    "book_max_levels": 10
+   }
+  },
+  "L07": {
+   "description": "continue the news candle when its body is over 50 points",
+   "source": "l6iq0ljhxIo (20 Sep): \"unless it's a huge candle\"; no size given, 50 tried",
+   "dials": {
+    "news_cont_body": 50.0
+   }
+  },
+  "L08": {
+   "description": "no 18:00 continuation into a gap over 50 points",
+   "source": "BLvsYJ4sqn8 (17 Sep): \"I would not be taking continuations into the huge gap\"; no size given, 50 tried",
+   "dials": {
+    "evening_max_gap": 50.0
+   }
+  },
+  "L09": {
+   "description": "14:00 session ends at 15:00",
+   "source": "his earlier 14:00-15:00 session; the live system uses \"first 90 minutes\"",
+   "dials": {
+    "pm_minutes": 60
+   }
+  },
+  "L10": {
+   "description": "bias from the last 6 hours only",
+   "source": "aCOgfvL6lK8 (22 Jun): \"look back 6 hours\"",
+   "dials": {
+    "htf_hours": [
+     6
+    ]
+   }
+  },
+  "L11": {
+   "description": "bias from the last 12 hours only",
+   "source": "KHEQ5g55dQ4: \"the previous 6 to 12 hours\", the long end",
+   "dials": {
+    "htf_hours": [
+     12
+    ]
+   }
+  },
+  "L12": {
+   "description": "reversions on breaks of structure only",
+   "source": "KHEQ5g55dQ4: \"Funded accounts I like to save for the breakup structure\"",
+   "dials": {
+    "allow_grade_a": false
+   }
+  },
+  "L13": {
+   "description": "no layering: one account per attempt",
+   "source": "a part check: layering adds accounts on the same move",
+   "dials": {
+    "layering": false
+   }
+  },
+  "L14": {
+   "description": "no 12.5/19 in the New York sessions",
+   "source": "KHEQ5g55dQ4 (July): \"Never less than 25 points in the New York session\"",
+   "dials": {
+    "half_in_ny": false
+   }
+  },
+  "L15": {
+   "description": "continuations only with the higher-time-frame bias",
+   "source": "KHEQ5g55dQ4 (July): \"assuming it aligns with a high time frame bias\"",
+   "dials": {
+    "cont_needs_htf": true
+   }
+  }
+ }
+}

@@ -64,3 +64,14 @@ def test_readings_from_a_pasted_table():
     assert readings_lines("| 2026-10-06 | available | 2026-10-08 | | 2026-10-07 | available | 2026-10-07 |") == [
         "2026-10-06: available (last revised 2026-10-08)", "2026-10-07: available (last revised 2026-10-07)"]
     assert readings_lines("2026-10-06 degraded; 2026-10-07 available") == ["2026-10-06 degraded", "2026-10-07 available"]
+
+
+def test_the_background_lab_section():
+    lab = {"tries": 15, "min_days": 20, "show_days": 5, "batches": [{"batch": 1, "versions": [
+        {"version": "L05", "description": "no overnight orders", "days": 6, "trades": 90, "total_r": 4.2, "per_day_vs_jj": 0.8, "verdict": "too early"},
+        {"version": "L01", "description": "continuation window 15 minutes", "days": 6, "trades": 120, "total_r": -3.0, "per_day_vs_jj": -0.4, "verdict": "too early"}]}]}
+    text = page({"lab": lab}, "OK", "", [], "2026-10-20T07:05:00Z")
+    assert "## Background lab" in text and text.index("| L05 |") < text.index("| L01 |") and "None beats it yet." in text
+    assert "| L05 | no overnight orders | 6 | 90 | +4.2 | +0.80 | too early |" in text
+    h = html_page({"lab": lab}, "OK", "", [], "2026-10-20T07:05:00Z")
+    assert "<h2>Background lab</h2>" in h and "no overnight orders" in h
