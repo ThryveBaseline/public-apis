@@ -173,7 +173,7 @@ def day(a) -> int:
                 raise SystemExit(f"refusing: batch {b['batch']} {name}: {e}")
             st["trades"][name] = json.loads(led.to_json(orient="records"))
             r = led["r"].astype(float) if len(led) else pd.Series(dtype=float)
-            row = {"version": name, "description": v["description"], "source": v.get("source", ""), "trades": int(len(led)),
+            row = {"version": name, "kind": v.get("kind", "component"), "description": v["description"], "source": v.get("source", ""), "trades": int(len(led)),
                    "total_r": float(r.sum()), "wins": int((r > 0).sum())}
             row.update(compare(daily_r(st["trades"][name], names), jj_daily, tries))
             rows.append(row)

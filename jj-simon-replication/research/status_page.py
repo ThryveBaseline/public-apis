@@ -131,6 +131,7 @@ def page(states: dict, headline: str, readings: str, flags: list[str], now: str)
         latest = led.sort_values("entry_time").tail(12).iloc[::-1]
         s += ["", "## Latest trades", "", "| stream | date | side | exit | R |", "|---|---|---|---|---|"]
         s += [f"| {_label(t)} | {t['date']} | {t['direction']} | {t['exit_reason']} | {float(t['r']):+.2f} |" for _, t in latest.iterrows()]
+    s += learn_md(states.get("learn"))
     s += lab_md(states.get("lab"))
     s += tournament_md(states.get("tournament"))
     if readings:
@@ -208,6 +209,7 @@ ul {{ padding-left:18px; }} tr.promo td {{ font-weight:600; }}
 <h2>JJ system by session</h2><div class="scroll"><table><tr><th>session</th><th class="num">trades</th><th class="num">total R</th></tr>{bysess}</table></div>
 <p class="muted">A few of his clauses cannot run yet (he gives no number, or they need 1-second data); the spec, docs/research/jj_system_v1.md, lists them.</p>
 <h2>Checkpoints</h2><ul>{checks}</ul>
+{learn_html(states.get("learn"))}
 {lab_html(states.get("lab"))}
 {tournament_html(states.get("tournament"))}
 {"<h2>Latest trades</h2><div class='scroll'><table><tr><th>stream</th><th>date</th><th>side</th><th>exit</th><th class='num'>R</th></tr>" + latest + "</table></div>" if latest else ""}
@@ -281,6 +283,9 @@ def _lab_rows(lab: dict | None) -> list[dict]:
     if not lab:
         return []
     rows = [dict(v, batch=b["batch"]) for b in lab["batches"] for v in b["versions"]]
+    for r in rows:
+        if r.get("kind") == "challenger":
+            r["description"] = "CHALLENGER: " + r["description"]
     if max([r["days"] for r in rows] + [0]) < lab.get("show_days", 5):
         return sorted(rows, key=lambda r: r["version"])
     return sorted(rows, key=lambda r: (r["per_day_vs_jj"] != r["per_day_vs_jj"], -(r["per_day_vs_jj"] if r["per_day_vs_jj"] == r["per_day_vs_jj"] else 0), r["version"]))
@@ -294,6 +299,31 @@ def _lab_note(lab: dict) -> str:
             f"({days} day(s) so far). A version beats JJ once it has {lab['min_days']}+ days and its lower bound is above zero, allowing for "
             f"{lab['tries']} tries. Nothing here changes the JJ system; a version that beats it is a proposal for you. "
             + ("Beating JJ now: " + ", ".join(beats) + "." if beats else "None beats it yet."))
+
+
+def learn_lines(rep: dict | None, k: int = 6) -> list[str]:
+    """The nightly learning report's largest findings (research/jj_learn.py)."""
+    if not rep:
+        return []
+    if rep.get("in_step") is False:
+        return ["The learning engine is out of step with the live ledger; the report is paused until that is fixed."]
+    return list(rep.get("findings", []))[:k]
+
+
+def learn_md(rep: dict | None) -> list[str]:
+    lines = learn_lines(rep)
+    if not lines:
+        return []
+    return ["", "## What the JJ system is learning", "", f"From {rep.get('n_days', 0)} trading day(s) of its own trades; every signal its rules saw, "
+            "taken or passed, is replayed with other exits. Largest first:", ""] + [f"- {x}" for x in lines]
+
+
+def learn_html(rep: dict | None) -> str:
+    lines = learn_lines(rep)
+    if not lines:
+        return ""
+    return (f"<h2>What the JJ system is learning</h2><p class='muted'>From {rep.get('n_days', 0)} trading day(s) of its own trades; every signal its "
+            "rules saw, taken or passed, is replayed with other exits. Largest first:</p><ul>" + "".join(f"<li>{esc.escape(x)}</li>" for x in lines) + "</ul>")
 
 
 def lab_md(lab: dict | None) -> list[str]:
@@ -335,13 +365,14 @@ def main() -> int:
     ap.add_argument("--public-status-b0", help="ignored: Baseline 0 is retired (accepted so an older job still runs)")
     ap.add_argument("--tournament", help="research/private/tournament_v1_summary.json")
     ap.add_argument("--lab", help="research/private/jj_lab_summary.json, the background lab")
+    ap.add_argument("--learn", help="research/private/jj_learn_report.json, the nightly learning report")
     ap.add_argument("--headline", required=True, help="OK | WAITING: ... | REFUSED: ... | FLAG: ...")
     ap.add_argument("--readings", default="", help="the day's Databento condition readings, one line")
     ap.add_argument("--out", required=True)
     ap.add_argument("--html", help="also write the web page here (robots.txt beside it)")
     a = ap.parse_args()
     states = {}
-    for key, path in (("v1", a.state), ("JJ", a.state_jj), ("B0", a.state_b0), ("tournament", a.tournament), ("lab", a.lab)):
+    for key, path in (("v1", a.state), ("JJ", a.state_jj), ("B0", a.state_b0), ("tournament", a.tournament), ("lab", a.lab), ("learn", a.learn)):
         if path and os.path.exists(path):
             with open(path) as fh:
                 states[key] = json.load(fh)

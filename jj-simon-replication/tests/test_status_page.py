@@ -75,3 +75,11 @@ def test_the_background_lab_section():
     assert "| L05 | no overnight orders | 6 | 90 | +4.2 | +0.80 | too early |" in text
     h = html_page({"lab": lab}, "OK", "", [], "2026-10-20T07:05:00Z")
     assert "<h2>Background lab</h2>" in h and "no overnight orders" in h
+
+
+def test_the_learning_section():
+    rep = {"n_days": 3, "in_step": True, "findings": ["book session: 12 trades on 3 days, -9.00 R (25% won) (early: fewer than 10 trading days)."]}
+    text = page({"learn": rep}, "OK", "", [], "2026-10-20T07:05:00Z")
+    assert "## What the JJ system is learning" in text and "book session: 12 trades" in text
+    assert "out of step" in page({"learn": {"in_step": False}}, "OK", "", [], "2026-10-20T07:05:00Z")
+    assert "What the JJ system is learning" in html_page({"learn": rep}, "OK", "", [], "2026-10-20T07:05:00Z")
