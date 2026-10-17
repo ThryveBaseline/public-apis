@@ -295,9 +295,9 @@ def _lab_note(lab: dict) -> str:
     rows = _lab_rows(lab)
     beats = [r["version"] for r in rows if r["verdict"] == "beats JJ"]
     days = max([r["days"] for r in rows] + [0])
-    return (f"{len(rows)} versions of the JJ system, each with one setting changed, run beside it on paper and are compared with it day by day "
-            f"({days} day(s) so far). A version beats JJ once it has {lab['min_days']}+ days and its lower bound is above zero, allowing for "
-            f"{lab['tries']} tries. Nothing here changes the JJ system; a version that beats it is a proposal for you. "
+    return (f"{len(rows)} versions of the JJ system (whole-system challengers, their ablations and single-setting components) run beside it on "
+            f"paper and are compared with it day by day ({days} day(s) so far). The verdict is taken every {lab['min_days']} days, with the bar "
+            f"raised for each of the {lab['tries']} tries and each look. Nothing here changes the JJ system; a version that beats it is a proposal for you. "
             + ("Beating JJ now: " + ", ".join(beats) + "." if beats else "None beats it yet."))
 
 

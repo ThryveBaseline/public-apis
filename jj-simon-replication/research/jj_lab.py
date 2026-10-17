@@ -12,9 +12,11 @@ batch, judged only on the trading days from its own first day.
 The lab uses the same bars, data checks, scoring rules and calendar as the JJ system (research/forward_jj.py), and
 its ledgers never rewrite a scored day.
 
-Comparison: on each trading day both have scored, the version's total R minus the JJ system's. A version "beats" the
-JJ system once it has MIN_DAYS such days and the one-sided lower bound of the mean daily difference is above zero, at
-5% divided by the number of versions tried in all batches so far; it "trails" when the upper bound is below zero.
+Comparison: on each trading day both have scored, the version's total R minus the JJ system's. The verdict is taken at
+checkpoints, every MIN_DAYS such days (20, 40, ...), on the days up to that checkpoint: a version "beats" the JJ system
+when the one-sided lower bound of the mean daily difference (Student t) is above zero, at 5% divided by the number of
+versions tried in all batches so far and by 2^k at the k-th checkpoint (so repeated looks cannot add up past 5%); it
+"trails" when the upper bound is below zero. A verdict once reached stands.
 
 usage (on the GB10, nightly, after research/forward_jj.py day):
   python research/jj_lab.py day --csv data/nq_1min_databento.csv --forward-csv data/forward/nq_1min_forward.csv --source-tz UTC \\
@@ -44,7 +46,8 @@ from research import forward as fw  # noqa: E402
 from research import forward_jj as fj  # noqa: E402
 from research.news_calendar import events_for  # noqa: E402
 
-MIN_DAYS = 20  # trading days both have scored before a version can be called better or worse
+MIN_DAYS = 20  # trading days both have scored before a version can be called better or worse; the verdict is taken at
+# every MIN_DAYS-day checkpoint (20, 40, 60, ...), the k-th at 5% / (tries x 2^k), so all the looks together stay within 5% / tries
 SHOW_DAYS = 5  # below this no bound is shown
 ALPHA = 0.05
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -66,9 +69,21 @@ def engine_of(b: dict):
     return mod, fw.sha256(os.path.abspath(mod.__file__))
 
 
+def _tuples(v):
+    return tuple(_tuples(x) for x in v) if isinstance(v, (list, tuple)) else v
+
+
 def config(mod, dials: dict):
-    kw = {k: tuple(v) if isinstance(v, list) else v for k, v in dials.items()}
-    return mod.LabConfig(**kw)
+    return mod.LabConfig(**{k: _tuples(v) for k, v in dials.items()})
+
+
+def t_quantile(p: float, df: int) -> float:
+    """Student t quantile (Hill's expansion around the normal; accurate to about 1e-3 for df >= 5)."""
+    z = NormalDist().inv_cdf(p)
+    v = float(df)
+    return (z + (z ** 3 + z) / (4 * v) + (5 * z ** 5 + 16 * z ** 3 + 3 * z) / (96 * v ** 2)
+            + (3 * z ** 7 + 19 * z ** 5 + 17 * z ** 3 - 15 * z) / (384 * v ** 3)
+            + (79 * z ** 9 + 776 * z ** 7 + 1482 * z ** 5 - 1920 * z ** 3 - 945 * z) / (92160 * v ** 4))
 
 
 def run_variant(mod, cfg, bars: pd.DataFrame, sealed: pd.DataFrame, days: list, events) -> pd.DataFrame:
@@ -92,12 +107,20 @@ def compare(version: pd.Series, jj: pd.Series, tries: int) -> dict:
     common = sorted(set(version.index) & set(jj.index))
     diff = (version[common] - jj[common]).to_numpy(float) if common else np.zeros(0)
     n = len(diff)
-    z = NormalDist().inv_cdf(1 - ALPHA / max(tries, 1))
     mean = float(diff.mean()) if n else float("nan")
     se = float(diff.std(ddof=1) / np.sqrt(n)) if n > 1 else float("nan")
-    lo, hi = (mean - z * se, mean + z * se) if n > 1 else (float("nan"), float("nan"))
-    verdict = "beats JJ" if n >= MIN_DAYS and lo > 0 else ("trails JJ" if n >= MIN_DAYS and hi < 0 else "too early")
-    return {"days": n, "per_day_vs_jj": mean, "se": se, "lower": lo, "upper": hi, "z": z, "verdict": verdict}
+    verdict, lo, hi, q = "too early", float("nan"), float("nan"), float("nan")
+    for k in range(1, n // MIN_DAYS + 1):  # every checkpoint so far, on the days up to it
+        x = diff[:k * MIN_DAYS]
+        q = t_quantile(1 - ALPHA / (max(tries, 1) * 2 ** k), len(x) - 1)
+        s = float(x.std(ddof=1) / np.sqrt(len(x)))
+        lo, hi = float(x.mean()) - q * s, float(x.mean()) + q * s
+        if verdict == "too early" and lo > 0:
+            verdict = "beats JJ"
+        elif verdict == "too early" and hi < 0:
+            verdict = "trails JJ"
+    return {"days": n, "per_day_vs_jj": mean, "se": se, "lower": lo, "upper": hi, "t": q, "verdict": verdict,
+            "next_checkpoint": (n // MIN_DAYS + 1) * MIN_DAYS}
 
 
 def day(a) -> int:
@@ -135,7 +158,16 @@ def day(a) -> int:
         with open(a.jj_state) as fh:
             jj = json.load(fh)
     jj_daily = daily_r(jj["trades"], jj["dates"])
-    tries = sum(len(b["variants"]) for b in batches)
+    valid = {}
+    for b in batches:
+        mod, _ = engine_of(b)
+        for name, v in b["variants"].items():
+            try:
+                config(mod, v["dials"])
+                valid[(b["batch"], name)] = None
+            except (TypeError, ValueError) as e:
+                valid[(b["batch"], name)] = f"{type(e).__name__}: {e}"
+    tries = sum(1 for x in valid.values() if x is None)
     os.makedirs(a.state_dir, exist_ok=True)
     summary = {"at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "tries": tries, "min_days": MIN_DAYS, "show_days": SHOW_DAYS,
                "jj_days": len(jj["dates"]), "batches": []}
@@ -164,6 +196,10 @@ def day(a) -> int:
         names = [d.strftime("%Y-%m-%d") for d in scored]
         rows = []
         for name, v in b["variants"].items():
+            if valid[(b["batch"], name)] is not None:  # a version whose settings do not build: reported, not run, not counted
+                rows.append({"version": name, "kind": v.get("kind", "component"), "description": v["description"], "source": v.get("source", ""),
+                             "trades": 0, "total_r": 0.0, "wins": 0, "days": 0, "per_day_vs_jj": float("nan"), "verdict": "invalid: " + valid[(b["batch"], name)]})
+                continue
             try:
                 t = run_variant(mod, config(mod, v["dials"]), bars, before, scored, cal)
                 new = fj.ledger_rows(t)

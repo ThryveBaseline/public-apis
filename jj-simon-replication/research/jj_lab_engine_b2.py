@@ -104,6 +104,21 @@ class LabConfig(JJConfig):
     rev_bracket: tuple = ()  # (session, stop, target) entries: that session's reversions use this bracket
     cont_bracket: tuple = ()  # (session, stop, target) entries: that session's continuations use this bracket
 
+    def __post_init__(self) -> None:
+        """A misspelled name would silently do nothing: refuse it."""
+        bad = [x for x in self.sessions_off if x not in SESSIONS] + [x for x in self.filters_off if x not in FILTERS] + \
+              [x for x in self.mgmt_off if x not in MGMT] + [e[0] for e in tuple(self.rev_bracket) + tuple(self.cont_bracket) if e[0] not in SESSIONS]
+        if bad:
+            raise ValueError(f"unknown names in the settings: {bad}")
+        for e in tuple(self.rev_bracket) + tuple(self.cont_bracket):
+            if len(e) != 3 or not (float(e[1]) > 0 and float(e[2]) > 0):
+                raise ValueError(f"a bracket is (session, stop, target) with positive numbers: {e}")
+
+
+SESSIONS = ("18:00", "20:00", "book", "news", "09:30", "14:00", "fri")
+FILTERS = ("grade_b", "ath", "after_two_losses", "three_losses", "gap_rule", "cont_htf_strong", "cont_drawdown", "band")
+MGMT = ("be_open", "be_release", "be_cont_unfair", "be_evening38", "flip_exit")
+
 
 TRADE_COLUMNS = ["trading_day", "session", "setup", "grade", "direction", "signal_time", "entry_time", "exit_time", "entry", "stop",
                  "target", "exit", "exit_reason", "stop_points", "target_points", "contracts", "pnl_dollars", "r", "attempt", "layer",
@@ -463,7 +478,7 @@ def generate_trades(bars: pd.DataFrame, cfg: LabConfig | None = None, events: pd
                     ss.open_body = abs(c[t] - o[t])
                     jot("session", day=day, session=ss.name, kind=ss.kind, time=ny[t], end=ny[ss.end], anchor=float(ss.anchor),
                         open_dir=ss.open_dir, open_body=float(ss.open_body), gap=float(o[t] - prev_close) if ss.name == "18:00" else None,
-                        news=bool(news_min), holiday=bool(ss.holiday))
+                        news=bool(news_min), release_day=bool(release_t) or bool(fomc), holiday=bool(ss.holiday))
                     if ss.name == "09:30" and ss.holiday:  # a bank holiday is traded only on an influx at the open
                         prior = (mins >= nominal["09:30"] - 60) & (mins < nominal["09:30"])
                         rng = (h - l)[prior]
@@ -551,6 +566,7 @@ def generate_trades(bars: pd.DataFrame, cfg: LabConfig | None = None, events: pd
                 for b in book:
                     b["active"] = False
             # ---- 8. signals at the close, filled at the next bar's open ----
+            # Every rule a signal fails is recorded; the first, in the live system's order, is the reason it was passed.
             for ss in sess.values():
                 if not ss.start <= t <= ss.end:
                     continue
@@ -562,32 +578,26 @@ def generate_trades(bars: pd.DataFrame, cfg: LabConfig | None = None, events: pd
                         continue
                     htf = int(np.sign(am_prev - c[t])) if ss.kind == "evening" else htf_day(t)
                     mine = [p for p in open_pos if p.session == ss.name and p.setup == "continuation"]
-                    reason = gate
-                    if reason is None:
-                        gap = o[ss.start] - prev_close
-                        if ss.cont_max is not None and ss.cont_entries >= ss.cont_max:
-                            reason = "continuation limit"
-                        elif ss.kind == "news" and ss.open_body <= cfg.news_cont_body:
-                            reason = "news candle not huge"
-                        elif cfg.cont_needs_htf and htf == -d:
-                            reason = "against the bias"
-                        elif ss.name == "18:00" and "gap_rule" not in cfg.filters_off and abs(gap) >= TICK and int(np.sign(-gap)) != d:
-                            reason = "away from the gap"
-                        elif ss.name == "18:00" and cfg.evening_max_gap is not None and abs(gap) > cfg.evening_max_gap:
-                            reason = "gap too big"
-                        elif ss.name != "18:00" and ss.kind == "day" and "cont_htf_strong" not in cfg.filters_off and htf == -d and not disp(t, d, ss.ws):
-                            reason = "against the bias, not strong"
-                        elif mine and not cfg.layering:
-                            reason = "layering off"
-                        elif "cont_drawdown" not in cfg.filters_off and any((c[t] - p.entry) * p.d < 0 for p in mine):
-                            reason = "earlier one in drawdown"
+                    gap = o[ss.start] - prev_close
+                    checks = [
+                        ("continuation limit", ss.cont_max is not None and ss.cont_entries >= ss.cont_max),
+                        ("news candle not huge", ss.kind == "news" and cfg.news_cont_body is not None and ss.open_body <= cfg.news_cont_body),
+                        ("against the bias", cfg.cont_needs_htf and htf == -d),
+                        ("away from the gap", ss.name == "18:00" and "gap_rule" not in cfg.filters_off and abs(gap) >= TICK and int(np.sign(-gap)) != d),
+                        ("gap too big", ss.name == "18:00" and cfg.evening_max_gap is not None and abs(gap) > cfg.evening_max_gap),
+                        ("against the bias, not strong", ss.name != "18:00" and ss.kind == "day" and "cont_htf_strong" not in cfg.filters_off
+                         and htf == -d and not disp(t, d, ss.ws)),
+                        ("layering off", bool(mine) and not cfg.layering),
+                        ("earlier one in drawdown", "cont_drawdown" not in cfg.filters_off and any((c[t] - p.entry) * p.d < 0 for p in mine)),
+                    ]
+                    fails = ([gate] if gate else []) + [name for name, bad in checks if bad]
                     wide = ss.open_body > cfg.big_open_body and not ss.holiday
                     st, tg = cont_br.get(ss.name, (cfg.wide_stop, cfg.wide_target) if wide else (cfg.stop, cfg.target))
                     jot("signal", day=day, session=ss.name, kind=ss.kind, setup="continuation", d=d, grade="A+", time=ny[t], index=int(t),
                         close=float(c[t]), anchor=float(ss.anchor), room=float(abs(ss.anchor - c[t])), moved=None, htf=htf,
                         ath=bool(h[ss.start:t + 1].max() >= ss.ath), losses=ss.losses_in_row, layer=bool(mine), stop=st, target=tg,
-                        taken=reason is None, reason=reason or "taken")
-                    if reason is not None:
+                        taken=not fails, reason=fails[0] if fails else "taken", fails=fails)
+                    if fails:
                         continue
                     ss.cont_entries += 1
                     pending.append(Pos(ss.name, "continuation", "A+", d, t, -1, np.nan, np.nan, np.nan, st, tg, _contracts(cfg, st),
@@ -604,48 +614,38 @@ def generate_trades(bars: pd.DataFrame, cfg: LabConfig | None = None, events: pd
                 htf = int(np.sign(am_prev - c[t])) if ss.kind == "evening" else htf_day(t)
                 ath = bool(h[ss.start:t + 1].max() >= ss.ath)
                 mine = [p for p in open_pos if p.session == ss.name and p.setup == "reversion" and p.d == d]
-                reason, br, grade = gate, None, raw
-                if reason is None:
-                    stopped = ss.stopped and "three_losses" not in cfg.filters_off
-                    grade = raw if raw == "A+" or cfg.allow_grade_a else None
-                    if stopped and not (cfg.fourth_aplus and not ss.fourth_used):
-                        reason = "three losses in a row"
-                    elif grade is None:
-                        reason = "displacement entries off"
-                    elif stopped and grade != "A+":
-                        reason = "fourth attempt needs A+"
-                    elif grade != "A+" and ss.aplus_only:
-                        reason = "break of structure only"
-                    elif grade != "A+" and "after_two_losses" not in cfg.filters_off and ss.losses_in_row >= cfg.bos_only_after_losses:
-                        reason = "two losses: break of structure only"
-                    elif d < 0 and grade != "A+" and "ath" not in cfg.filters_off and ath:
-                        reason = "all-time high: break of structure only"
-                    elif "grade_b" not in cfg.filters_off and htf == -d:
-                        reason = "biases opposed (grade B)"
-                    else:
-                        br = bracket(room, np.inf if "band" in cfg.filters_off else moved, ss)
-                        if br is None:
-                            reason = "under 15 points of room" if room < cfg.room_half else "no move away first"
-                        else:
-                            br = rev_br.get(ss.name, br)
-                            if mine and (not cfg.layering or stopped):
-                                reason = "layering off"
-                            elif mine:
-                                lastp = max(mine, key=lambda p: p.entry_i)
-                                if (c[t] - lastp.entry) * d < cfg.layer_progress * lastp.target_pts:
-                                    reason = "last one not halfway"
-                                elif any(abs(c[t] - p.entry) < TICK for p in mine):
-                                    reason = "same level"
-                            elif ss.rev_max is not None and ss.attempts >= ss.rev_max:
-                                reason = "attempt limit"
+                stopped = ss.stopped and "three_losses" not in cfg.filters_off
+                fourth_ok = cfg.fourth_aplus and not ss.fourth_used
+                grade = raw if raw == "A+" or cfg.allow_grade_a else None
+                br0 = bracket(room, np.inf if "band" in cfg.filters_off else moved, ss)
+                lastp = max(mine, key=lambda p: p.entry_i) if mine else None
+                layer_off = bool(mine) and (not cfg.layering or stopped)
+                checks = [
+                    ("three losses in a row", stopped and not fourth_ok),
+                    ("displacement entries off", grade is None),
+                    ("fourth attempt needs A+", stopped and fourth_ok and grade != "A+"),
+                    ("break of structure only", raw != "A+" and ss.aplus_only),
+                    ("two losses: break of structure only", raw != "A+" and "after_two_losses" not in cfg.filters_off
+                     and ss.losses_in_row >= cfg.bos_only_after_losses),
+                    ("all-time high: break of structure only", d < 0 and raw != "A+" and "ath" not in cfg.filters_off and ath),
+                    ("biases opposed (grade B)", "grade_b" not in cfg.filters_off and htf == -d),
+                    ("under 15 points of room", br0 is None and room < cfg.room_half),
+                    ("no move away first", br0 is None and room >= cfg.room_half),
+                    ("layering off", layer_off),
+                    ("last one not halfway", bool(mine) and not layer_off and (c[t] - lastp.entry) * d < cfg.layer_progress * lastp.target_pts),
+                    ("same level", bool(mine) and not layer_off and any(abs(c[t] - p.entry) < TICK for p in mine)),
+                    ("attempt limit", not mine and ss.rev_max is not None and ss.attempts >= ss.rev_max),
+                ]
+                fails = ([gate] if gate else []) + [name for name, bad in checks if bad]
+                br = rev_br.get(ss.name, br0) if br0 is not None else None
                 jot("signal", day=day, session=ss.name, kind=ss.kind, setup="reversion", d=d, grade=raw, time=ny[t], index=int(t),
                     close=float(c[t]), anchor=float(ss.anchor), room=float(room), moved=float(moved), htf=htf, ath=ath,
                     losses=ss.losses_in_row, layer=bool(mine), stop=br[0] if br else None, target=br[1] if br else None,
-                    taken=reason is None, reason=reason or "taken")
-                if reason is not None:
+                    taken=not fails, reason=fails[0] if fails else "taken", fails=fails)
+                if fails:
                     continue
                 if mine:
-                    att, layer = max(mine, key=lambda p: p.entry_i).attempt, True
+                    att, layer = lastp.attempt, True
                 else:
                     ss.attempts += 1
                     if ss.stopped:
