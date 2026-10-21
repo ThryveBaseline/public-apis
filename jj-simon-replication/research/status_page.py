@@ -30,7 +30,8 @@ NY = "America/New_York"
 MEANING = {
     "OK": "Ran normally. Nothing for you to do.",
     "WAITING": "Waiting for market data to be final. Nothing for you to do.",
-    "REFUSED": "The runner stopped itself. Nothing is scored until a person looks: open the bridge window.",
+    "REFUSED": "The runner stopped itself and scored nothing this run; the record so far is unchanged. The next run (03:00 or 15:00 ET) "
+               "starts over on its own. If it refuses twice in a row, open the bridge window.",
     "FLAG": "A checkpoint is outside its historical range. Stop and look before anything else.",
 }
 
