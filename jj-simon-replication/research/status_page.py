@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from research import forward_jj  # noqa: E402
+from research import forward_jj, personal_account  # noqa: E402
 from research.forward import SESSION_WINDOW, SETUP_CHECKS, paper_account  # noqa: E402
 
 NY = "America/New_York"
@@ -58,6 +58,9 @@ def _summary(t: pd.DataFrame) -> list[str]:
             f"{r.sum():+.2f}", f"{r.mean():+.3f}"]
 
 
+REASON_KIND = dict(personal_account.REASONS)
+
+
 def _account(led: pd.DataFrame, dates: list, name: str) -> str:
     if not len(led[led["candidate"] == name]):
         return "no trade yet"
@@ -86,7 +89,7 @@ def _rows(led: pd.DataFrame, dates: dict) -> list[tuple[str, list[str]]]:
     cols = [_summary(led[led["candidate"] == c]) for c, _ in STREAMS]
     rows = [("Sessions scored", [str(len(dates[c])) for c, _ in STREAMS])]
     rows += [(label, [col[i] for col in cols]) for i, label in enumerate(("Trades", "Up / down", "Target / stop / other exit", "Total R", "R per trade"))]
-    rows.append(("Paper account from $2,000", [_account(led, dates[c], c) for c, _ in STREAMS]))
+    rows.append(("Prop-firm paper account from $2,000", [_account(led, dates[c], c) for c, _ in STREAMS]))
     return rows
 
 
@@ -132,6 +135,7 @@ def page(states: dict, headline: str, readings: str, flags: list[str], now: str)
         latest = led.sort_values("entry_time").tail(12).iloc[::-1]
         s += ["", "## Latest trades", "", "| stream | date | side | exit | R |", "|---|---|---|---|---|"]
         s += [f"| {_label(t)} | {t['date']} | {t['direction']} | {t['exit_reason']} | {float(t['r']):+.2f} |" for _, t in latest.iterrows()]
+    s += accounts_md(states)
     s += learn_md(states.get("learn"))
     s += lab_md(states.get("lab"))
     s += tournament_md(states.get("tournament"))
@@ -139,8 +143,9 @@ def page(states: dict, headline: str, readings: str, flags: list[str], now: str)
         s += ["", "## Market data status (Databento)", ""] + [f"- {x}" for x in readings_lines(readings)]
     if retired_line(states):
         s += ["", "## Earlier versions", "", retired_line(states)]
-    s += ["", "R is the result in units of the trade's stop: +2 is a full target on S3, about +1.5 on the JJ system, -1 a full stop. The paper accounts "
-          "follow the frozen bookkeeping ($0.50 micro fee, intraday dips not counted), so they read a little high."]
+    s += ["", "R is the result in units of the trade's stop: +2 is a full target on S3, about +1.5 on the JJ system, -1 a full stop. The PROP-FIRM "
+          "paper accounts follow the frozen bookkeeping ($0.50 micro fee, intraday dips not counted), so they read a little high; the personal cash "
+          "account above is costed separately at retail rates and does not share that convention."]
     return "\n".join(s) + "\n"
 
 
@@ -201,6 +206,10 @@ td, .num {{ font-variant-numeric:tabular-nums; }} .num {{ text-align:right; }}
 .bar {{ grid-column:1 / -1; height:6px; background:var(--line); border-radius:3px; overflow:hidden; }} .bar div {{ height:100%; background:{COLOURS["OK"]}; }}
 .spark {{ width:100%; height:auto; }} .spark .line {{ fill:none; stroke:var(--fg); stroke-width:2; }} .spark .zero {{ stroke:var(--line); stroke-dasharray:4 4; }}
 ul {{ padding-left:18px; }} tr.promo td {{ font-weight:600; }}
+.acct {{ max-width:720px; }} .acct th {{ width:46%; font-weight:500; color:var(--muted); }}
+.acct td {{ font-variant-numeric:tabular-nums; }}
+.flag {{ color:#bf8700; font-weight:600; }}
+h3 {{ font-size:16px; margin:18px 0 6px; }}
 </style></head><body><main>
 <h1>Forward paper test</h1>
 <div class="status"><b>{esc.escape(headline)}</b>{esc.escape(MEANING.get(kind, ""))}<div class="muted">Last run {esc.escape(_when(now))}</div></div>
@@ -210,14 +219,16 @@ ul {{ padding-left:18px; }} tr.promo td {{ font-weight:600; }}
 <h2>JJ system by session</h2><div class="scroll"><table><tr><th>session</th><th class="num">trades</th><th class="num">total R</th></tr>{bysess}</table></div>
 <p class="muted">A few of his clauses cannot run yet (he gives no number, or they need 1-second data); the spec, docs/research/jj_system_v1.md, lists them.</p>
 <h2>Checkpoints</h2><ul>{checks}</ul>
+{accounts_html(states)}
 {learn_html(states.get("learn"))}
 {lab_html(states.get("lab"))}
 {tournament_html(states.get("tournament"))}
 {"<h2>Latest trades</h2><div class='scroll'><table><tr><th>stream</th><th>date</th><th>side</th><th>exit</th><th class='num'>R</th></tr>" + latest + "</table></div>" if latest else ""}
 {"<h2>Market data</h2><p class='muted'>" + "<br>".join(esc.escape(x) for x in readings_lines(readings)) + "</p>" if readings else ""}
 {"<h2>Earlier versions</h2><p class='muted'>" + esc.escape(retired_line(states)) + "</p>" if retired_line(states) else ""}
-<p class="muted">R is the result in units of the trade's stop: -1 is a full stop, about +1.5 a full JJ target. The paper accounts follow the frozen
-bookkeeping ($0.50 micro fee, intraday dips not counted), so they read a little high.</p>
+<p class="muted">R is the result in units of the trade's stop: -1 is a full stop, about +1.5 a full JJ target. The PROP-FIRM paper accounts follow
+the frozen bookkeeping ($0.50 micro fee, intraday dips not counted), so they read a little high; the personal cash account is costed separately at
+retail rates and does not share that convention.</p>
 </main></body></html>
 """
 
@@ -347,6 +358,225 @@ def lab_html(lab: dict | None) -> str:
             f"<th class='num'>days</th><th class='num'>trades</th><th class='num'>total R</th><th class='num'>vs JJ per day</th><th>verdict</th></tr>{body}</table></div>")
 
 
+ACCOUNTS_NOTE = ("Two accounts, kept apart on purpose. They answer different questions and their dollars are not "
+                 "comparable one for one: the personal account is cash, the prop-firm figures are evaluation fees, "
+                 "activations and payouts with trade P&L modelled at the firm's risk budget per R.")
+
+
+def _stale(pers: dict | None, states: dict) -> str:
+    """Is the personal account's reconstruction behind the JJ record it is drawn from? The step is
+    best effort, so it can fail while the rest of the run succeeds, and a stale balance must say
+    so rather than look current."""
+    jj = states.get("JJ")
+    if not pers or not jj:
+        return ""
+    have, want = pers.get("days") or [], jj.get("dates") or []
+    if len(have) < len(want):
+        return (f"STALE: reconstructed through {have[-1] if have else 'no day'}, but the record now has "
+                f"{len(want)} day(s) through {want[-1] if want else '-'}. The figures below are behind.")
+    return ""
+
+
+def _personal_rows(pers: dict | None) -> list[tuple[str, str]]:
+    if not pers or not pers.get("result"):
+        return []
+    r, m = pers["result"], pers.get("marked_to_market") or {}
+    days = len(pers.get("days") or [])
+    rows = [("Starting balance", f"${r['start_cash']:,.2f}"),
+            ("Current balance", f"${r['end_cash']:,.2f}"),
+            ("Net profit / loss", f"{'+' if r['net_usd'] >= 0 else '-'}${abs(r['net_usd']):,.2f}"),
+            ("Return", f"{r['return_pct']:+.2f}% over {days} scored day(s)"),
+            ("Trades", f"{r['trades_taken']} taken of {r['trades_available']} signals, {r['wins']} up / {r['losses']} down"),
+            ("Largest drawdown (closed balance)", f"${r['max_drawdown_closed_usd']:,.2f} ({r['max_drawdown_closed_pct']:.2f}%)")]
+    if m:
+        rows.append(("Largest drawdown (marked to market)",
+                     f"${m['mtm_max_drawdown_usd']:,.2f} ({m['mtm_max_drawdown_pct']:.2f}%), worst equity ${m['worst_equity_usd']:,.2f}"))
+        rows.append(("Minutes below required day margin", str(m["margin_breach_minutes"])))
+    rows.append(("Trading costs", f"${r['costs_usd']:,.2f} (commission ${r['commission_usd']:,.2f} + entry slippage ${r['entry_slip_usd']:,.2f})"))
+    rows.append(("Declined by its own limits", f"{r['trades_skipped']} signals, together {r['r_skipped']:+.2f} R"))
+    return rows
+
+
+def _prop_rows(states: dict) -> list[tuple[str, str]]:
+    led, dates = _streams(states)
+    jj = states.get("JJ")
+    if not jj or not len(led[led["candidate"] == "JJ"]):
+        return []
+    p = forward_jj.paper_account(led[led["candidate"] == "JJ"], jj.get("dates") or [], "wait")
+    if not p:
+        return []
+    return [("Cash left of the $2,000 stake", f"${p['final_cash']:,.0f}"),
+            ("Evaluations bought", f"{p['evals']:.0f}, {p['passes']:.0f} passed"),
+            ("Activations", f"{p['activations']:.0f}"),
+            ("Fees paid to the firm", f"${p['fees']:,.0f}"),
+            ("Payouts requested / received", f"{p['payouts']:.0f} / ${p['paid']:,.0f}"),
+            ("State", "ruined" if p["ruined"] else "running")]
+
+
+LEDGER_N = 15  # the dashboard shows the most recent few; the full ledger is in the .md report
+
+
+def _ledger_rows(pers: dict | None) -> list[list[str]]:
+    """The most recent trades as real dollars, newest first, with the balance after each close."""
+    led = (pers or {}).get("ledger") or []
+    out = []
+    for x in led[-LEDGER_N:][::-1]:
+        fees = x["commission_usd"] + x["entry_slip_usd"]
+        bal = x.get("cash_after_close")
+        out.append([x["date"], x["session"], str(x["direction"]), str(x["exit_reason"]),
+                    str(x["micros"]),
+                    f"{'+' if x['gross_usd'] >= 0 else '-'}${abs(x['gross_usd']):,.2f}",
+                    f"-${fees:,.2f}",
+                    f"{'+' if x['net_usd'] >= 0 else '-'}${abs(x['net_usd']):,.2f}",
+                    f"${bal:,.2f}" if bal is not None else "-"])
+    return out
+
+
+def _skipped_rows(pers: dict | None) -> list[list[str]]:
+    """Every signal the account declined, with the limit that declined it."""
+    return [[x["date"], x["session"], str(x.get("direction", "-")), f"{x['stop_points']:.1f}",
+             f"{x['r']:+.2f}", str(x["would_size"]), x["reason"], x["kind"]]
+            for x in ((pers or {}).get("skipped") or [])]
+
+
+LEDGER_HEAD = ["date", "session", "side", "exit", "micros", "gross", "fees", "net", "balance after"]
+SKIP_HEAD = ["date", "session", "side", "stop pts", "recorded R", "would_size", "reason", "kind"]
+
+
+def accounts_md(states: dict) -> list[str]:
+    pers = states.get("personal")
+    s = ["", "## Money: two separate accounts", "", ACCOUNTS_NOTE, "",
+         "### 1. Personal cash account - what would my own $2,000 be worth?", ""]
+    stale = _stale(pers, states)
+    if stale:
+        s += [f"**{stale}**", ""]
+    rows = _personal_rows(pers)
+    if not rows:
+        s += ["Not reconstructed yet.", ""]
+    else:
+        s += ["A HYPOTHETICAL accounting view over days already collected and scored, not a claim that this account "
+              "was operating from the first of them. MNQ micros, retail commissions, its own sizing, margin and risk "
+              "limits: docs/research/personal_account_assumptions.md states every assumption and what is not modelled.",
+              "", "| | |", "|---|---|"]
+        s += [f"| {k} | {v} |" for k, v in rows]
+        s += [""]
+        r = pers["result"]
+        if r.get("latched_off"):
+            s += ["**The account hit its trading floor and stopped for good.**", ""]
+        if r.get("open_at_flatten"):
+            s += [f"**FLAG: {r['open_at_flatten']} taken position(s) would still have been open at the daily "
+                  "flatten time; the record holds no liquidation price for them.**", ""]
+        by = r.get("skipped_by_reason") or {}
+        if by:
+            s += ["Why signals were declined (none counts as profit or loss):", ""]
+            s += [f"- {why}: {k} ({REASON_KIND.get(why, '?')})" for why, k in by.items()]
+            s += [""]
+        rows_l = _ledger_rows(pers)
+        if rows_l:
+            n = len(pers.get("ledger") or [])
+            s += [f"The last {len(rows_l)} of {n} simulated trades in real dollars, newest first. Fees are this "
+                  "trade's commission plus entry slippage, both charged at the entry. The full trade-by-trade "
+                  "ledger is research/private/personal_account_jj.md.", "",
+                  "| " + " | ".join(LEDGER_HEAD) + " |", "|" + "---|" * len(LEDGER_HEAD)]
+            s += ["| " + " | ".join(r) + " |" for r in rows_l]
+            s += [""]
+        rows_s = _skipped_rows(pers)
+        if rows_s:
+            s += ["Every signal the account declined, and the limit that declined it. None of these contributes a "
+                  "cent to the balance above.", "",
+                  "| " + " | ".join(SKIP_HEAD) + " |", "|" + "---|" * len(SKIP_HEAD)]
+            s += ["| " + " | ".join(r) + " |" for r in rows_s]
+            s += [""]
+        sens = pers.get("sensitivity") or []
+        if sens:
+            s += ["The per-trade risk cap is the knob that moves this most, and it is a policy choice, not a "
+                  "figure the data forced. Each row reruns the whole account:", "",
+                  "| max risk per trade | trades | net P&L | return |", "|---|---|---|---|"]
+            s += [f"| {100 * x['cap_frac']:.3f}% | {x['trades_taken']} | "
+                  f"{'+' if x['net_usd'] >= 0 else '-'}${abs(x['net_usd']):,.2f} | {x['return_pct']:+.2f}% |"
+                  for x in sens]
+            s += [""]
+    s += ["### 2. Prop-firm account (Topstep) - what have the evaluations cost and paid?", ""]
+    prop = _prop_rows(states)
+    if not prop:
+        s += ["No trade yet.", ""]
+    else:
+        s += ["The same $2,000, spent on Topstep 50K evaluations instead. Trade P&L here is modelled at the firm's "
+              "risk budget per R on the frozen bookkeeping ($0.50 micro fee, intraday dips not counted), so it reads "
+              "a little high and is NOT own cash.", "", "| | |", "|---|---|"]
+        s += [f"| {k} | {v} |" for k, v in prop]
+        s += [""]
+    return s
+
+
+def accounts_html(states: dict) -> str:
+    pers = states.get("personal")
+    out = [f"<h2>Money: two separate accounts</h2><p class='muted'>{esc.escape(ACCOUNTS_NOTE)}</p>"]
+    stale = _stale(pers, states)
+    out.append("<h3>1. Personal cash account &mdash; what would my own $2,000 be worth?</h3>")
+    if stale:
+        out.append(f"<p class='flag'>{esc.escape(stale)}</p>")
+    rows = _personal_rows(pers)
+    if not rows:
+        out.append("<p class='muted'>Not reconstructed yet.</p>")
+    else:
+        out.append("<p class='muted'>A HYPOTHETICAL accounting view over days already collected and scored, not a "
+                   "claim that this account was operating from the first of them. MNQ micros, retail commissions, its "
+                   "own sizing, margin and risk limits.</p>")
+        body = "".join(f"<tr><th>{esc.escape(k)}</th><td>{esc.escape(v)}</td></tr>" for k, v in rows)
+        out.append(f"<table class='acct'>{body}</table>")
+        r = pers["result"]
+        if r.get("latched_off"):
+            out.append("<p class='flag'>The account hit its trading floor and stopped for good.</p>")
+        if r.get("open_at_flatten"):
+            out.append(f"<p class='flag'>FLAG: {r['open_at_flatten']} taken position(s) would still have been open at "
+                       "the daily flatten time; the record holds no liquidation price for them.</p>")
+        by = r.get("skipped_by_reason") or {}
+        if by:
+            lis = "".join(f"<li>{esc.escape(why)}: {k} ({esc.escape(REASON_KIND.get(why, '?'))})</li>"
+                          for why, k in by.items())
+            out.append(f"<p class='muted'>Why signals were declined (none counts as profit or loss):</p><ul>{lis}</ul>")
+        rows_l = _ledger_rows(pers)
+        if rows_l:
+            n = len(pers.get("ledger") or [])
+            head = "".join(f"<th{' class=num' if h not in ('date', 'session', 'side', 'exit') else ''}>"
+                           f"{esc.escape(h)}</th>" for h in LEDGER_HEAD)
+            body = "".join("<tr>" + "".join(f"<td{' class=num' if i >= 4 else ''}>{esc.escape(v)}</td>"
+                                            for i, v in enumerate(r)) + "</tr>" for r in rows_l)
+            out.append(f"<p class='muted'>The last {len(rows_l)} of {n} simulated trades in real dollars, newest "
+                       "first. Fees are this trade's commission plus entry slippage, both charged at the entry.</p>"
+                       f"<div class='scroll'><table><tr>{head}</tr>{body}</table></div>")
+        rows_s = _skipped_rows(pers)
+        if rows_s:
+            head = "".join(f"<th{' class=num' if h in ('stop pts', 'recorded R', 'would_size') else ''}>"
+                           f"{esc.escape(h)}</th>" for h in SKIP_HEAD)
+            body = "".join("<tr>" + "".join(f"<td{' class=num' if i in (3, 4, 5) else ''}>{esc.escape(v)}</td>"
+                                            for i, v in enumerate(r)) + "</tr>" for r in rows_s)
+            out.append("<p class='muted'>Every signal the account declined, and the limit that declined it. None of "
+                       "these contributes a cent to the balance above.</p>"
+                       f"<div class='scroll'><table><tr>{head}</tr>{body}</table></div>")
+        sens = pers.get("sensitivity") or []
+        if sens:
+            srows = "".join(f"<tr><td class='num'>{100 * x['cap_frac']:.3f}%</td><td class='num'>{x['trades_taken']}</td>"
+                            f"<td class='num'>{'+' if x['net_usd'] >= 0 else '-'}${abs(x['net_usd']):,.2f}</td>"
+                            f"<td class='num'>{x['return_pct']:+.2f}%</td></tr>" for x in sens)
+            out.append("<p class='muted'>The per-trade risk cap moves this most, and it is a policy choice, not a "
+                       "figure the data forced. Each row reruns the whole account:</p>"
+                       "<div class='scroll'><table><tr><th class='num'>max risk per trade</th><th class='num'>trades</th>"
+                       f"<th class='num'>net P&amp;L</th><th class='num'>return</th></tr>{srows}</table></div>")
+    out.append("<h3>2. Prop-firm account (Topstep) &mdash; what have the evaluations cost and paid?</h3>")
+    prop = _prop_rows(states)
+    if not prop:
+        out.append("<p class='muted'>No trade yet.</p>")
+    else:
+        out.append("<p class='muted'>The same $2,000, spent on Topstep 50K evaluations instead. Trade P&amp;L here is "
+                   "modelled at the firm's risk budget per R on the frozen bookkeeping ($0.50 micro fee, intraday dips "
+                   "not counted), so it reads a little high and is NOT own cash.</p>")
+        body = "".join(f"<tr><th>{esc.escape(k)}</th><td>{esc.escape(v)}</td></tr>" for k, v in prop)
+        out.append(f"<table class='acct'>{body}</table>")
+    return "".join(out)
+
+
 def checkpoint_lines(public_status: str | None) -> list[str]:
     if not public_status or not os.path.exists(public_status):
         return []
@@ -367,13 +597,15 @@ def main() -> int:
     ap.add_argument("--tournament", help="research/private/tournament_v1_summary.json")
     ap.add_argument("--lab", help="research/private/jj_lab_summary.json, the background lab")
     ap.add_argument("--learn", help="research/private/jj_learn_report.json, the nightly learning report")
+    ap.add_argument("--personal", help="research/private/personal_account_jj.json, the personal cash account")
     ap.add_argument("--headline", required=True, help="OK | WAITING: ... | REFUSED: ... | FLAG: ...")
     ap.add_argument("--readings", default="", help="the day's Databento condition readings, one line")
     ap.add_argument("--out", required=True)
     ap.add_argument("--html", help="also write the web page here (robots.txt beside it)")
     a = ap.parse_args()
     states = {}
-    for key, path in (("v1", a.state), ("JJ", a.state_jj), ("B0", a.state_b0), ("tournament", a.tournament), ("lab", a.lab), ("learn", a.learn)):
+    for key, path in (("v1", a.state), ("JJ", a.state_jj), ("B0", a.state_b0), ("tournament", a.tournament), ("lab", a.lab), ("learn", a.learn),
+                      ("personal", a.personal)):
         if path and os.path.exists(path):
             with open(path) as fh:
                 states[key] = json.load(fh)
