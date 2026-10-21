@@ -713,7 +713,7 @@ def main() -> int:
             fh.write(_md(res, mtm, sens, rev, g.name, days, NOTE, raw_concurrency(trades),
                          mincap, at_min))
     print("personal account: $%s from $%s, %+.2f%%, %d of %d signals taken, %d skipped, "
-          "closed drawdown $%s" % (f"{res['end_cash']:,.2f}", f"{START_CASH:,.0f}",
+          "closed drawdown $%s" % (f"{res['end_cash']:,.2f}", f"{res['start_cash']:,.0f}",
                                    res["return_pct"], res["trades_taken"], res["trades_available"],
                                    res["trades_skipped"], f"{res['max_drawdown_closed_usd']:,.2f}"))
     return 0
