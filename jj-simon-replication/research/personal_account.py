@@ -76,6 +76,9 @@ MARGIN_USE_CAP = 0.50          # open day-margin at most this share of cash
 MIN_EQUITY = 500.00            # below this the account is latched off for good
 
 SENSITIVITY = (0.02000, 0.02645, 0.02500, 0.03000, 0.05000)
+# Capital figures are rounded UP to this, because a stake is a decision, not a measurement, and
+# rounding a minimum DOWN would name a number that does not actually clear the bar.
+ROUND_TO = 500.0
 
 # Skip reasons split by kind: an INFEASIBLE trade the account could not have placed, a POLICY
 # trade it chose not to place. Neither is ever counted as profit; conflating them would claim
@@ -136,7 +139,35 @@ def size(stop_points: float, equity: float, cap_frac: float) -> int:
     return max(0, int(math.floor((cap_frac * equity + 1e-9) / unit)))
 
 
-def run(trades: list, cap_frac: float = MAX_RISK_PER_TRADE, order: str = "engine") -> dict:
+def floor_for(start: float) -> float:
+    """The balance below which the account stops for good. $500 on a $2,000 stake, and a quarter
+    of the stake above that, so a larger account is not left trading on a stub."""
+    return max(MIN_EQUITY, 0.25 * start)
+
+
+def min_capital(trades: list, cap_frac: float = MAX_RISK_PER_TRADE) -> dict:
+    """What a stream needs invested before this risk policy will let it trade.
+
+    A trade is takeable at one micro when its full stop-out fits the per-trade cap, so the
+    capital it demands is `per_unit_risk(stop) / cap_frac`. The tightest stop in the stream gives
+    the capital for its FIRST signal, the widest gives the capital for ALL of them. This changes
+    nothing about the strategy: it reads the stop distances the engine already recorded and says
+    what account they imply."""
+    if not trades:
+        return {}
+    risks = sorted(per_unit_risk(float(t["stop_points"])) for t in trades)
+    up = lambda x: math.ceil(x / ROUND_TO) * ROUND_TO
+    return {"cap_frac": cap_frac, "rounded_to": ROUND_TO,
+            "min_for_any_usd": up(risks[0] / cap_frac),
+            "min_for_all_usd": up(risks[-1] / cap_frac),
+            "min_for_any_exact_usd": round(risks[0] / cap_frac, 2),
+            "min_for_all_exact_usd": round(risks[-1] / cap_frac, 2),
+            "tightest_stop_risk_usd": round(risks[0], 2),
+            "widest_stop_risk_usd": round(risks[-1], 2)}
+
+
+def run(trades: list, cap_frac: float = MAX_RISK_PER_TRADE, order: str = "engine",
+        start: float | None = None) -> dict:
     """One pass of the account over the recorded stream.
 
     Strictly causal: an entry decision reads only the cash that closed trades have already
@@ -159,7 +190,9 @@ def run(trades: list, cap_frac: float = MAX_RISK_PER_TRADE, order: str = "engine
     for e in events:
         ev_by_time.setdefault(e[0], []).append(e)
 
-    cash = START_CASH
+    start = START_CASH if start is None else float(start)
+    floor = floor_for(start)
+    cash = start
     open_pos: list = []        # dicts with exit_at, n, risk, trade
     taken, skipped, closes = [], [], []
     latched_off = False
@@ -177,7 +210,7 @@ def run(trades: list, cap_frac: float = MAX_RISK_PER_TRADE, order: str = "engine
         for _, _, _, (i, t) in ev_by_time[now]:
             equity = cash               # realised cash; costs are already debited at entry
             why = None
-            if latched_off or equity < MIN_EQUITY:
+            if latched_off or equity < floor:
                 latched_off, why = True, "below the trading floor"
             n = 0
             if why is None:
@@ -225,7 +258,7 @@ def run(trades: list, cap_frac: float = MAX_RISK_PER_TRADE, order: str = "engine
         x["cash_after_close"] = c["cash"] if c else None
 
     # Closed-balance equity curve, in close order, with the opening $2,000 as the first peak.
-    curve = [START_CASH] + [c["cash"] for c in sorted(closes, key=lambda c: c["at"])]
+    curve = [start] + [c["cash"] for c in sorted(closes, key=lambda c: c["at"])]
     peak, dd, dd_pct = curve[0], 0.0, 0.0
     for v in curve:
         peak = max(peak, v)
@@ -240,9 +273,9 @@ def run(trades: list, cap_frac: float = MAX_RISK_PER_TRADE, order: str = "engine
     flat_breach = [x for x in taken if _spans_flatten(x["entry_time"], x["exit_time"])]
     return {
         "cap_frac": cap_frac, "order": order,
-        "start_cash": START_CASH, "end_cash": round(cash, 2),
+        "start_cash": round(start, 2), "end_cash": round(cash, 2),
         "net_usd": round(net, 2), "gross_usd": round(gross, 2),
-        "return_pct": round(100.0 * net / START_CASH, 2),
+        "return_pct": round(100.0 * net / start, 2),
         "trades_taken": len(taken), "trades_available": len(trades),
         "trades_skipped": len(skipped),
         "wins": len(wins), "losses": len(taken) - len(wins),
@@ -259,6 +292,12 @@ def run(trades: list, cap_frac: float = MAX_RISK_PER_TRADE, order: str = "engine
         "r_skipped": round(sum(x["r"] for x in skipped), 3),
         "latched_off": latched_off,
         "open_at_flatten": len(flat_breach),
+        # The one number that explains a stream a small account simply cannot trade: what its
+        # TIGHTEST stop costs on a single micro, against the opening balance.
+        "smallest_micro_risk_usd": round(min(per_unit_risk(float(t["stop_points"]))
+                                             for t in trades), 2) if trades else None,
+        "smallest_micro_risk_pct": round(100.0 * min(per_unit_risk(float(t["stop_points"]))
+                                                     for t in trades) / start, 2) if trades else None,
         "skipped_by_reason": _count(skipped, "reason"),
         "skipped_by_kind": _count(skipped, "kind"),
         "taken": taken, "skipped": skipped,
@@ -317,13 +356,13 @@ def mark_to_market(res: dict, bars: list) -> dict:
             "net": x["net_usd"], "entry_px": float(x["_entry_px"]), "ref": x["ref"]}
            for x in res["taken"]]
     lo_eq, lo_at, breach = None, None, 0
-    cash = START_CASH
+    cash = float(res["start_cash"])
     closed_by = sorted(((p["b"], p) for p in pos), key=lambda z: z[0])
     ci = 0
     opened = sorted(((p["a"], p) for p in pos), key=lambda z: z[0])
     oi = 0
     live: list = []
-    peak_eq, dd, dd_pct = START_CASH, 0.0, 0.0
+    peak_eq, dd, dd_pct = float(res["start_cash"]), 0.0, 0.0
     for when, hi, lo, close in bars:
         while oi < len(opened) and opened[oi][0] <= when:
             p = opened[oi][1]
@@ -354,6 +393,21 @@ def mark_to_market(res: dict, bars: list) -> dict:
 
 
 # ---------------------------------------------------------------- report
+def normalise(t: dict) -> dict:
+    """One recorded trade in the shape this account needs, whatever stream wrote it.
+
+    The JJ stream records `stop_points` explicitly and it is the INITIAL stop distance, which on
+    two trades differs from |entry - stop| because the stop was later moved to breakeven. So the
+    explicit field always wins and the distance is only derived when the stream does not record
+    one, as S3 and S4 do not. `session` is a JJ notion; the others fall back to their setup."""
+    out = dict(t)
+    if out.get("stop_points") is None:
+        out["stop_points"] = abs(float(out["entry"]) - float(out["stop"]))
+    if not out.get("session"):
+        out["session"] = str(out.get("setup") or "-")
+    return out
+
+
 def raw_concurrency(trades: list) -> int:
     """How many positions the raw stream holds at once at its busiest, before this account's
     limits: the gap between the signal stream and what one small account can carry."""
@@ -367,7 +421,7 @@ def raw_concurrency(trades: list) -> int:
 
 
 def _md(res: dict, mtm: dict, sens: list, rev: dict, name: str, days: list, note: str,
-        raw_peak: int) -> str:
+        raw_peak: int, mincap: dict, at_min: dict) -> str:
     s = []
     a = s.append
     a("# Personal cash account (hypothetical) - %s" % name)
@@ -438,6 +492,19 @@ def _md(res: dict, mtm: dict, sens: list, rev: dict, name: str, days: list, note
     a("are kept apart deliberately: calling a policy skip unexecutable would claim more than the")
     a("record supports.")
     a("")
+    if not res["taken"]:
+        a("## This account could not trade this stream at all")
+        a("")
+        a("Not one of its %d signals was takeable from $%s. The stream's TIGHTEST stop costs"
+          % (res["trades_available"], f"{res['start_cash']:,.0f}"))
+        a("$%s on a single micro contract, which is %.1f%% of the account - and a micro is the"
+          % (f"{res['smallest_micro_risk_usd']:,.2f}", res["smallest_micro_risk_pct"]))
+        a("smallest position that exists. No risk limit worth the name admits that, so the")
+        a("balance below is the opening balance, untouched, and not a loss.")
+        a("")
+        a("This is a real finding about the stream, not a gap in the accounting: its stop")
+        a("distances are built for an account far larger than this one.")
+        a("")
     a("## Every simulated trade")
     a("")
     a("Each line is real dollars from the recorded prices, and the balance is the account after")
@@ -466,6 +533,35 @@ def _md(res: dict, mtm: dict, sens: list, rev: dict, name: str, days: list, note
           % (x["date"], x["session"], x.get("direction", "-"), x["stop_points"], x["r"],
              x["would_size"], x["reason"], x["kind"]))
     a("")
+    if mincap:
+        a("## What this stream needs invested")
+        a("")
+        a("A signal is tradable when one micro's full stop-out fits the per-trade cap, so the")
+        a("capital it demands is its risk divided by that cap, rounded up to the next $%d."
+          % ROUND_TO)
+        a("Nothing about the strategy changes here - these are the stop distances the engine")
+        a("already recorded, read back as the account size they imply. Affording a stop is")
+        a("necessary, not sufficient: the open-risk and concurrency limits still decline signals")
+        a("that overlap.")
+        a("")
+        a("| | risk on one micro | capital needed at %.1f%% per trade |" % (100 * MAX_RISK_PER_TRADE))
+        a("|---|---|---|")
+        a("| Its TIGHTEST stop, so its first tradable signal | $%s | $%s |"
+          % (f"{mincap['tightest_stop_risk_usd']:,.2f}", f"{mincap['min_for_any_usd']:,.0f}"))
+        a("| Its WIDEST stop, so every signal tradable | $%s | $%s |"
+          % (f"{mincap['widest_stop_risk_usd']:,.2f}", f"{mincap['min_for_all_usd']:,.0f}"))
+        a("")
+        if at_min:
+            a("At $%s, the stake that makes every signal tradable, the same account over the same"
+              % f"{at_min['start_cash']:,.0f}")
+            a("days takes %d of %d signals and ends at $%s (%s$%s, %+.2f%%), largest closed"
+              % (at_min["trades_taken"], at_min["trades_available"],
+                 f"{at_min['end_cash']:,.2f}", "+" if at_min["net_usd"] >= 0 else "-",
+                 f"{abs(at_min['net_usd']):,.2f}", at_min["return_pct"]))
+            a("drawdown $%s. The same caveats apply: these are few days and the costs not"
+              % f"{at_min['max_drawdown_closed_usd']:,.2f}")
+            a("modelled are all adverse.")
+            a("")
     a("## The knob that matters most")
     a("")
     a("One micro on his typical 25-point stop risks $%.2f all in, so %.3f%% of $%s is the"
@@ -537,6 +633,8 @@ def main() -> int:
                                       "accounting with no other change")
     ap.add_argument("--bars", help="data/forward/nq_1min_forward.csv, for the marked-to-market drawdown")
     ap.add_argument("--name", default="JJ system v1")
+    ap.add_argument("--start-cash", type=float, default=None,
+                    help="override the $2,000 stake, to ask what a stream needs invested")
     ap.add_argument("--out", required=True)
     ap.add_argument("--md")
     g = ap.parse_args()
@@ -550,7 +648,7 @@ def main() -> int:
             return 2
         raw = raw.get(g.version, [])
     want = g.version or g.candidate
-    trades = [t for t in raw if t.get("candidate", want) == want]
+    trades = [normalise(t) for t in raw if t.get("candidate", want) == want]
     days = st.get("dates", [])
     if not trades:
         out = {"name": g.name, "candidate": want, "days": days, "trades_available": 0,
@@ -560,11 +658,12 @@ def main() -> int:
         print("personal account: no trade yet for %s" % want)
         return 0
 
-    res = run(trades)
-    rev = run(trades, order="reverse")
+    start = g.start_cash or START_CASH
+    res = run(trades, start=start)
+    rev = run(trades, order="reverse", start=start)
     sens = []
     for f in sorted(set(SENSITIVITY)):
-        r = run(trades, cap_frac=f)
+        r = run(trades, cap_frac=f, start=start)
         sens.append({k: r[k] for k in ("cap_frac", "trades_taken", "net_usd", "return_pct",
                                        "max_drawdown_closed_usd")})
     by_ref = {i: t for i, t in enumerate(trades)}
@@ -573,6 +672,20 @@ def main() -> int:
     mtm = mark_to_market(res, load_bars(g.bars)) if g.bars and os.path.exists(g.bars) else {}
     for x in res["taken"]:
         x.pop("_entry_px", None)
+
+    # What this stream needs invested before the policy will trade it, and what it would have
+    # been worth at that stake. Nothing about the strategy moves: this reads the stop distances
+    # the engine already recorded and says what account size they imply.
+    mincap = min_capital(trades)
+    at_min = {}
+    if mincap and res["trades_taken"] < res["trades_available"]:
+        need = mincap["min_for_all_usd"]
+        if need > start:
+            rm = run(trades, start=need)
+            at_min = {"start_cash": need, "end_cash": rm["end_cash"], "net_usd": rm["net_usd"],
+                      "return_pct": rm["return_pct"], "trades_taken": rm["trades_taken"],
+                      "trades_available": rm["trades_available"],
+                      "max_drawdown_closed_usd": rm["max_drawdown_closed_usd"]}
 
     doc = {"name": g.name, "candidate": want, "days": days,
            "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
@@ -588,6 +701,7 @@ def main() -> int:
            "result": {k: v for k, v in res.items() if k not in ("taken", "skipped", "closed_curve")},
            "marked_to_market": mtm,
            "sensitivity": sens,
+           "minimum_capital": mincap, "at_minimum_capital": at_min,
            "reverse_order": {k: rev[k] for k in ("net_usd", "return_pct", "trades_taken")},
            "raw_peak_concurrent": raw_concurrency(trades),
            "ledger": res["taken"], "skipped": res["skipped"],
@@ -596,7 +710,8 @@ def main() -> int:
         json.dump(doc, fh, indent=1, sort_keys=True)
     if g.md:
         with open(g.md, "w") as fh:
-            fh.write(_md(res, mtm, sens, rev, g.name, days, NOTE, raw_concurrency(trades)))
+            fh.write(_md(res, mtm, sens, rev, g.name, days, NOTE, raw_concurrency(trades),
+                         mincap, at_min))
     print("personal account: $%s from $%s, %+.2f%%, %d of %d signals taken, %d skipped, "
           "closed drawdown $%s" % (f"{res['end_cash']:,.2f}", f"{START_CASH:,.0f}",
                                    res["return_pct"], res["trades_taken"], res["trades_available"],

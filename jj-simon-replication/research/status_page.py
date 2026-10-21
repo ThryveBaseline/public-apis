@@ -85,11 +85,58 @@ def _streams(states: dict) -> tuple[pd.DataFrame, dict]:
     return led, dates
 
 
-def _rows(led: pd.DataFrame, dates: dict) -> list[tuple[str, list[str]]]:
+def _own_money(pers: dict | None) -> str:
+    """One stream's personal cash account in a single cell: what $2,000 of own money would be
+    worth, and how much of the stream it could actually take. A stream whose stops are too wide
+    for the account shows its opening balance untouched, with the reason, never a bare $2,000
+    that could be mistaken for a flat result."""
+    if not pers or not pers.get("result"):
+        return "not reconstructed yet"
+    r = pers["result"]
+    need = (pers.get("minimum_capital") or {}).get("min_for_all_usd")
+    tail = ""
+    if need and r["trades_taken"] < r["trades_available"]:
+        tail = f"; needs ${need:,.0f} to afford its widest stop"
+    if not r["trades_taken"]:
+        return (f"${r['end_cash']:,.0f}, untouched - none of its {r['trades_available']} signals is "
+                f"tradable from $2,000 (its tightest stop alone risks "
+                f"${r['smallest_micro_risk_usd']:,.0f} a micro, {r['smallest_micro_risk_pct']:.0f}% "
+                f"of the account){tail}")
+    return (f"${r['end_cash']:,.2f} ({r['net_usd']:+,.2f}, {r['return_pct']:+.2f}%); "
+            f"{r['trades_taken']} of {r['trades_available']} signals tradable{tail}")
+
+
+def _needs_rows(states: dict) -> list[list[str]]:
+    """What each stream needs invested before the risk policy will trade it, and what it would
+    have been worth at that stake. The stop distances are the engine's own; only the account
+    size moves."""
+    allp = states.get("personal") or {}
+    out = []
+    for code, label in STREAMS:
+        p = allp.get(code) or {}
+        mc, am = p.get("minimum_capital") or {}, p.get("at_minimum_capital") or {}
+        if not mc:
+            continue
+        r = p.get("result") or {}
+        full = r.get("trades_taken") == r.get("trades_available") and r.get("trades_available")
+        out.append([label, f"${mc['tightest_stop_risk_usd']:,.0f} - ${mc['widest_stop_risk_usd']:,.0f}",
+                    f"${mc['min_for_any_usd']:,.0f}", f"${mc['min_for_all_usd']:,.0f}",
+                    ("already does at $2,000" if full else
+                     (f"${am['end_cash']:,.0f} ({am['return_pct']:+.2f}%) on {am['trades_taken']}"
+                      f" of {am['trades_available']}" if am else "-"))])
+    return out
+
+
+NEEDS_HEAD = ["stream", "risk per micro", "to afford its tightest stop", "to afford its widest stop",
+              "worth at that stake"]
+
+
+def _rows(led: pd.DataFrame, dates: dict, states: dict) -> list[tuple[str, list[str]]]:
     cols = [_summary(led[led["candidate"] == c]) for c, _ in STREAMS]
     rows = [("Sessions scored", [str(len(dates[c])) for c, _ in STREAMS])]
     rows += [(label, [col[i] for col in cols]) for i, label in enumerate(("Trades", "Up / down", "Target / stop / other exit", "Total R", "R per trade"))]
-    rows.append(("Prop-firm paper account from $2,000", [_account(led, dates[c], c) for c, _ in STREAMS]))
+    pers = states.get("personal") or {}
+    rows.append(("Personal cash account from $2,000", [_own_money(pers.get(c)) for c, _ in STREAMS]))
     return rows
 
 
@@ -119,7 +166,7 @@ def page(states: dict, headline: str, readings: str, flags: list[str], now: str)
     led, dates = _streams(states)
     s = ["# Forward paper test", "", f"**Status: {headline}**", "", MEANING.get(kind, ""), "", f"Last run: {_when(now)}", "",
          "| | " + " | ".join(label for _, label in STREAMS) + " |", "|---|" + "---|" * len(STREAMS)]
-    s += [f"| {label} | " + " | ".join(vals) + " |" for label, vals in _rows(led, dates)]
+    s += [f"| {label} | " + " | ".join(vals) + " |" for label, vals in _rows(led, dates, states)]
     s += ["", "## Milestones", ""]
     for code, label in STREAMS:
         n = int((led["candidate"] == code).sum()) if len(led) else 0
@@ -173,7 +220,7 @@ def html_page(states: dict, headline: str, readings: str, flags: list[str], now:
     led, dates = _streams(states)
     head = "<tr><th></th>" + "".join(f"<th>{esc.escape(label)}</th>" for _, label in STREAMS) + "</tr>"
     table = head + "".join("<tr><th>" + esc.escape(label) + "</th>" + "".join(f"<td>{esc.escape(v)}</td>" for v in vals) + "</tr>"
-                           for label, vals in _rows(led, dates))
+                           for label, vals in _rows(led, dates, states))
     miles, sparks = "", ""
     for code, label in STREAMS:
         t = led[led["candidate"] == code].sort_values("entry_time") if len(led) else led
@@ -209,7 +256,7 @@ ul {{ padding-left:18px; }} tr.promo td {{ font-weight:600; }}
 .acct {{ max-width:720px; }} .acct th {{ width:46%; font-weight:500; color:var(--muted); }}
 .acct td {{ font-variant-numeric:tabular-nums; }}
 .flag {{ color:#bf8700; font-weight:600; }}
-h3 {{ font-size:16px; margin:18px 0 6px; }}
+h3 {{ font-size:16px; margin:18px 0 6px; }} h4 {{ font-size:14px; margin:16px 0 4px; }}
 </style></head><body><main>
 <h1>Forward paper test</h1>
 <div class="status"><b>{esc.escape(headline)}</b>{esc.escape(MEANING.get(kind, ""))}<div class="muted">Last run {esc.escape(_when(now))}</div></div>
@@ -444,7 +491,7 @@ SKIP_HEAD = ["date", "session", "side", "stop pts", "recorded R", "would_size", 
 
 
 def accounts_md(states: dict) -> list[str]:
-    pers = states.get("personal")
+    pers = (states.get("personal") or {}).get("JJ")
     s = ["", "## Money: two separate accounts", "", ACCOUNTS_NOTE, "",
          "### 1. Personal cash account - what would my own $2,000 be worth?", ""]
     stale = _stale(pers, states)
@@ -496,6 +543,24 @@ def accounts_md(states: dict) -> list[str]:
                   f"{'+' if x['net_usd'] >= 0 else '-'}${abs(x['net_usd']):,.2f} | {x['return_pct']:+.2f}% |"
                   for x in sens]
             s += [""]
+    allp = states.get("personal") or {}
+    if allp:
+        s += ["Each stream's own-money account, side by side. They are separate accounts, not one pooled "
+              "balance: every stream starts from its own $2,000 and takes only its own signals.", "",
+              "| stream | personal cash account |", "|---|---|"]
+        s += [f"| {label} | {_own_money(allp.get(code))} |" for code, label in STREAMS]
+        s += [""]
+    needs = _needs_rows(states)
+    if needs:
+        s += ["", "#### What each stream needs invested", "",
+              "A signal is tradable when one micro's full stop-out fits the per-trade cap, so the capital it "
+              "demands is its risk divided by that cap. The strategies are untouched: these are the stop "
+              "distances the engine already recorded, read back as the account size they imply. Affording a "
+              "stop is necessary, not sufficient: the open-risk and concurrency limits still decline signals "
+              "that overlap, which is why the last column can sit below full coverage.", "",
+              "| " + " | ".join(NEEDS_HEAD) + " |", "|" + "---|" * len(NEEDS_HEAD)]
+        s += ["| " + " | ".join(r) + " |" for r in needs]
+        s += [""]
     s += ["### 2. Prop-firm account (Topstep) - what have the evaluations cost and paid?", ""]
     prop = _prop_rows(states)
     if not prop:
@@ -510,7 +575,7 @@ def accounts_md(states: dict) -> list[str]:
 
 
 def accounts_html(states: dict) -> str:
-    pers = states.get("personal")
+    pers = (states.get("personal") or {}).get("JJ")
     out = [f"<h2>Money: two separate accounts</h2><p class='muted'>{esc.escape(ACCOUNTS_NOTE)}</p>"]
     stale = _stale(pers, states)
     out.append("<h3>1. Personal cash account &mdash; what would my own $2,000 be worth?</h3>")
@@ -564,6 +629,24 @@ def accounts_html(states: dict) -> str:
                        "figure the data forced. Each row reruns the whole account:</p>"
                        "<div class='scroll'><table><tr><th class='num'>max risk per trade</th><th class='num'>trades</th>"
                        f"<th class='num'>net P&amp;L</th><th class='num'>return</th></tr>{srows}</table></div>")
+    allp = states.get("personal") or {}
+    if allp:
+        body = "".join(f"<tr><th>{esc.escape(label)}</th><td>{esc.escape(_own_money(allp.get(code)))}</td></tr>"
+                       for code, label in STREAMS)
+        out.append("<p class='muted'>Each stream's own-money account, side by side. They are separate accounts, not "
+                   "one pooled balance: every stream starts from its own $2,000 and takes only its own signals.</p>"
+                   f"<table class='acct'>{body}</table>")
+    needs = _needs_rows(states)
+    if needs:
+        head = "".join(f"<th{' class=num' if h != 'stream' else ''}>{esc.escape(h)}</th>" for h in NEEDS_HEAD)
+        body = "".join("<tr>" + "".join(f"<td{' class=num' if i else ''}>{esc.escape(v)}</td>"
+                                        for i, v in enumerate(r)) + "</tr>" for r in needs)
+        out.append("<h4>What each stream needs invested</h4><p class='muted'>A signal is tradable when one "
+                   "micro's full stop-out fits the per-trade cap, so the capital it demands is its risk divided "
+                   "by that cap. The strategies are untouched: these are the stop distances the engine already "
+                   "recorded, read back as the account size they imply. Affording a stop is necessary, not "
+                   "sufficient: the open-risk and concurrency limits still decline signals that overlap, which is "
+                   f"why the last column can sit below full coverage.</p><div class='scroll'><table><tr>{head}</tr>{body}</table></div>")
     out.append("<h3>2. Prop-firm account (Topstep) &mdash; what have the evaluations cost and paid?</h3>")
     prop = _prop_rows(states)
     if not prop:
@@ -597,18 +680,28 @@ def main() -> int:
     ap.add_argument("--tournament", help="research/private/tournament_v1_summary.json")
     ap.add_argument("--lab", help="research/private/jj_lab_summary.json, the background lab")
     ap.add_argument("--learn", help="research/private/jj_learn_report.json, the nightly learning report")
-    ap.add_argument("--personal", help="research/private/personal_account_jj.json, the personal cash account")
+    ap.add_argument("--personal", action="append", default=[],
+                    help="a personal cash account json; repeat once per stream. Each file names its own "
+                         "candidate, so the streams cannot be mixed up or pooled")
     ap.add_argument("--headline", required=True, help="OK | WAITING: ... | REFUSED: ... | FLAG: ...")
     ap.add_argument("--readings", default="", help="the day's Databento condition readings, one line")
     ap.add_argument("--out", required=True)
     ap.add_argument("--html", help="also write the web page here (robots.txt beside it)")
     a = ap.parse_args()
     states = {}
-    for key, path in (("v1", a.state), ("JJ", a.state_jj), ("B0", a.state_b0), ("tournament", a.tournament), ("lab", a.lab), ("learn", a.learn),
-                      ("personal", a.personal)):
+    for key, path in (("v1", a.state), ("JJ", a.state_jj), ("B0", a.state_b0), ("tournament", a.tournament), ("lab", a.lab), ("learn", a.learn)):
         if path and os.path.exists(path):
             with open(path) as fh:
                 states[key] = json.load(fh)
+    # keyed by the candidate each file names itself, never by argument order
+    personal = {}
+    for path in a.personal:
+        if path and os.path.exists(path):
+            with open(path) as fh:
+                doc = json.load(fh)
+            personal[str(doc.get("candidate") or "JJ")] = doc
+    if personal:
+        states["personal"] = personal
     now = datetime.now(timezone.utc).isoformat()
     flags = checkpoint_lines(a.public_status)  # Baseline 0 is retired: its checkpoints no longer apply
     text = page(states, a.headline, a.readings, flags, now)
