@@ -1,0 +1,31 @@
+{
+  "mode": "dry-run",
+  "environment": "demo",
+  "credentials_file": "/home/buddy2/.config/jj-live/ironbeam-demo.json",
+  "account": "SET_AFTER_READ_ONLY_PROBE",
+  "signal_symbol": "XCME:NQ.Z26",
+  "execution_symbol": "XCME:MNQ.Z26",
+  "expiry": null,
+  "trading_day": "2026-10-26",
+  "cutoff": null,
+  "schedule_confirmed": false,
+  "expected_delay_seconds": 600,
+  "timestamp_verified": false,
+  "sequence_contiguous": false,
+  "demo_brackets_qualified": false,
+  "parity_qualified": false,
+  "starting_cash": 2000,
+  "prior_high": null,
+  "context_file": "/home/buddy2/.local/share/jj-live/context.jsonl",
+  "context_sha256": null,
+  "calendar_directory": "/home/buddy2/public-apis/jj-simon-replication/research/private/calendar",
+  "state_directory": "/home/buddy2/.local/share/jj-live/demo",
+  "risk_terms": {
+    "fee_round_trip": null,
+    "slippage_points": null,
+    "margin_per_contract": null,
+    "margin_cushion": null,
+    "max_drawdown_dollars": null,
+    "confirmed": false
+  }
+}
