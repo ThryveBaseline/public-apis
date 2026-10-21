@@ -29,7 +29,7 @@ def mock_demo(output):
             {"date": "2026-10-15T12:00:00-04:00", "country": "USD", "impact": "Low", "title": "Synthetic calendar fixture"}]))
         wire = MockWire()
         wire.clock = datetime(2026, 10, 15, 13, 31, tzinfo=UTC)
-        broker = Ironbeam(request=wire.request)
+        broker = Ironbeam(request=wire.request, pacer=wire.pacer)
         broker.authenticate({"username": "mock", "password": "mock", "apikey": "mock"})
         broker.bind_account(wire.account)
         ledger = Ledger(root / "personal-mock.sqlite", lane="mock", account=wire.account)

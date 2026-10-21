@@ -32,7 +32,7 @@ def full_day_mock(output):
             {"date":"2026-10-22T12:00:00-04:00","country":"USD","impact":"Low","title":"Synthetic fixture"}]))
         w = MockWire()
         w.clock, w.price = start, 20000
-        broker = Ironbeam(request=w.request)
+        broker = Ironbeam(request=w.request, pacer=w.pacer)
         broker.authenticate({"username":"mock","password":"mock","apikey":"mock"})
         broker.bind_account(w.account)
         ledger = Ledger(root / "personal-mock.sqlite", lane="mock", account=w.account)

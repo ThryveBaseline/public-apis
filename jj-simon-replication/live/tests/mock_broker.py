@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 from live.models import Blocked
+from live.ironbeam import RequestPacer
 
 
 class MockWire:
@@ -18,6 +19,11 @@ class MockWire:
         self.next_id = 0
         self.stream_ids = 0
         self.clock = datetime(2026, 10, 22, 13, 31, tzinfo=timezone.utc)
+        self.request_clock = 0.0
+        self.pacer = RequestPacer(clock=lambda: self.request_clock, sleep=self.advance_requests)
+
+    def advance_requests(self, seconds):
+        self.request_clock += seconds
 
     def request(self, method, url, headers, body, timeout):
         path = urlparse(url).path.removeprefix("/v2")
@@ -56,13 +62,16 @@ class MockWire:
             return {"orderId": order["orderId"], "strategyId": "strategy-" + order["orderId"]}
         if "/update/" in path:
             order = self.orders[path.rsplit("/", 1)[1]]
-            order["stopLoss"], order["takeProfit"] = body["stopLoss"], body["takeProfit"]
-            for oid in order["childOrders"]:
-                child = self.orders[oid]
-                if child["orderType"] == "STOP":
-                    child["stopPrice"] = body["stopLoss"]
-                else:
-                    child["limitPrice"] = body["takeProfit"]
+            if not order.get("parentOrderId"):
+                # Reproduce the reported dangerous parent-update side effect.
+                # A test must fail on lost protection, not bless a friendly mock.
+                for oid in order["childOrders"]:
+                    self.orders[oid]["status"] = "CANCELLED"
+            else:
+                field = "stopPrice" if order["orderType"] == "STOP" else "limitPrice"
+                assert set(body) == {"orderId", "quantity", field}
+                assert body["quantity"] == order["quantity"]
+                order[field] = body[field]
             return {"orderId": order["orderId"]}
         if "/cancel/" in path:
             order = self.orders[path.rsplit("/", 1)[1]]

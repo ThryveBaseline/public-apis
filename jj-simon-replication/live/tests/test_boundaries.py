@@ -15,7 +15,11 @@ def test_changed_fill_price_aligns_absolute_bracket(rig):
     e.submit(entry(w), q)
     assert l.intent("one")["stop"] == w.price-25
     assert l.intent("one")["target"] == w.price+38
-    assert any(c[0] == "PUT" for c in w.calls)
+    updates = [c for c in w.calls if c[0] == "PUT"]
+    parent = w.orders[l.intent("one")["order_id"]]
+    assert len(updates) == 2
+    assert {c[2]["orderId"] for c in updates} == set(parent["childOrders"])
+    assert all("stopLoss" not in c[2] and "takeProfit" not in c[2] for c in updates)
 
 
 def test_excess_entry_slippage_halts(rig):

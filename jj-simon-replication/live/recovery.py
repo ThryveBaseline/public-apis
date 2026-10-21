@@ -1,5 +1,6 @@
 """Reconnect in protection-monitoring mode; never restore entry authority blindly."""
 import time
+from datetime import timedelta
 
 from .models import Blocked, utc
 from .execution import EMERGENCY_EXIT_REASONS
@@ -47,7 +48,11 @@ class RecoveryMonitor:
                 # A fresh stream ID on every connection, account events only.
                 connection = e.broker.stream([], connect=connect)
                 try:
-                    for _ in connection:
+                    for event in connection:
+                        # Balance-only price updates must not trigger a REST
+                        # snapshot per tick. Deadlines and executions take priority.
+                        if set(event) <= {"b", "ba"} and e.reconciled_at and utc(e.now()) - e.reconciled_at < timedelta(seconds=2) and utc(e.now()) < e.cutoff and not e.kill_file.exists():
+                            continue
                         if self.step():
                             return "RECONCILED_FLAT_ENTRIES_STILL_DISABLED"
                 finally:

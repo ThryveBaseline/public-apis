@@ -13,7 +13,7 @@ from .mock_broker import MockWire
 @pytest.fixture
 def rig(tmp_path):
     wire = MockWire()
-    broker = Ironbeam(request=wire.request)
+    broker = Ironbeam(request=wire.request, pacer=wire.pacer)
     broker.authenticate({"username": "mock", "password": "mock", "apikey": "mock"})
     broker.bind_account(wire.account)
     ledger = Ledger(tmp_path / "mock.sqlite", lane="mock", account=wire.account)
@@ -108,6 +108,10 @@ def test_breakeven_preserves_target_and_reconciles(rig):
     e.breakeven("one")
     assert l.intent("one")["stop"] == 20005
     assert l.intent("one")["target"] == target
+    updates = [c for c in w.calls if c[0] == "PUT"]
+    stop = next(o for o in w.orders.values() if o["orderType"] == "STOP")
+    assert updates == [("PUT", f"/order/{w.account}/update/{stop['orderId']}",
+                        {"orderId": stop["orderId"], "quantity": 1, "stopPrice": 20005})]
 
 
 def test_disconnect_recovery_protection_and_no_duplicate(rig):
@@ -176,7 +180,7 @@ def test_flatten_uncertainty_cannot_send_second_exit(rig):
 
 def test_every_production_order_path_blocked(rig):
     w, b, l, e = rig
-    prod = Ironbeam("live-readonly", request=w.request)
+    prod = Ironbeam("live-readonly", request=w.request, pacer=w.pacer)
     prod.authenticate({"username": "mock", "password": "mock", "apikey": "mock"})
     prod.bind_account(w.account)
     before = len(w.calls)

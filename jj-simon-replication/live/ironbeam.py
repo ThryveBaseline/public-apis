@@ -7,10 +7,15 @@ mutation is UNKNOWN, never an invitation to retry.
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
+import math
 import os
 from pathlib import Path
 import re
 import stat
+from threading import Lock
+import time
 from urllib.error import HTTPError
 from urllib.parse import quote, urlencode
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -18,6 +23,46 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 from .models import Blocked
 
 BASES = {"demo": "https://demo.ironbeamapi.com/v2", "live-readonly": "https://live.ironbeamapi.com/v2"}
+
+
+class RateLimited(Blocked):
+    def __init__(self, retry_after=None):
+        seconds = 30.0  # conservative local policy, not a broker SLA
+        try:
+            seconds = float(retry_after)
+        except (TypeError, ValueError):
+            try:
+                seconds = (parsedate_to_datetime(retry_after) - datetime.now(timezone.utc)).total_seconds()
+            except (TypeError, ValueError, OverflowError):
+                pass
+        self.retry_after = max(30.0, seconds) if math.isfinite(seconds) else 30.0
+        super().__init__("HTTP_429")
+
+
+class RequestPacer:
+    """All REST traffic shares 250ms spacing; a 429 never queues a stale order.
+
+    Ironbeam staff publish 10 requests/sec. Headroom accommodates account polling
+    and amendments. During a cooldown callers fail closed WITHOUT sending traffic
+    or automatically retrying a mutation. Recovery may retry reads later.
+    """
+    def __init__(self, *, clock=time.monotonic, sleep=time.sleep):
+        self.clock, self.sleep = clock, sleep
+        self.next_request = self.cooldown_until = 0.0
+        self.lock = Lock()
+
+    def wait(self):
+        with self.lock:
+            if self.clock() < self.cooldown_until:
+                raise Blocked("RATE_LIMIT_COOLDOWN")
+            delay = self.next_request - self.clock()
+            if delay > 0:
+                self.sleep(delay)
+            self.next_request = self.clock() + 0.25
+
+    def limited(self, seconds):
+        with self.lock:
+            self.cooldown_until = max(self.cooldown_until, self.clock() + seconds)
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -53,6 +98,8 @@ def http_request(method, url, headers, body, timeout):
             result = json.load(response)
     except HTTPError as error:
         # Do not include URL, token, credential data, or broker's free-text message.
+        if error.code == 429:
+            raise RateLimited(error.headers.get("Retry-After") if error.headers else None) from None
         raise Blocked(f"HTTP_{error.code}") from None
     except Blocked:
         raise
@@ -64,12 +111,13 @@ def http_request(method, url, headers, body, timeout):
 
 
 class Ironbeam:
-    def __init__(self, environment="demo", *, request=http_request):
+    def __init__(self, environment="demo", *, request=http_request, pacer=None):
         if environment not in BASES:
             raise Blocked("LIVE_DISABLED")
         self.environment = environment
         self.base = BASES[environment]
         self.request = request
+        self.pacer = pacer if pacer is not None else RequestPacer()
         self._token = None
         self.account = None
         self.account_verified = False
@@ -77,7 +125,7 @@ class Ironbeam:
     def __repr__(self):
         return f"Ironbeam(environment={self.environment!r}, credentials=<redacted>)"
 
-    def call(self, method, path, *, body=None, query=None):
+    def call(self, method, path, *, body=None, query=None, before_send=None):
         if self.base != BASES.get(self.environment):
             raise Blocked("API_HOST_MISMATCH")
         order_mutation = path.startswith("/order/") and method != "GET"
@@ -94,8 +142,14 @@ class Ironbeam:
         if self._token:
             headers["Authorization"] = "Bearer " + self._token
         url = self.base + path + ("?" + urlencode(query) if query else "")
+        self.pacer.wait()
+        if before_send is not None:
+            before_send()
         try:
             result = self.request(method, url, headers, body, 15)
+        except RateLimited as error:
+            self.pacer.limited(error.retry_after)
+            raise
         except Blocked:
             raise
         except Exception:
@@ -145,10 +199,10 @@ class Ironbeam:
             raise Blocked("INCOMPLETE_BROKER_SNAPSHOT")
         return result
 
-    def place(self, body):
+    def place(self, body, *, before_send=None):
         if not self.account:
             raise Blocked("ACCOUNT_NOT_BOUND")
-        return self.call("POST", f"/order/{self.account}/place", body={"accountId": self.account, **body, "waitForOrderId": True})
+        return self.call("POST", f"/order/{self.account}/place", body={"accountId": self.account, **body, "waitForOrderId": True}, before_send=before_send)
 
     def update(self, order_id, body):
         oid = quote(str(order_id), safe="")

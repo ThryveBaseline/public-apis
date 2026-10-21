@@ -77,7 +77,7 @@ class Executor:
         quote_clock = utc(quote["received_at"]) if self.demo_mechanics else utc(quote["time"])
         if bid > ask or now - quote_clock > timedelta(seconds=5) or quote_clock > now + timedelta(seconds=1):
             raise Blocked("INVALID_EXECUTION_QUOTE")
-        # Bracket prices precommitted from an executable quote; no unsupported offsets.
+        # Absolute prices retained pending demo qualification of conflicting offset docs.
         reference = intent.level if intent.action == "BOOK" else (ask if intent.direction > 0 else bid)
         for value in (reference, intent.stop_points, intent.target_points):
             if finite(value, positive=True) * 4 != round(value * 4):
@@ -98,8 +98,14 @@ class Executor:
                 "stopLoss": row["stop"], "takeProfit": row["target"]}
         if intent.action == "BOOK":
             body["stopPrice"] = reference
+        def before_send():
+            # Ordinary pacing must not let a signal/quote expire or cross cutoff
+            # between validation and transmission. A blocked reservation is kept.
+            self.ready()
+            if utc(self.now()) > min(utc(intent.time), quote_clock) + timedelta(seconds=5):
+                raise Blocked("ENTRY_EXPIRED_BEFORE_TRANSMISSION")
         try:
-            response = self.broker.place(body)
+            response = self.broker.place(body, before_send=before_send)
             self.ledger.acknowledge(intent.id, response.get("orderId"))
         except Exception:
             self.ledger.unknown(intent.id)
@@ -108,13 +114,14 @@ class Executor:
         self.reconcile()
         return "ACKNOWLEDGED"
 
-    def reconcile(self):
+    def reconcile(self, *, align_brackets=True):
         self.reconciled_at = None
         self.position_snapshot_confirmed_at = None
         try:
             snap = self.broker.snapshot()
-            self._reconcile(snap)
+            self._reconcile(snap, align_brackets=align_brackets)
         except Blocked as exc:
+            self.reconciled_at = None
             self.ledger.halt(str(exc))
             raise
         except Exception:
@@ -122,7 +129,64 @@ class Executor:
         self.reconciled_at = utc(self.now())
         return snap
 
-    def _reconcile(self, snap):
+    def _protective_children(self, row, parent, exposure, children):
+        side = "SELL" if exposure > 0 else "BUY"
+        protective = [o for o in children if o.get("status") in WORKING and o.get("side") == side and
+                      o.get("exchSym") == self.symbol and o.get("duration") == "1" and
+                      finite(o["quantity"]) - finite(o.get("fillQuantity", 0)) == abs(exposure)]
+        stops = [o for o in protective if o.get("orderType") == "STOP" and abs(finite(o.get("stopPrice", 0)) - row["stop"]) < 0.001]
+        targets = [o for o in protective if o.get("orderType") == "LIMIT" and abs(finite(o.get("limitPrice", 0)) - row["target"]) < 0.001]
+        working = {o["orderId"] for o in children if o.get("status") not in TERMINAL}
+        if len(stops) != 1 or len(targets) != 1 or working != {stops[0]["orderId"], targets[0]["orderId"]} or set(parent.get("childOrders", [])) != working:
+            raise Blocked("MISSING_OR_WRONG_PROTECTION")
+        return {"stop": stops[0], "target": targets[0]}
+
+    def _resolve_amendment(self, row, parent, exposure, children):
+        pending = self.ledger.meta("pending_child_amendments", {})
+        change = pending.get(row["id"])
+        if not change:
+            return row
+        proposed = {**dict(row), change["field"]: change["price"]}
+        try:
+            accepted = self._protective_children(proposed, parent, exposure, children)
+        except Blocked:
+            # An intact OLD bracket still does not authorize repeating an uncertain
+            # PUT. A missing leg takes priority and invokes emergency recovery.
+            self._protective_children(row, parent, exposure, children)
+            raise Blocked("CHILD_AMENDMENT_UNCONFIRMED_NO_RETRY") from None
+        if accepted[change["field"]]["orderId"] != change["order_id"]:
+            raise Blocked("MISSING_OR_WRONG_PROTECTION")
+        self.ledger.db.execute("UPDATE intents SET stop=?,target=? WHERE id=?", (proposed["stop"], proposed["target"], row["id"]))
+        pending.pop(row["id"])
+        self.ledger.set_meta("pending_child_amendments", pending)
+        return proposed
+
+    def _amend_child(self, iid, field, price):
+        row = self.ledger.intent(iid)
+        exposure = self.ledger.net_for_intent(iid)
+        if not exposure:
+            return
+        parent = self.orders[row["order_id"]]
+        children = [o for o in self.orders.values() if str(o.get("parentOrderId", "")) == row["order_id"]]
+        child = self._protective_children(row, parent, exposure, children)[field]
+        pending = self.ledger.meta("pending_child_amendments", {})
+        if iid in pending:
+            self._halt("CHILD_AMENDMENT_UNCONFIRMED_NO_RETRY")
+        # Persist BEFORE the request: process death must not cause a repeated PUT.
+        pending[iid] = {"field": field, "price": price, "order_id": child["orderId"]}
+        self.ledger.set_meta("pending_child_amendments", pending)
+        try:
+            # Ironbeam staff instruct using the CHILD orderId. Parent bracket
+            # changes have reported cancellation/execution side effects.
+            self.broker.update(child["orderId"], {"quantity": child["quantity"],
+                               "stopPrice" if field == "stop" else "limitPrice": price})
+        except Exception:
+            self._halt("CHILD_AMENDMENT_UNCERTAIN")
+        # Check both legs, fills and exposure after EACH change, before another PUT.
+        self.reconcile(align_brackets=False)
+
+    def _reconcile(self, snap, *, align_brackets=True):
+        self.position_snapshot_confirmed_at = None
         account = self.broker.account
         balances = [b for b in snap["balances"] if b.get("accountId") == account and b.get("currencyCode") == "USD" and b.get("balanceType") == "CURRENT_OPEN"]
         if len(balances) != 1:
@@ -167,8 +231,6 @@ class Executor:
             raise Blocked("UNEXPECTED_HEDGED_BROKER_POSITION")
         if net != self.ledger.account()["net_quantity"]:
             raise Blocked("POSITION_RECONCILIATION_MISMATCH")
-        if abs(self.balance["cashBalance"] - self.ledger.meta("broker_cash_offset", 0) - self.ledger.account()["realized_equity"]) > 0.01:
-            raise Blocked("CASH_OR_FEES_RECONCILIATION_REQUIRED")
         for row in self.ledger.intents():
             if row["status"] in ("SKIPPED", "CLOSED", "CANCELLED", "REJECTED"):
                 continue
@@ -183,14 +245,16 @@ class Executor:
             exposure = self.ledger.net_for_intent(row["id"])
             children = [o for o in self.orders.values() if str(o.get("parentOrderId", "")) == row["order_id"]]
             if exposure:
+                row = self._resolve_amendment(row, parent, exposure, children)
+                self._protective_children(row, parent, exposure, children)
                 # Absolute brackets must be translated to the actual average fill.
-                # Offsets are not trusted: OpenAPI calls them unsupported.
+                # OpenAPI schema prose and reported offset behavior conflict.
                 average = finite(parent["fillPrice"], positive=True)
                 aligned = self.ledger.meta("aligned_entry", {})
                 previous_average = aligned.get(row["id"])
-                if previous_average != average:
-                    if row["id"] in self.ledger.meta("breakeven_intents", []):
-                        raise Blocked("PARTIAL_ENTRY_CHANGED_AFTER_BREAKEVEN")
+                if previous_average != average and row["id"] in self.ledger.meta("breakeven_intents", []):
+                    raise Blocked("PARTIAL_ENTRY_CHANGED_AFTER_BREAKEVEN")
+                if align_brackets and not self.ledger.meta("halt") and previous_average != average:
                     basis = row["stop"] + intent["direction"] * intent["stop_points"] if previous_average is None else previous_average
                     if abs(average - basis) > self.terms.slippage_points + 0.000001:
                         raise Blocked("ENTRY_SLIPPAGE_ALLOWANCE_EXCEEDED")
@@ -202,23 +266,13 @@ class Executor:
                     aligned[row["id"]] = average
                     if new_stop != row["stop"] or new_target != row["target"]:
                         self.ledger.audit("BRACKET_ALIGNMENT_REQUEST", {"intent": row["id"], "stop": new_stop, "target": new_target})
-                        try:
-                            self.broker.update(row["order_id"], {"quantity": row["quantity"], "stopLoss": new_stop, "takeProfit": new_target})
-                        except Exception:
-                            raise Blocked("BRACKET_ALIGNMENT_UNCERTAIN") from None
-                        self.ledger.db.execute("UPDATE intents SET stop=?,target=? WHERE id=?", (new_stop, new_target, row["id"]))
+                        if new_stop != row["stop"]:
+                            self._amend_child(row["id"], "stop", new_stop)
+                        if new_target != row["target"]:
+                            self._amend_child(row["id"], "target", new_target)
                         self.ledger.set_meta("aligned_entry", aligned)
                         return self._reconcile(self.broker.snapshot())
                     self.ledger.set_meta("aligned_entry", aligned)
-                side = "SELL" if exposure > 0 else "BUY"
-                protective = [o for o in children if o.get("status") in WORKING and o.get("side") == side and
-                              o.get("exchSym") == self.symbol and o.get("duration") == "1" and
-                              finite(o["quantity"]) - finite(o.get("fillQuantity", 0)) == abs(exposure)]
-                stops = [o for o in protective if o.get("orderType") == "STOP" and abs(finite(o.get("stopPrice", 0)) - row["stop"]) < 0.001]
-                targets = [o for o in protective if o.get("orderType") == "LIMIT" and abs(finite(o.get("limitPrice", 0)) - row["target"]) < 0.001]
-                working_children = {o["orderId"] for o in children if o.get("status") not in TERMINAL}
-                if len(stops) != 1 or len(targets) != 1 or working_children != {stops[0]["orderId"], targets[0]["orderId"]} or set(parent.get("childOrders", [])) != working_children:
-                    raise Blocked("MISSING_OR_WRONG_PROTECTION")
                 direction = 1 if exposure > 0 else -1
                 avg = finite(parent["fillPrice"], positive=True)
                 actual_risk = abs(exposure) * (max(0, direction * (avg - row["stop"])) * 2 + self.terms.slippage_points * 2 + self.terms.fee_round_trip)
@@ -230,6 +284,10 @@ class Executor:
                 self.ledger.db.execute("UPDATE intents SET status=? WHERE id=?", ("CLOSED" if parent["status"] == "FILLED" else "CANCELLED", row["id"]))
             elif parent["status"] not in WORKING:
                 raise Blocked("ORDER_NOT_CONFIRMED")
+        # Balance events are independent of fills. A cash/fee posting delay must
+        # not conceal a missing stop that needs immediate protective recovery.
+        if abs(self.balance["cashBalance"] - self.ledger.meta("broker_cash_offset", 0) - self.ledger.account()["realized_equity"]) > 0.01:
+            raise Blocked("CASH_OR_FEES_RECONCILIATION_REQUIRED")
         self.position_snapshot_confirmed_at = utc(self.now())
         margin_response = self.broker.call("GET", "/info/security/margin", query={"symbols": self.symbol})
         margin_rows = [m for m in margin_response.get("securityMarginAndValues", []) if m.get("exchSym") == self.symbol]
@@ -261,15 +319,9 @@ class Executor:
         entry = (math.ceil(entry * 4) if direction > 0 else math.floor(entry * 4)) / 4
         if direction * (entry - row["stop"]) <= 0:
             return
-        try:
-            self.broker.update(row["order_id"], {"quantity": row["quantity"], "stopLoss": entry, "takeProfit": row["target"]})
-        except Exception:
-            self._halt("STOP_REPLACE_UNCERTAIN")
-        # Record requested stop then require broker confirmation before more entries.
-        self.ledger.db.execute("UPDATE intents SET stop=? WHERE id=?", (entry, iid))
         moved = self.ledger.meta("breakeven_intents", [])
         self.ledger.set_meta("breakeven_intents", sorted(set(moved + [iid])))
-        self.reconcile()
+        self._amend_child(iid, "stop", entry)
 
     def cancel_book(self):
         self.reconcile()

@@ -1,0 +1,24 @@
+{
+  "evidence_type": "MOCK_ONLY_PRIOR_IMPLEMENTATION_REPRODUCTION",
+  "baseline_commit": "c8235956f87c050d3c13bed95ace44be943b0ba1",
+  "live": "LIVE_DISABLED",
+  "observations": {
+    "parent_amendment": {
+      "expected_defect_reproduced": true,
+      "result": "open position; both children cancelled by injected parent-update behavior",
+      "detected_reason": "MISSING_OR_WRONG_PROTECTION"
+    },
+    "cash_masks_missing_stop": {
+      "expected_defect_reproduced": true,
+      "detected_reason": "CASH_OR_FEES_RECONCILIATION_REQUIRED",
+      "missing_stop_not_reported": true
+    },
+    "unpaced_rest": {
+      "expected_defect_reproduced": true,
+      "requests": 16,
+      "elapsed_seconds": 9.529711678624153e-05,
+      "published_limit_per_second": 10,
+      "transport": "in-process mock; no real broker load generated"
+    }
+  }
+}

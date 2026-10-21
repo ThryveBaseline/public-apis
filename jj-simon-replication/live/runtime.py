@@ -17,6 +17,7 @@ class Runtime:
         self.route_orders = route_orders
         self.engine = StreamingJJ(prior_high=prior_high)
         self.quote = None
+        self.account_dirty = False
         # Recovery replays only our own recorded minute journal, never emits past orders.
         self.engine.calendar = self.ledger.meta("strategy_calendar", {})
         for row in self.ledger.db.execute("SELECT payload FROM bars ORDER BY time"):
@@ -61,6 +62,7 @@ class Runtime:
                     raise Blocked("FEED_SEMANTICS_NOT_QUALIFIED")
                 if self.quote is None:
                     raise Blocked("EXECUTION_QUOTE_MISSING")
+                self._flush_account_events(utc(self.executor.now()), force=True)
                 self.executor.submit(action, self.quote)
             elif action.action == "BREAKEVEN":
                 self.executor.breakeven(action.reference)
@@ -72,15 +74,23 @@ class Runtime:
                 self.executor.flatten("STRATEGY_CUTOFF")
         return actions
 
+    def _flush_account_events(self, now, *, force=False):
+        last = self.executor.reconciled_at
+        if self.account_dirty and (force or not last or utc(now) - last >= timedelta(seconds=2)):
+            self.executor.reconcile()
+            self.account_dirty = False
+
     def on_message(self, message, now):
         if "r" in message:
             raise Blocked("BROKER_ACCOUNT_RESET")
         risks = message.get("ria", []) + ([message["ri"]] if "ri" in message else [])
         if any(r.get("a") == self.executor.broker.account and r.get("le") and r["le"][-1] != 12 for r in risks):
             raise Blocked("BROKER_LIQUIDATION_EVENT")
-        # Account events cause a complete REST reconciliation, not partial-state guessing.
+        # st/status in WebSocket frames is never execution truth. Balance frames
+        # can arrive on every price change: coalesce those, refresh before entry.
         if any(k in message for k in ("o", "f", "ps", "psa", "b", "ba", "ri", "ria")):
-            self.executor.reconcile()
+            self.account_dirty = True
+            self._flush_account_events(now, force=any(k in message for k in ("o", "f", "ps", "psa", "ri", "ria")))
         for q in message.get("q", []):
             if q.get("s") == self.executor.symbol:
                 # Quote bid/ask timestamps are separately checked; receiving an old quote
@@ -103,6 +113,7 @@ class Runtime:
                 self.executor.flatten("KILL_SWITCH" if self.executor.kill_file.exists() else "BROKER_CUTOFF")
             raise Blocked("RUNTIME_STOPPED")
         self.feed.watchdog(now)
+        self._flush_account_events(now)
         if not self.executor.reconciled_at or utc(now) - self.executor.reconciled_at > timedelta(seconds=10):
             self.executor.reconcile()
 

@@ -1,0 +1,111 @@
+{
+  "actual_elapsed_seconds": 4.228,
+  "broker_demo": "BLOCKED",
+  "broker_demo_reason": "API_CREDENTIALS_PENDING",
+  "code_sha256": {
+    "__init__.py": "5d280838df4038fe760c5512b30de8f7fc70de8841eeca7617c3b8718d1cbacb",
+    "__main__.py": "81dd9dd4c3db10520d0c54130f5845864f1a003ce1af66c9904f88897f79b8c0",
+    "account_lock.py": "dacfb18044e7ac3762f312d7bcdd9aa4bf7a0651b89ea51c1fc3949d87a705fd",
+    "demo_mechanics.py": "0a8d872d6b477cb076d46389cdfd99176e9c087bddb7c387ba8fda29e29280a1",
+    "execution.py": "09ade726e06e309ee56fcf76635c76134f0c5f7a9b1b4a6fa307671836dc6e29",
+    "feed.py": "ed61c869c0a42025ed84b0f3ebf624a29a460e371d377a751e72fb35242d3ebe",
+    "install.py": "c64b11d17ec3b9b03d32c9df5715be0312ffd7a16054293d139d44821e4ae3ea",
+    "ironbeam.py": "1bac7ad8dd6a05d7ea6e4fa54cee0a5fd82b0be042bc4c827b65abb5478c6fe9",
+    "ledger.py": "d740391cfd9c1330cda137c9d4665c811a7713615c2dfcbc07d33160d4014836",
+    "models.py": "7b2c461f8b27d85a98d2a093aa4b1e56c80cd522c3875ae917885bc5683f27be",
+    "operational_trial.py": "0ee1519f9de8e080058f65740a963eaf425836a53ab57e14eb2ee2b0f28af9a5",
+    "probe.py": "c6e8b347acd57599014239a3108ee1185691856b564a29059a591d1a97f0cee4",
+    "recovery.py": "c87297394fee8ca79be0f39dab9765dddf953ac7afd23fd7353e4fa67c7f95a7",
+    "runner.py": "3f495b5930e9c96060a3985e2722384d81b76c55c32c92ca671ce7f2401c3850",
+    "runtime.py": "11f56af0f1a0ae6d0caef6e880a5ee3469a99bb9201a24a4f5a412b85c3ab466",
+    "strategy.py": "3c3bc1eca57553ba52b35b853109b3af2fd13cca87e9502c56e998f09140c5ba",
+    "verification.py": "dedf292a255cf9ccc4af78fb4473533726347b0bce09974bc89366d76ccd0cde"
+  },
+  "end_et": "2026-10-22T17:00:00-04:00",
+  "events": [
+    {
+      "event": "probe_18:05",
+      "result": "ACKNOWLEDGED",
+      "time": "2026-10-21T18:05:00-04:00"
+    },
+    {
+      "event": "probe_18:05_STOP",
+      "result": "RECONCILED",
+      "time": "2026-10-21T18:06:00-04:00"
+    },
+    {
+      "event": "probe_20:05",
+      "result": "ACKNOWLEDGED",
+      "time": "2026-10-21T20:05:00-04:00"
+    },
+    {
+      "event": "probe_20:05_LIMIT",
+      "result": "RECONCILED",
+      "time": "2026-10-21T20:06:00-04:00"
+    },
+    {
+      "event": "overnight_book",
+      "result": "ACKNOWLEDGED",
+      "time": "2026-10-21T22:00:00-04:00"
+    },
+    {
+      "event": "midnight_pending_risk_persisted",
+      "result": "CLEAR",
+      "time": "2026-10-22T00:00:00-04:00"
+    },
+    {
+      "event": "overnight_book_LIMIT",
+      "result": "RECONCILED",
+      "time": "2026-10-22T03:01:00-04:00"
+    },
+    {
+      "event": "simultaneous_a",
+      "result": "ACKNOWLEDGED",
+      "time": "2026-10-22T09:35:00-04:00"
+    },
+    {
+      "event": "simultaneous_b",
+      "result": "ACKNOWLEDGED",
+      "time": "2026-10-22T09:35:00-04:00"
+    },
+    {
+      "event": "simultaneous_c",
+      "result": "SKIPPED",
+      "time": "2026-10-22T09:35:00-04:00"
+    },
+    {
+      "event": "probe_14:05",
+      "result": "ACKNOWLEDGED",
+      "time": "2026-10-22T14:05:00-04:00"
+    },
+    {
+      "event": "probe_14:05_LIMIT",
+      "result": "RECONCILED",
+      "time": "2026-10-22T14:06:00-04:00"
+    },
+    {
+      "event": "probe_16:09",
+      "result": "ACKNOWLEDGED",
+      "time": "2026-10-22T16:09:00-04:00"
+    },
+    {
+      "event": "session_cutoff_confirmed_flat",
+      "result": "CLEAR",
+      "time": "2026-10-22T16:10:00-04:00"
+    }
+  ],
+  "evidence_type": "ACCELERATED_SYNTHETIC_OPERATIONAL_DAY",
+  "final_position": 0,
+  "fixture_description": "Flat hand-authored NQ ticks; explicitly marked broker-mechanics intents and injected broker fills. No historical prices or profitability evaluation.",
+  "journaled_bars_including_context": 1830,
+  "live": "LIVE_DISABLED",
+  "open_orders": 0,
+  "peak_reserved_risk_dollars": 105.0,
+  "real_time_signal_timing": "NOT_VALIDATED",
+  "separate_ledger_reconciled": true,
+  "simulated_hours": 23.0,
+  "start_et": "2026-10-21T18:00:00-04:00",
+  "status": "CLEAR",
+  "synthetic_ticks": 16561,
+  "wall_clock_broker_trading_day": "NOT_RUN"
+}

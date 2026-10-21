@@ -2,7 +2,7 @@
 
 **Not ready for live orders. LIVE_DISABLED is enforced in code.**
 
-The isolated implementation is installed at `/home/buddy2/public-apis/jj-simon-replication/live` on GB10. The final local verification run passed **114 tests**. The end-to-end synthetic workflow and a **23-hour accelerated operational day** also passed. No real Ironbeam authentication, market stream or simulated broker order has yet been exercised because API credentials are pending.
+The isolated implementation is installed at `/home/buddy2/public-apis/jj-simon-replication/live` on GB10. Following the [bounded Ironbeam API review](IRONBEAM_API_REVIEW.md), verification passed **124 tests** (the original 114 plus ten focused regression cases, with existing amendment checks strengthened). The end-to-end synthetic workflow and a **23-hour accelerated operational day** also passed. No real Ironbeam authentication, market stream or simulated broker order has yet been exercised because API credentials are pending.
 
 The owner reports the account is established, the bank is linked and a $2,000 transfer was initiated. Cleared/available funds have not been verified. Monday October 26 remains conditional.
 
@@ -11,7 +11,7 @@ The owner reports the account is established, the bank is linked and a $2,000 tr
 | Frozen JJ engine/config/dependency preservation | CLEAR | Startup hash/config checks pass; no frozen source changed. |
 | Streaming decisions on synthetic fixtures | CLEAR | Session, causal-prefix, management and restart fixtures pass. This is not complete live parity sign-off. |
 | API adapter and separate brokerage ledger | CLEAR | Implemented and exercised against documented-shape mock responses. |
-| Risk, margin and failure guards in mocks | CLEAR | 114-test suite includes concurrent reservations, uncertain submission, real process death, partial fills and recovery. |
+| Risk, margin and failure guards in mocks | CLEAR | 124-test suite includes concurrent reservations, uncertain submission/amendment, real process death, partial fills, rate limiting and recovery. |
 | Accelerated full-day operational trial | CLEAR | 16,561 synthetic ticks across 18:00–17:00 Eastern; evening, overnight book, midnight, simultaneous signals and cutoff; ends with zero positions and working orders. |
 | Actual API credentials/entitlements | BLOCKED | Owner confirms credentials pending; funding availability unconfirmed. |
 | Actual native bracket/OCO persistence and broker reconciliation | BLOCKED | Requires the real demo account, including partial fills and cancel races. |
@@ -23,6 +23,9 @@ The owner reports the account is established, the bank is linked and a $2,000 tr
 
 | Defect | Fix | Verification |
 |---|---|---|
+| Parent bracket amendments conflict with staff guidance and reported destructive behavior | Amend verified active child orders with unchanged quantity; check both legs after each PUT; persist unknown amendments before transmission | Destructive parent mock, lost stop/target despite HTTP success, accepted/unaccepted amendment timeout and restart. |
+| Account-event REST bursts could exceed the published rate limit | Pace all client requests; coalesce balance events; honor 429 cooldown without queuing or retrying mutations | Request spacing, blocked requests during cooldown, stale WS status and cutoff reached during pacing. |
+| Cash/fee posting lag could hide a missing protective stop | Check known exposure's protection before failing the cash comparison | Missing stop plus shifted fill price and cash lag triggers protective recovery; cash discrepancy remains blocked. |
 | A timeout/restart could invite a second order | Durable pre-submit reservation and UNKNOWN state; no automatic retry | Accepted-then-timeout entry/exit tests; subprocess exits without orderly SQLite close, before/after acknowledgement. |
 | A stop could exist with the wrong quantity, side, price, duration or status | Require exactly the accepted opposite-side GTC stop and target for each actual exposure; reject extra working children | Rejected/cancelled/mis-sized/wrong-side/wrong-price/day-duration/extra-child cases. |
 | Protection could disappear after the stream had already failed | Recovery independently checks REST state and immediately attempts emergency demo liquidation | Stop-cancelled-after-disconnect regression. |
@@ -42,7 +45,7 @@ The owner reports the account is established, the bank is linked and a $2,000 tr
 2. **The feed is not yet qualified for real-time decisions.** The API calls `st` send time; contiguous per-symbol sequence semantics are not established. A delayed feed with a fresh send timestamp is not proof of a live exchange trade. The implementation deliberately blocks qualification.
 3. **Automatic context backfill is incomplete.** Recent, verified context can be seeded and the minute journal replayed, but an arbitrary mid-minute startup or unscheduled gap cannot currently be repaired automatically. This remains a functional blocker for unattended strategy routing. No candles are fabricated.
 4. **Whole-GB10 outage safety is not established.** Actual process-kill durability is tested in isolated subprocesses. GB10 was not powered off or disconnected globally, which would disturb the existing paper system. Broker-native stop persistence and a cutoff liquidation route independent of the failed GB10 must be confirmed. Recovery after restart cannot substitute for action while power is off.
-5. **Unknown entry/exit acknowledgement needs broker reconciliation.** The documented API provides no client idempotency key or proven atomic reduce-only flatten. The safe current behavior is a durable halt and manual resolution, not guessing or retrying. This requires an exercised operator/broker recovery procedure before live use.
+5. **Unknown entry/exit/amendment acknowledgement needs broker reconciliation.** The documented API provides no client idempotency key or proven atomic reduce-only flatten. Cancel-then-close has an exposure window: a disconnection after protective orders are cancelled can leave an open position without a stop. The safe current behavior for uncertain requests is a durable halt and independent resolution, not guessing or retrying. This requires an exercised operator/broker recovery procedure before live use; it is not solved by the passing mock cancellation tests.
 6. **Unattended operations remain unqualified.** No production daemon or alert service was installed. Authentication expiry/reauthentication, response latency near cutoff, restart supervision and reliable owner notification need verification in the existing GB10 operating setup before unattended activation. Recovery currently keeps failed authentication blocked; it does not silently refresh credentials and resume trading.
 7. **Account terms and final parity approval are pending.** Confirm first-month API cost, MNQ activity counting, exchange data/fees, API margin through evening/overnight, cutoff/holidays, unattended ARM64 permission, slippage/cushion/drawdown settings, and the boundaries documented in `PARITY.md`. Test values are not broker terms.
 
@@ -50,9 +53,11 @@ No known failing automated test is being waived. These open items are not repres
 
 ## Saved evidence
 
-- [Final 114-test JUnit receipt](evidence/20261021-candidate/tests.xml)
-- [Causal signal through mock execution/recovery receipt](evidence/20261021-candidate/mock-workflow.json)
-- [Accelerated 23-hour operational trial receipt](evidence/20261021-candidate/mock-day.json)
+- [Current 124-test JUnit receipt](evidence/20261021-forum-review/tests.xml)
+- [Causal signal through mock execution/recovery receipt](evidence/20261021-forum-review/mock-workflow-final.json)
+- [Accelerated 23-hour operational trial receipt](evidence/20261021-forum-review/mock-day-final.json)
+- [Prior-code reproduction of the three repaired gaps](evidence/20261021-forum-review/prior-defects.json)
+- [Earlier 114-test candidate receipt](evidence/20261021-candidate/tests.xml)
 
 Receipts identify mock evidence and include implementation hashes. Earlier receipts are retained as earlier revisions, not substituted for the final run. The existing paper status files had unrelated working-tree changes before this work; they remain outside this integration's commit.
 
