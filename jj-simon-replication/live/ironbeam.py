@@ -85,9 +85,18 @@ def protected_json(path):
             data = json.load(fh)
         except (ValueError, OSError):
             raise Blocked("INVALID_CREDENTIAL_FILE") from None
-    if not all(isinstance(data.get(k), str) and data[k] for k in ("username", "password", "apikey")):
+    username, password, apikey = data.get("username"), data.get("password"), data.get("apikey")
+    if not (isinstance(username, str) and username and isinstance(password, str) and password):
         raise Blocked("CREDENTIAL_FIELDS_MISSING")
-    return {k: data[k] for k in ("username", "password", "apikey")}
+    # Official /auth contract: a standard account authenticates with the issued API key in
+    # the password field; the apikey field is Enterprise-only and OPTIONAL. The server
+    # validates apikey whenever present, so an absent key is omitted, never sent empty.
+    credentials = {"username": username, "password": password}
+    if apikey is not None:
+        if not (isinstance(apikey, str) and apikey):
+            raise Blocked("CREDENTIAL_SHAPE_UNRECOGNIZED")
+        credentials["apikey"] = apikey
+    return credentials
 
 
 def http_request(method, url, headers, body, timeout):

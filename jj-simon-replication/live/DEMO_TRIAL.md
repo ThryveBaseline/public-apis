@@ -1,6 +1,12 @@
 # Required actual Ironbeam operational trial
 
-Status: **BLOCKED — API credentials pending.** No actual Ironbeam connection or order was attempted during this implementation. Standard delayed simulation data is acceptable for the broker-mechanics checks below. Real-time signal timing is a separate gate.
+Status: **BLOCKED - API credentials pending.** Reconfirmed against the real broker on
+2026-10-22: GB10 reaches https://demo.ironbeamapi.com/v2 and /auth answers, but every other
+endpoint returns 401 without a token, so none of the checks below can start. Ironbeam requires a
+funded account before issuing any API credential and available funds read zero. Two broker-side
+gates were identified the same day and are prerequisites to this trial: submitting the platform
+setup form from the account-open email, and a broker conformance test on the demo account before
+live credentials are issued. See STATUS.md for both. No actual Ironbeam order was attempted. The only real traffic sent was unauthenticated auth-endpoint probes with junk values, to map the credential contract. Standard delayed simulation data is acceptable for the broker-mechanics checks below. Real-time signal timing is a separate gate.
 
 Use the existing GB10 runtime and a verified simulation account with no external positions or orders. Confirm any API charge, fees, margin, contract, account reset behavior and broker cutoff first. Begin with the read-only probe and the bounded `demo-smoke` harness. A smoke pass does not authorize automated strategy routing.
 

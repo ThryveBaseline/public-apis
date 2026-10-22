@@ -27,9 +27,14 @@ def setup(path):
     if p.exists() or p.is_symlink():
         raise Blocked("CREDENTIAL_FILE_EXISTS_USE_NEW_PATH")
     print("Enter Ironbeam-issued API credentials. Inputs are hidden; nothing is sent during setup.")
-    credentials = {key: getpass.getpass(label) for key, label in (("username", "API username: "), ("password", "API password: "), ("apikey", "API key: "))}
+    print("Standard account: enter the username, then the issued API key at the key prompt, then leave the Enterprise prompt empty.")
+    credentials = {"username": getpass.getpass("API username: "),
+                   "password": getpass.getpass("API key (standard) or API password (Enterprise): ")}
+    enterprise = getpass.getpass("Enterprise API key (leave empty for a standard account): ")
     if not all(credentials.values()):
         raise Blocked("CREDENTIAL_FIELDS_MISSING")
+    if enterprise:
+        credentials["apikey"] = enterprise
     fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, "w") as fh:
         json.dump(credentials, fh)

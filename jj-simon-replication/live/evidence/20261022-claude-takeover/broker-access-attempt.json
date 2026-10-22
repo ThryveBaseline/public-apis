@@ -1,0 +1,71 @@
+{
+  "auth_contract_conclusion": "The server requires at least one of password/apikey and validates apikey whenever the field is present. Official docs: a standard account supplies the issued API key in the password field and omits apikey, which is Enterprise-only. The probes do NOT establish whether a junk apikey alongside a valid standard key would be rejected; that is unsettled and only a real credential can settle it.",
+  "auth_contract_probes": [
+    {
+      "body": "username+password",
+      "response": "Invalid api key"
+    },
+    {
+      "body": "username only",
+      "response": "Api key or password is required"
+    },
+    {
+      "body": "username+password+empty apikey",
+      "response": "Invalid api key"
+    },
+    {
+      "body": "username+password+junk apikey",
+      "response": "Invalid api key"
+    }
+  ],
+  "blocker": "NO_API_CREDENTIAL. Ironbeam requires a cleared funded account above a published minimum before any API access including sim. The owner's deposit has posted and available funds read zero. Owner action: the native API key request form.",
+  "broker_terms_learned_today": {
+    "ach_clearing": "typically three business days",
+    "api_username": "the account number itself; value withheld from this repository",
+    "auto_liquidation": "broker liquidates below a start-of-day drawdown threshold; threshold in the owner's private record",
+    "commission_futures_options_per_contract": "broker-confirmed; value in the owner's private account record",
+    "commission_micro_equity_futures_per_contract": "broker-confirmed; value in the owner's private account record",
+    "exchange_and_nfa_per_side": "UNCONFIRMED - a secondary broker listing shows 0.35 exchange + 0.01 NFA per side for MNQ; not confirmed by Ironbeam, so risk_terms stays unconfirmed",
+    "wire": "available immediately upon receipt"
+  },
+  "credential_search": [
+    "~/.config/jj-live/ (absent)",
+    "~/.jj-live (absent)",
+    "filesystem scan for ironbeam artifacts (none)"
+  ],
+  "credentials_present_on_host": false,
+  "date": "2026-10-22",
+  "defect_found_and_fixed": {
+    "defect": "protected_json and the setup prompt both hard-required username, password AND apikey as non-empty strings, and authenticate sent that dict verbatim. A standard retail credential is a username plus ONE key, so the owner could not have loaded it without inventing an apikey value that the server then validates.",
+    "fix": "Accept both documented shapes. Standard: username + password(holds the API key), apikey omitted from the request entirely. Enterprise: all three. An apikey present but empty is a named block (CREDENTIAL_SHAPE_UNRECOGNIZED) rather than a silently transmitted empty field.",
+    "severity": "Would have blocked or failed the first real connection attempt.",
+    "verification": "128 tests pass (124 inherited plus 4 new credential-shape regressions). Owner-only file mode, O_EXCL creation, tty-only entry and secret-free argv all preserved."
+  },
+  "final_suite": {
+    "result": "passed",
+    "seconds": 7.58,
+    "tests": 128
+  },
+  "inherited_suite_independently_reverified": {
+    "result": "passed",
+    "seconds": 7.78,
+    "tests": 124
+  },
+  "live_status": "LIVE_DISABLED",
+  "network_reachability": {
+    "dns_seconds": 0.080644,
+    "host": "demo.ironbeamapi.com",
+    "result": "CLEAR - GB10 reaches the demo API and the auth endpoint answers",
+    "tls_handshake_seconds": 0.134446
+  },
+  "note_on_redaction": "Account number, deposit amount and account-specific broker terms are deliberately withheld: this repository is public.",
+  "operator": "Claude Code supervising; review by NVIDIA NIM openai/gpt-oss-20b and local qwen3.6-35b-a3b",
+  "scope": "Attempt real Ironbeam demo API access. No strategy change. LIVE_DISABLED unchanged.",
+  "unauthenticated_surface": {
+    "/info/security/definitions": 401,
+    "/info/symbol/search/futures/XCME/MNQ": 401,
+    "/info/trader": 401,
+    "/stream/create": 401,
+    "conclusion": "Every endpoint beyond the auth handshake is credential-gated. No read-only verification is possible without a key."
+  }
+}

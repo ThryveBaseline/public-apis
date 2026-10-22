@@ -229,3 +229,38 @@ def test_ledger_lane_and_account_are_locked(rig, tmp_path):
     w, b, l, e = rig
     with pytest.raises(Blocked, match="MISMATCH"):
         Ledger(tmp_path / "mock.sqlite", lane="demo", account=w.account)
+
+
+def _creds(tmp_path, name, payload):
+    p = tmp_path / name
+    p.write_text(json.dumps(payload))
+    p.chmod(0o600)
+    return p
+
+
+def test_standard_credential_omits_enterprise_apikey(tmp_path):
+    # A standard Ironbeam account is issued a username and ONE API key, supplied in the
+    # password field. The optional apikey field must not be transmitted at all.
+    p = _creds(tmp_path, "standard.json", {"username": "DEMO-USERNAME", "password": "ISSUED_KEY"})
+    loaded = protected_json(p)
+    assert loaded == {"username": "DEMO-USERNAME", "password": "ISSUED_KEY"}
+    assert "apikey" not in loaded
+
+
+def test_enterprise_credential_keeps_all_three_fields(tmp_path):
+    p = _creds(tmp_path, "enterprise.json", {"username": "u", "password": "pw", "apikey": "EKEY"})
+    assert protected_json(p) == {"username": "u", "password": "pw", "apikey": "EKEY"}
+
+
+def test_empty_apikey_is_a_named_block_not_an_empty_field(tmp_path):
+    # The server validates apikey whenever the field is present, so an empty string is
+    # an unusable credential rather than an absent optional field.
+    p = _creds(tmp_path, "empty.json", {"username": "u", "password": "pw", "apikey": ""})
+    with pytest.raises(Blocked, match="CREDENTIAL_SHAPE_UNRECOGNIZED"):
+        protected_json(p)
+
+
+def test_missing_password_still_blocks(tmp_path):
+    p = _creds(tmp_path, "nopw.json", {"username": "u", "apikey": "EKEY"})
+    with pytest.raises(Blocked, match="CREDENTIAL_FIELDS_MISSING"):
+        protected_json(p)

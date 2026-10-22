@@ -19,6 +19,74 @@ The owner reports the account is established, the bank is linked and a $2,000 tr
 | Exchange-time live signal timing and full parity | BLOCKED | Timestamp/sequence semantics, startup/gap completeness and declared translation boundaries unresolved. |
 | Production orders | LIVE_DISABLED | Production mutations rejected before network calls; no enabling flag exists in this revision. |
 
+## 2026-10-22 real broker access attempt (Claude Code took over from Codex)
+
+Codex credits were exhausted; nothing was rebuilt. The inherited suite was independently
+re-run first and passed 124 tests in 7.78s, so the handoff artifact is sound.
+
+**Sandbox access today: NO. One blocker, and it is on the broker side.** Ironbeam requires a
+live funded account holding at least the published funding minimum *cleared* before it issues any API credential,
+simulation included. The owner's deposit has posted but available funds read zero; amounts and dates are in the owner's private account record, not here. No API
+credential exists on GB10 and none was found in account onboarding mail.
+
+What was established against the real broker, not a mock:
+
+| Check | Result |
+|---|---|
+| GB10 reaches demo.ironbeamapi.com | CLEAR. DNS 81ms, TLS 134ms, /auth answers. |
+| Credential present on host | None. Searched the configured path and the filesystem. |
+| Auth contract shape | Mapped empirically with four junk-credential probes. |
+| Any endpoint usable without a key | None. /info/trader, symbol search, security definitions and /stream/create all return 401. |
+| Account/entitlement/market data/brackets | Untestable today. All sit behind the credential. |
+
+**A real defect was caught before it could burn the first connection.** The credential loader and
+the owner setup prompt both demanded username, password *and* apikey as non-empty strings, and the
+adapter transmitted that dictionary verbatim. A standard retail account is issued a username plus
+ONE key, which the official contract places in the `password` field, with `apikey` reserved
+for Enterprise. The owner could not have loaded a standard credential without inventing an
+`apikey` value, and the server validates `apikey` whenever present. Both shapes are now
+accepted, an absent key is omitted from the request rather than sent empty, and an empty key is a
+named block. Two independent model reviewers reached this diagnosis and the same minimal patch
+separately. Verification is now 128 tests, the 124 inherited plus four credential-shape
+regressions. Every existing protection was kept: owner-only file mode, O_EXCL creation,
+terminal-only entry, no secrets in argv.
+
+Both reviewers and this operator agree the probes do **not** settle whether a junk `apikey`
+alongside a valid standard key would be rejected. That stays open and only a real credential
+settles it, which is why the fix omits the field instead of relying on the server to ignore it.
+
+**Broker terms now confirmed from the official account-open email** (previously unknown): the API
+username is the account number itself (value kept out of this repository); the account carries
+broker-confirmed per-contract commissions and a broker-side start-of-day auto-liquidation
+threshold, both recorded in the owner's private account record; ACH clears in about three business
+days while a wire is available immediately on receipt. Exchange and NFA fees per side are still **unconfirmed by Ironbeam**, so
+`risk_terms.confirmed` stays false and sizing stays blocked on it.
+
+### Two broker-process findings that change the route to Monday
+
+**The credential route is the platform setup form, not the website API form.** The public
+"Request an API Key" form on ironbeam.com is a three-field sales lead capture (name, phone,
+email). The real route for an existing account holder is the platform setup form linked from the
+account-open email, and Ironbeam's own knowledge base states only a **$500 account balance
+minimum to have the setup processed**. That is a lower bar than the $1,000 cleared figure on the
+API access page, and the two have not been reconciled by Ironbeam. The owner should submit that
+form today and let the broker resolve the discrepancy in writing.
+
+**Live API credentials require a broker conformance test on the demo account first.** Ironbeam
+staff state in their own community forum: "For live, we will first need to pass you through a
+conformance test on your demo account." This gate was not in the plan and it sits directly in
+front of the first real-money trade. It must be scheduled, not discovered later. Demo credentials
+are described as issued up front for development, on a separate demo account number.
+
+Caveat on that forum thread: the credential fields it lists (operator ID, account password, TCP
+host, port, version) describe a socket API rather than the v2 REST service this integration
+targets, so the conformance requirement may attach to a different Ironbeam API product. It is
+reported here as a broker statement to confirm, not as an established fact about v2 REST.
+
+[Evidence receipt](evidence/20261022-claude-takeover/broker-access-attempt.json)
+
+Production orders remain LIVE_DISABLED. No order, demo or otherwise, was placed.
+
 ## Defects found and fixed during this implementation
 
 | Defect | Fix | Verification |
