@@ -4,7 +4,7 @@
 
 The isolated implementation is installed at `/home/buddy2/public-apis/jj-simon-replication/live` on GB10. Following the [bounded Ironbeam API review](IRONBEAM_API_REVIEW.md), verification passed **124 tests** (the original 114 plus ten focused regression cases, with existing amendment checks strengthened). The end-to-end synthetic workflow and a **23-hour accelerated operational day** also passed. No real Ironbeam authentication, market stream or simulated broker order has yet been exercised because API credentials are pending.
 
-The owner reports the account is established, the bank is linked and a $2,000 transfer was initiated. Cleared/available funds have not been verified. Monday October 26 remains conditional.
+The owner reports the account is established, the bank is linked and a transfer was initiated. Amounts and dates stay in the owner's private account record. Cleared/available funds have not been verified. Monday October 26 remains conditional.
 
 | Area | Status | Evidence or missing requirement |
 |---|---|---|
@@ -100,7 +100,7 @@ Production orders remain LIVE_DISABLED. No order, demo or otherwise, was placed.
 | Partial exit could cancel the remaining position's stop | Halt and close the remaining quantity; accept only correctly resized surviving protection | Partial target with cancelled sibling, and with correctly resized sibling. |
 | Cancellation could race a stop fill and reverse the account | Confirm cancellations, ingest intervening fills, then calculate close quantity | Cancel/fill race confirms zero extra reversing order. |
 | Overnight cancellation missed a partially filled parent's unfilled remainder | Cancel working parent remainder while verifying protection for the filled contracts | Partial overnight-book cancellation test. |
-| Unrealized losses or a large simulator balance could overstate risk capacity | Cap sizing by realized cash and lower current broker equity; pin a separate simulated allocation offset | Open-loss capacity and $100,000 simulator/$2,000 allocation tests. |
+| Unrealized losses or a large simulator balance could overstate risk capacity | Cap sizing by realized cash and lower current broker equity; pin a separate simulated allocation offset | Open-loss capacity and large-simulator-balance versus small-allocation tests. |
 | Multiple simultaneous signals could compete for the same risk budget | SQLite immediate transaction reserves risk/margin before submission | 16 concurrent reservations across separate connections respect $60/$120 initial limits. |
 | Restarting after the configured session expired blocked recovery setup | Dedicated `recover` command ignores entry-session/parity requirements and monitors only an existing demo ledger | Next-day recovery closes known exposure and retains entry halt. |
 | A changed margin requirement could prevent recognizing an already-flat account | Separate confirmed broker position state from entry eligibility | Flat-after-target recovery with changed margin. |
