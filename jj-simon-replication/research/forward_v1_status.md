@@ -1,6 +1,6 @@
 # Forward paper test v1: status
 
-Run 93 at 2026-11-21T20:00:43+00:00. Protocol sha256 4b41f1bc82499f39f224a4bd342271c61f29eeb4ebfac83b16065c778852e0de; baseline sha256 b8ef73f22e5e055e6627de948c9dd26bc9f90d700490dd15071cb8747a6ede54; forward bars sha256 4909cdcdf9146497f8ece7c47fee99688bd04bc30394002235ae32d780ad7198; state sha256 2ebb631c518ac64145ac3546eaf2f23ecfd3a9fc8c49bca1ccdb1fa8829f4b06 (its run log chains each run to the previous state). Sessions scored: 33, 2026-10-06 to 2026-11-19; added in this run: none.
+Run 94 at 2026-11-22T08:00:24+00:00. Protocol sha256 4b41f1bc82499f39f224a4bd342271c61f29eeb4ebfac83b16065c778852e0de; baseline sha256 b8ef73f22e5e055e6627de948c9dd26bc9f90d700490dd15071cb8747a6ede54; forward bars sha256 4909cdcdf9146497f8ece7c47fee99688bd04bc30394002235ae32d780ad7198; state sha256 263391780a36787bb5454e96fad443ed538213e1ea95ef9f639db20194cd443c (its run log chains each run to the previous state). Sessions scored: 33, 2026-10-06 to 2026-11-19; added in this run: none.
 Unscored forward weekdays: none. Scheduled early ends: none. Overnight stretches of over 30 minutes without a bar: 0. Gaps accepted as exchange halts: none.
 
 | candidate | trades so far |
